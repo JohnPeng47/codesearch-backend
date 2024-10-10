@@ -26,7 +26,6 @@ def get_or_create_chunk_graph(
     code_index: CodeIndex, repo_path: str, graph_path: str, type: GraphType
 ):
     graph_path = f"{graph_path}_{type}.json"
-
     nodes = code_index._docstore.docs.values()
     try:
         if os.path.exists(graph_path):
@@ -50,7 +49,6 @@ def get_or_create_chunk_graph(
 
             return cg
     except Exception as e:
-        print("EXCEPTION: ", e)
         if os.path.exists(graph_path):
             rm_tree(graph_path)
 

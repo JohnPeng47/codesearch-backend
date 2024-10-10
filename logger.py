@@ -24,7 +24,7 @@ def get_file_handler(log_dir=LOG_DIR):
     """
     os.makedirs(log_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d")
-    file_name = f"runner_{timestamp}.log"
+    file_name = f"codesearch_{timestamp}.log"
     file_handler = logging.FileHandler(os.path.join(log_dir, file_name))
     file_handler.setFormatter(formatter)
     return file_handler
@@ -42,7 +42,7 @@ def get_console_handler():
 # Configure the base logger
 base_logger = logging.getLogger()
 base_logger.setLevel(logging.INFO)
-# base_logger.addHandler(get_file_handler())
+base_logger.addHandler(get_file_handler())
 base_logger.addHandler(get_console_handler())
 
 

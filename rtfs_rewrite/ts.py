@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 
 # QUERY_FOLDER = pkg_resources.files("rtfs") / "queries"
-QUERY_FOLDER = Path("rtfs_rewrite/queries")
+QUERY_FOLDER = Path(__file__).parent / "queries"
 LANG_QUERY = "{language}-cap.scm"
 
 
