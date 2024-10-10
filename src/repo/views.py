@@ -24,6 +24,7 @@ from .models import (
     RepoResponse,
     RepoGetRequest,
     RepoSummaryRequest,
+    SummarizedClusterResponse,
     repo_ident,
 )
 from .tasks import InitIndexGraphTask
@@ -183,7 +184,7 @@ async def get_repo_files(
 
 
 # TODO: should really
-@repo_router.post("/repo/summarize")
+@repo_router.post("/repo/summarize", response_model=SummarizedClusterResponse)
 async def summarize_repo(
     request: RepoSummaryRequest,
     db_session: Session = Depends(get_db),
@@ -214,7 +215,7 @@ async def summarize_repo(
     cluster(cg)
 
     summarizer = Summarizer(cg)
-    # try:
+
     summarizer.summarize()
     summarizer.gen_categories()
     # TODO: figure out how to handle
@@ -228,14 +229,14 @@ async def summarize_repo(
     )
 
     save_graph_path = GRAPH_ROOT / repo_ident(repo.owner, repo.repo_name)
-    summary_json = summarizer.to_json()
+    summary = summarizer.get_output()
     with open(save_graph_path, "w") as f:
-        f.write(json.dumps(summary_json))
+        f.write(json.dumps([s.to_dict() for s in summary]))
 
     repo.summary_path = str(save_graph_path)
     db_session.commit()
 
-    return summary_json
+    return SummarizedClusterResponse(summarized_clusters=summary)
 
 
 @repo_router.post("/repo/delete")

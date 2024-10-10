@@ -1,9 +1,10 @@
 import yaml
 from typing import Dict, List
 import random
-import os
+from dataclasses import dataclass
 
 from ..chunk_resolution.graph import (
+    ChunkNode,
     ClusterNode,
     NodeKind,
     SummarizedChunk,
@@ -25,6 +26,35 @@ from rtfs.exceptions import LLMValidationError
 
 def get_cluster_id():
     return random.randint(1, 10000000)
+
+
+@dataclass(kw_only=True)
+class SummarizedChunk:
+    id: str
+    og_id: str
+    file_path: str
+    start_line: int
+    end_line: int
+
+
+@dataclass(kw_only=True)
+class SummarizedCluster:
+    id: str
+    title: str
+    key_variables: List[str]
+    summary: str
+    chunks: List[SummarizedChunk]
+    children: List["SummarizedCluster"]
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "key_variables": self.key_variables,
+            "summary": self.summary,
+            "chunks": [chunk.__dict__ for chunk in self.chunks],
+            "children": [child.to_dict() for child in self.children],
+        }
 
 
 class Summarizer:
@@ -55,7 +85,7 @@ class Summarizer:
         """
 
         def cluster_yaml_str(cluster_nodes):
-            clusters_json = self._clusters_to_json(cluster_nodes)
+            clusters_json = self._clusters(cluster_nodes)
             for cluster in clusters_json:
                 cluster.pop("chunks")
                 cluster.pop("key_variables")
@@ -136,14 +166,14 @@ class Summarizer:
             except Exception as e:
                 raise e
 
-    def to_json(self):
+    def get_output(self) -> List[SummarizedCluster]:
         cluster_nodes = [
             node
             for node in self.code_graph.filter_nodes({"kind": NodeKind.Cluster})
             if len(self.code_graph.parents(node.id)) == 0
         ]
 
-        return self._clusters_to_json(cluster_nodes)
+        return self._clusters(cluster_nodes, return_type="obj")
 
     def _iterate_clusters_with_text(self):
         """
@@ -164,42 +194,49 @@ class Summarizer:
             )
             yield (cluster, child_content)
 
-    def _clusters_to_json(self, cluster_nodes: List[ClusterNode]):
-        def dfs_cluster(cluster_node: ClusterNode):
-            graph_json = {
-                "id": cluster_node.id,
-                "title": cluster_node.title,
-                "key_variables": cluster_node.key_variables[:4],
-                "summary": cluster_node.summary,
-                "chunks": [],
-                "children": [],
-            }
+    def _clusters(
+        self, cluster_nodes: List[ClusterNode], return_type: str = "json"
+    ) -> List[Dict | SummarizedCluster]:
+        """
+        Returns a list of clusters and their child chunk nodes. Returns either
+        JSON or as SummarizedCluster
+        """
+
+        def dfs_cluster(cluster_node: ClusterNode) -> SummarizedCluster:
+            chunks = []
+            children = []
 
             for child in self.code_graph.children(cluster_node.id):
-                child_node = self.code_graph.get_node(child)
+                child_node: ChunkNode = self.code_graph.get_node(child)
                 if child_node.kind == NodeKind.Chunk:
-                    chunk_info = {
-                        "id": child_node.id,
-                        "og_id": child_node.og_id,
-                        "file_path": child_node.metadata.file_path,
-                        # "file_path": os.path.relpath(
-                        #     child_node.metadata.file_path, self.code_graph.repo_path
-                        # ),
-                        "start_line": child_node.range.line_range()[0],
-                        "end_line": child_node.range.line_range()[1],
-                    }
-                    graph_json["chunks"].append(chunk_info)
+                    chunk_info = SummarizedChunk(
+                        id=child_node.id,
+                        og_id=child_node.og_id,
+                        file_path=child_node.metadata.file_path,
+                        start_line=child_node.range.line_range()[0] + 1,
+                        end_line=child_node.range.line_range()[1] + 1,
+                    )
+                    chunks.append(chunk_info)
                 elif child_node.kind == NodeKind.Cluster:
-                    graph_json["children"].append(dfs_cluster(child_node))
+                    children.append(dfs_cluster(child_node))
 
-            return graph_json
+            return SummarizedCluster(
+                id=cluster_node.id,
+                title=cluster_node.title,
+                key_variables=cluster_node.key_variables[:4],
+                summary=cluster_node.summary,
+                chunks=chunks,
+                children=children,
+            )
 
-        return [dfs_cluster(node) for node in cluster_nodes]
+        if return_type == "json":
+            return [dfs_cluster(node).to_dict() for node in cluster_nodes]
+        else:
+            return [dfs_cluster(node) for node in cluster_nodes]
 
     def _clusters_to_yaml(self, cluster_nodes: List[ClusterNode]):
-        clusters_json = self._clusters_to_json(cluster_nodes)
+        clusters_json = self._clusters(cluster_nodes)
         for cluster in clusters_json:
-            print(cluster["title"])
             del cluster["chunks"]
             del cluster["key_variables"]
 

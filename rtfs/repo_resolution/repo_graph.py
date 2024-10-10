@@ -204,7 +204,6 @@ class RepoGraph(CodeGraph):
         """
         scope_map = {}
         for path, file_content in fs.get_files_content():
-            print("Adding to scopemaps: ", str(path))
             # index by full path
             sg = build_scope_graph(file_content, language=LANGUAGE)
             scope_map[path] = sg
