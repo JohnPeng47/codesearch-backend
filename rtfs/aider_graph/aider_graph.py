@@ -2,19 +2,18 @@ from pathlib import Path
 from typing import List, NamedTuple
 from llama_index.core.schema import BaseNode
 
-from rtfs.chunk_resolution.graph import ChunkMetadata
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
 from rtfs.cluster.graph import ClusterGraph
-
-import networkx as nx
-
-from .graph import (
-    AltChunkNode,
-    AltChunkEdge,
+from rtfs.chunk_resolution.graph import (
+    ChunkNode,
+    ChunkMetadata,
     FunctionContext,
     ScopeType,
     ChunkContext,
+    ImportEdge as RefToEdge,
 )
+
+import networkx as nx
 
 
 class AiderGraph(ClusterGraph):
@@ -24,8 +23,6 @@ class AiderGraph(ClusterGraph):
 
         all_chunks = []
         for i, chunk in enumerate(chunks):
-            print(f"Chunk{i}")
-
             definitions = []
             references = []
             module_ctxt = ChunkContext(
@@ -68,35 +65,29 @@ class AiderGraph(ClusterGraph):
                     case "name.reference.call":
                         references.append(node.text.decode())
 
-            node = AltChunkNode(
+            node = ChunkNode(
                 id=chunk.node_id,
                 og_id=chunk.node_id,
                 metadata=ChunkMetadata(**chunk.metadata),
                 content=chunk.get_content(),
-                ctxt=[module_ctxt] + class_ctxts,
+                ctxt_list=[module_ctxt] + class_ctxts,
                 # TODO: maybe we should add these fields to CHunkNode
-                # definitions=definitions,
-                # references=references,
+                definitions=definitions,
+                references=references,
             )
-
-            print(node)
-            chunk_node = [
-                node,
-                {"definitions": definitions, "references": references},
-            ]
-            all_chunks.append(chunk_node)
-            graph.add_node(chunk_node[0])
+            all_chunks.append(node)
+            graph.add_node(node)
 
         # build relation ships
-        # for c1, refsndefs1 in all_chunks:
-        #     for c2, refsndefs2 in all_chunks:
-        #         for ref in refsndefs1["references"]:
-        #             if (
-        #                 ref in refsndefs2["definitions"]
-        #                 and c1.id != c2.id
-        #                 and not graph.has_edge(c1.id, c2.id)
-        #             ):
-        #                 edge = AltChunkEdge(src=c1.id, dst=c2.id, ref=ref)
-        #                 graph.add_edge(edge)
+        for c1 in all_chunks:
+            for c2 in all_chunks:
+                for ref in c1.references:
+                    if (
+                        ref in c2.definitions
+                        and c1.id != c2.id
+                        and not graph.has_edge(c1.id, c2.id)
+                    ):
+                        edge = RefToEdge(src=c1.id, dst=c2.id, ref=ref)
+                        graph.add_edge(edge)
 
         return graph

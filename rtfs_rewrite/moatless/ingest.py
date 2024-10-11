@@ -41,7 +41,6 @@ def ingest(repo_path: str, exclude_paths: List[str] = []):
     )
 
     settings = IndexSettings()
-    print(settings.comment_strategy)
     docs = reader.load_data()
 
     splitter = EpicSplitter(

@@ -200,6 +200,7 @@ async def summarize_repo(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
+    # LAUNCH_BLOCK: this is being ignored
     summary_path = (
         repo.summary_path + "_" + request.graph_type if repo.summary_path else None
     )
@@ -212,17 +213,11 @@ async def summarize_repo(
     cg = get_or_create_chunk_graph(
         code_index, repo.file_path, repo.graph_path, request.graph_type
     )
+
     cluster(cg)
-
     summarizer = Summarizer(cg)
-
     summarizer.summarize()
     summarizer.gen_categories()
-    # TODO: figure out how to handle
-    # except ContextLengthExceeded as e:
-    #     raise HTTPException(status_code=400, detail=str(e))
-    # except Exception as e:
-    #     raise HTTPException(status_code=500, detail=str(e))
 
     logger.info(
         f"Summarizing stats: {request.graph_type} for {repo.file_path}: \n{cg.get_stats()}"

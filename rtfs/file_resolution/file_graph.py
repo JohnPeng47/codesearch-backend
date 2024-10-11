@@ -9,20 +9,25 @@ from rtfs.scope_resolution.capture_refs import capture_refs
 from rtfs.utils import TextRange
 from rtfs.models import OpenAIModel, BaseModel
 
+
 class FileNode:
     def __init__(self, path: Path, content: bytes):
         self.path = path.resolve()
         self.content = content
 
+
 class FileEdge:
     def __init__(self, ref: str):
         self.ref = ref
 
+
 class ImportEdge(FileEdge):
     pass
 
+
 class CallEdge(FileEdge):
     pass
+
 
 class FileGraph:
     def __init__(self, repo_path: Path):
@@ -84,7 +89,7 @@ class FileGraph:
         return calls
 
     def get_file_content(self, file_path: Path) -> str:
-        return self._graph.nodes[file_path]['file'].content.decode('utf-8')
+        return self._graph.nodes[file_path]["file"].content.decode("utf-8")
 
     def get_file_range(self, file_path: Path, range: TextRange) -> str:
         return self.fs.get_file_range(file_path, range)

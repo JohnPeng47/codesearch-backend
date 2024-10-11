@@ -1,10 +1,7 @@
 from enum import Enum
 from typing import List, Optional, NewType, Literal
 from dataclasses import dataclass, field
-import random
-
-# from pydantic.dataclasses import dataclass
-# from pydantic import Field
+import os
 
 from rtfs.graph import Node, Edge
 from rtfs.moatless.epic_split import CodeNode
@@ -13,6 +10,47 @@ from rtfs.utils import TextRange
 
 ChunkNodeID = NewType("ChunkNodeID", str)
 ClusterID = NewType("ClusterID", str)
+
+
+class ScopeType(str, Enum):
+    FUNCTION = "function"
+    CLASS = "class"
+    MODULE = "module"
+
+
+@dataclass
+class FuncArg:
+    name: str
+    arg_type: str | None
+
+    def __str__(self):
+        return f"{self.name}: {self.arg_type if self.arg_type else 'Any'}"
+
+
+@dataclass
+class FunctionContext:
+    name: str
+    args_list: List[FuncArg] = field(default_factory=list)
+
+    def __str__(self):
+        args_str = ", ".join(str(arg) for arg in self.args_list)
+        return f"{self.name}({args_str})"
+
+
+@dataclass
+class ChunkContext:
+    scope_name: str
+    scope_type: ScopeType
+    functions: List[FunctionContext]
+
+    def __str__(self):
+        if not self.functions:
+            return ""
+
+        ctxt_namespace = (
+            f"{self.scope_name}:" if self.scope_type == ScopeType.CLASS else ""
+        )
+        return "\n".join(ctxt_namespace + str(func) for func in self.functions)
 
 
 @dataclass
@@ -77,12 +115,23 @@ class ChunkNode(Node):
     og_id: str  # original ID on the BaseNode
     metadata: ChunkMetadata
     content: str
+    ctxt_list: List[ChunkContext] = field(default_factory=list)
+    references: List[str] = field(default_factory=list)
+    definitions: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.id = self._chunk_short_name(self.metadata)
+
+    def _chunk_short_name(self, metadata: ChunkMetadata) -> str:
+        filename = "/".join(metadata.file_path.split(os.sep)[-2:])
+        return f"{filename}#{metadata.start_line}-{metadata.end_line}"
 
     @property
     def range(self):
         return TextRange(
             start_byte=0,
             end_byte=0,
+            # HACK
             # NOTE: subtract 1 to convert to 0-based to conform with TreeSitter 0 based indexing
             start_point=(self.metadata.start_line - 1, 0),
             end_point=(self.metadata.end_line - 1, 0),
@@ -115,15 +164,6 @@ class ClusterNode(Node):
     title: str = ""
     summary: str = ""
     key_variables: List[str] = field(default_factory=list)
-
-    # def dict(self):
-    #     return {
-    #         "id": self.id,
-    #         "kind": self.kind,
-    #         "title": self.title,
-    #         "summary": self.summary,
-    #         "key_variables": self.key_variables,
-    #     }
 
     def get_content(self):
         return self.summary

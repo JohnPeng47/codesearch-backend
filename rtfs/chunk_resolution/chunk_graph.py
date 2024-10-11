@@ -89,14 +89,12 @@ class ChunkGraph(ClusterGraph):
                 skipped_chunks += 1
                 continue
 
-            short_name = cg._chunk_short_name(chunk, i)
-            chunk_names.add(short_name)
             chunk_node = ChunkNode(
-                id=short_name,
                 og_id=chunk.node_id,
                 metadata=metadata,
                 content=chunk.get_content(),
             )
+            chunk_names.add(chunk_node.id)
             cg.add_node(chunk_node)
             cg._chunkmap[Path(metadata.file_path)].append(chunk_node)
 
