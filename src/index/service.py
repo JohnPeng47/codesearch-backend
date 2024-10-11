@@ -15,7 +15,7 @@ from pathlib import Path
 from llama_index.core import SimpleDirectoryReader
 
 
-def get_or_create_index(repo_path: str, persist_dir: str):
+def get_or_create_index(repo_path: str, persist_dir: str, exclusions: List[str] = []):
     """
     Gets or creates the code embeddings/docstore for the repo
     """
@@ -28,6 +28,7 @@ def get_or_create_index(repo_path: str, persist_dir: str):
         code_index = CodeIndex(
             file_repo=file_repo,
             settings=index_settings,
+            exclude_files=exclusions,
             # cluster_list=cluster_json if cluster_json else {},
             use_summaries=False,
             summary_anthropic_model=True,
@@ -37,8 +38,3 @@ def get_or_create_index(repo_path: str, persist_dir: str):
         code_index.persist(persist_dir)
 
     return code_index
-
-
-def get_or_create_chunks(repo_path: str, persist_dir: str):
-    code_index = get_or_create_index(repo_path, persist_dir)
-    return code_index._docstore.docs.values()
