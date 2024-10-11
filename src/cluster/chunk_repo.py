@@ -125,27 +125,31 @@ def _get_chunks(repo_name: str):
     return index_dir
 
 
-def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> str:
-    chunked_content = ""
+def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[ClusterInput]:
+    cluster_input = []
     index_dir = _get_chunks(repo_dir.name)
     chunk_nodes = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
     
     for i, chunk_ctxt in enumerate(get_chunk_ctxt_nodes(chunk_nodes._docstore.docs.values())):
         chunk_node, ctxt_list = chunk_ctxt
         if mode == "full":
-            chunked_content += (
-                str(ClusterInput(
-                    input_id=f"{chunk_node.node_id}", # this is basically the filename
+            cluster_input.append(
+                ClusterInput(
+                    index=i,
                     input_type=ClusterInputType.FILE, 
-                    content=chunk_node.get_content().replace("\r\n", "\n")))
+                    content=chunk_node.get_content().replace("\r\n", "\n"),
+                    filepath=chunk_node.metadata["file_name"]
+                ),
             )
         elif mode == "partial":
-            chunked_content += str(ClusterInput(
-                input_id=f"{i}",
-                input_type=ClusterInputType.CHUNK,
-                content="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n"))
+            cluster_input.append(
+                ClusterInput(
+                    index=i,
+                    input_type=ClusterInputType.CHUNK,
+                    content="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n")
+            )
             
-    return chunked_content
+    return cluster_input
 
 
 if __name__ == "__main__":

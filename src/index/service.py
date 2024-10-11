@@ -14,7 +14,6 @@ from pathlib import Path
 
 from llama_index.core import SimpleDirectoryReader
 
-
 def get_or_create_index(repo_path: str, persist_dir: str, exclusions: List[str] = []):
     """
     Gets or creates the code embeddings/docstore for the repo
