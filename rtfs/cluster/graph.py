@@ -9,6 +9,56 @@ from rtfs.chunk_resolution.graph import ClusterNode, ChunkNode, ChunkMetadata, N
 from rtfs.graph import CodeGraph
 
 
+import yaml
+from typing import Dict, List
+import random
+from dataclasses import dataclass
+
+from ..chunk_resolution.graph import (
+    ChunkNode,
+    ClusterNode,
+    NodeKind,
+    SummarizedChunk,
+)
+
+from rtfs.graph import CodeGraph
+from moatless.types import MoatlessChunkID
+
+
+def get_cluster_id():
+    return random.randint(1, 10000000)
+
+
+@dataclass(kw_only=True)
+class SummarizedChunk:
+    id: str
+    og_id: MoatlessChunkID # this is the original ID of the chunk
+    file_path: str
+    content: str
+    start_line: int
+    end_line: int
+
+
+@dataclass(kw_only=True)
+class SummarizedCluster:
+    id: str
+    title: str
+    key_variables: List[str]
+    summary: str
+    chunks: List[SummarizedChunk]
+    children: List["SummarizedCluster"]
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "key_variables": self.key_variables,
+            "summary": self.summary,
+            "chunks": [chunk.__dict__ for chunk in self.chunks],
+            "children": [child.to_dict() for child in self.children],
+        }
+
+
 class ClusterGStats(BaseModel):
     num_clusters: int
     num_chunks: int
@@ -88,6 +138,57 @@ class ClusterGraph(CodeGraph):
         graph_dict["link_data"] = custom_node_link_data(self._graph)
 
         return graph_dict
+
+    def get_clusters(self) -> List[SummarizedCluster]:
+        cluster_nodes = [
+            node
+            for node in self.filter_nodes({"kind": NodeKind.Cluster})
+            if len(self.parents(node.id)) == 0
+        ]
+
+        return self._clusters(cluster_nodes, return_type="obj")
+
+    def _clusters(
+        self, cluster_nodes: List[ClusterNode], return_type: str = "json"
+    ) -> List[Dict | SummarizedCluster]:
+        """
+        Returns a list of clusters and their child chunk nodes. Returns either
+        JSON or as SummarizedCluster
+        """
+
+        def dfs_cluster(cluster_node: ClusterNode) -> SummarizedCluster:
+            chunks = []
+            children = []
+
+            for child in self.children(cluster_node.id):
+                child_node: ChunkNode = self.get_node(child)
+                if child_node.kind == NodeKind.Chunk:
+                    chunk_info = SummarizedChunk(
+                        id=child_node.id,
+                        og_id=child_node.og_id,
+                        file_path=child_node.metadata.file_path,
+                        content=child_node.content,
+                        start_line=child_node.range.line_range()[0] + 1,
+                        end_line=child_node.range.line_range()[1] + 1,
+                    )
+                    chunks.append(chunk_info)
+                elif child_node.kind == NodeKind.Cluster:
+                    children.append(dfs_cluster(child_node))
+
+            return SummarizedCluster(
+                id=cluster_node.id,
+                title=cluster_node.title,
+                key_variables=cluster_node.key_variables[:4],
+                summary=cluster_node.summary,
+                chunks=chunks,
+                children=children,
+            )
+
+        if return_type == "json":
+            return [dfs_cluster(node).to_dict() for node in cluster_nodes]
+        else:
+            return [dfs_cluster(node) for node in cluster_nodes]
+
 
     # Utility methods
     def get_chunk_files(self) -> List[str]:

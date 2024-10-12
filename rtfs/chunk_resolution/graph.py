@@ -4,8 +4,10 @@ from dataclasses import dataclass, field
 import os
 
 from rtfs.graph import Node, Edge
-from rtfs.moatless.epic_split import CodeNode
 from rtfs.utils import TextRange
+
+from moatless.index.epic_split import CodeNode
+from moatless.types import MoatlessChunkID
 
 
 ChunkNodeID = NewType("ChunkNodeID", str)
@@ -112,7 +114,7 @@ class NodeKind(str, Enum):
 @dataclass(kw_only=True)
 class ChunkNode(Node):
     kind: str = "ChunkNode"
-    og_id: str  # original ID on the BaseNode
+    og_id: MoatlessChunkID  # original ID on the BaseNode
     metadata: ChunkMetadata
     content: str
     ctxt_list: List[ChunkContext] = field(default_factory=list)

@@ -34,7 +34,6 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-
 # DESIGN_TODO: make a generic Graph object to handle add/update Node
 class ChunkGraph(ClusterGraph):
     def __init__(
@@ -55,7 +54,7 @@ class ChunkGraph(ClusterGraph):
     # turn import => export mapping into a function
     # implement tqdm for chunk by chunk processing
     @classmethod
-    def from_chunks(cls, repo_path: Path, chunks: List[BaseNode], skip_tests=True):
+    def from_chunks(cls, repo_path: Path, chunks: List[BaseNode], skip_tests=True) -> "ChunkGraph":
         """
         Build chunk (import) to chunk (export) mapping by associating a chunk with
         the list of scopes, and then using the scope -> scope mapping provided in RepoGraph

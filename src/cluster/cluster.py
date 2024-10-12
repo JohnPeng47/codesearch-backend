@@ -1,6 +1,14 @@
 from pathlib import Path
-from .lmp import generate_clusters
-from .chunk_repo import chunk_repo
+from typing import List
+
+from rtfs.chunk_resolution.chunk_graph import ChunkGraph
+from rtfs.transforms.cluster import cluster as cluster_cg
+from src.index.service import get_or_create_index
+
+from .types import LMClusteredTopic, ClusteredTopic, ClusterChunk, ClusterInputType
+from .methods.lmp import generate_clusters
+from .chunk_repo import chunk_repo, temp_index_dir
+
 
 EXCLUSIONS = [
     "**/tests/**",
@@ -10,6 +18,7 @@ EXCLUSIONS = [
 class LLMException(Exception):
     pass
 
+
 # NOTE: maybe we can run the clustering algorithm beforehand to seed the order
 # of the chunks, reducing the "distance" penalty in classification
 def _calculate_clustered_range(matched_indices, length):
@@ -17,26 +26,59 @@ def _calculate_clustered_range(matched_indices, length):
     pass
 
 # Should track how good we are at tracking faraway chunks
-def generate_full_code(repo_path: Path, tries: int = 1):
-    cluster_inputs = chunk_repo(repo_path, exclusions=EXCLUSIONS)
-    free_chunks = [chunk.sensible_id() for chunk in cluster_inputs]
+def generate_full_code(repo_path: Path, tries: int = 1) -> List[ClusteredTopic]:
+    new_clusters = []
+    cluster_inputs = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
+
+    # need sensible name because its easier for LLm to track
+    unsorted_names = [f"Chunk {i}" for i, _ in enumerate(cluster_inputs)]
+    name_to_chunk = {f"Chunk {i}": chunk for i, chunk in enumerate(cluster_inputs)}
 
     for _ in range(tries):
-        clusters = generate_clusters(cluster_inputs).parsed.topics
+        clusters: List[LMClusteredTopic] = generate_clusters(cluster_inputs, unsorted_names).parsed.topics
         if not isinstance(clusters, list):
             raise LLMException(f"Failed to generate list: {clusters}")
         
         # calculate the clustered range
         # NOTE: chunk_name != chunk.id, former is for LLM, later is for us
-        matched_indices = [i for cluster in clusters for i, chunk in enumerate(free_chunks) if chunk in cluster.chunk_ids]
-        _calculate_clustered_range(matched_indices, len(free_chunks))
+        matched_indices = [i for cluster in clusters for i, chunk in enumerate(unsorted_names) 
+                           if chunk in cluster.chunks]
+        _calculate_clustered_range(matched_indices, len(unsorted_names))
 
+        # convert LMClusteredTopic to ClusteredTopic
         for cluster in clusters:
-            print(cluster)
+            cluster.chunks = [name_to_chunk[chunk_name] for chunk_name in cluster.chunks]
+            new_clusters.append(cluster)
 
-        # calculate new inputs and run again until empty or no chunks to classify
-        cluster_inputs = [chunk_name for i, chunk_name in 
-                          enumerate(cluster_inputs) if i not in matched_indices]
-        free_chunks = [chunk_name for chunk_name in cluster_inputs]
+        # remove chunks that have already been clustered
+        cluster_inputs = [chunk for i, chunk in enumerate(cluster_inputs) 
+                          if i not in matched_indices]
+        unsorted_names = [chunk_name for i, chunk_name in enumerate(unsorted_names)
+                          if i not in matched_indices]
+        
+        print("Unclassified chunks: ", len(unsorted_names))
 
-        print("Unclassified chunks: ", len(free_chunks))
+    return new_clusters
+
+# NOTE: generated clusters are not named
+def generate_graph_cluster(repo_path: Path) -> List[ClusteredTopic]:
+    chunks = get_or_create_index(str(repo_path), str(temp_index_dir(repo_path.name)), 
+                                 exclusions=EXCLUSIONS)._docstore.docs.values()
+    cg = ChunkGraph.from_chunks(repo_path, chunks)
+    
+    cluster_cg(cg)
+
+    return [
+        ClusteredTopic(
+            name="random",
+            chunks=[
+                ClusterChunk(
+                    id=chunk.og_id,
+                    content=chunk.content,
+                    filepath=chunk.file_path,
+                    input_type=ClusterInputType.CHUNK
+                ) for chunk in cluster.chunks
+            ],
+        ) 
+        for cluster in cg.get_clusters()
+    ]

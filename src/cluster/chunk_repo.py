@@ -6,7 +6,6 @@ from dataclasses import field, dataclass
 import tempfile
 import os
 
-from rtfs.chunker import chunk
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
 from rtfs.chunk_resolution.graph import (
     FunctionContext,
@@ -15,9 +14,7 @@ from rtfs.chunk_resolution.graph import (
     ImportEdge as RefToEdge,
 )
 from src.index.service import get_or_create_index
-
-from .lmp import ClusterInput, ClusterInputType
-
+from src.cluster.types import ClusterChunk, ClusterInputType
 @dataclass
 class ChunkCtxtNode:
     ctxt_list: List[ChunkContext]
@@ -115,7 +112,7 @@ def process_directory(directory, exclusions):
 
     return tree, content
 
-def _get_chunks(repo_name: str):
+def temp_index_dir(repo_name: str):
     temp_dir = tempfile.gettempdir()
     index_dir = Path(temp_dir) / "index" / repo_name
     if not index_dir.exists():
@@ -125,17 +122,17 @@ def _get_chunks(repo_name: str):
     return index_dir
 
 
-def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[ClusterInput]:
+def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[ClusterChunk]:
     cluster_input = []
-    index_dir = _get_chunks(repo_dir.name)
+    index_dir = temp_index_dir(repo_dir.name)
     chunk_nodes = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
     
-    for i, chunk_ctxt in enumerate(get_chunk_ctxt_nodes(chunk_nodes._docstore.docs.values())):
+    for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes._docstore.docs.values()):
         chunk_node, ctxt_list = chunk_ctxt
         if mode == "full":
             cluster_input.append(
-                ClusterInput(
-                    index=i,
+                ClusterChunk(
+                    id= chunk_node.node_id,
                     input_type=ClusterInputType.FILE, 
                     content=chunk_node.get_content().replace("\r\n", "\n"),
                     filepath=chunk_node.metadata["file_name"]
@@ -143,8 +140,8 @@ def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[Cluste
             )
         elif mode == "partial":
             cluster_input.append(
-                ClusterInput(
-                    index=i,
+                ClusterChunk(
+                    id=chunk_node.node_id,
                     input_type=ClusterInputType.CHUNK,
                     content="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n")
             )

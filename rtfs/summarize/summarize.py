@@ -23,6 +23,8 @@ from rtfs.utils import VerboseSafeDumper
 from rtfs.models import OpenAIModel, extract_yaml
 from rtfs.exceptions import LLMValidationError
 
+from moatless.types import MoatlessChunkID
+
 
 def get_cluster_id():
     return random.randint(1, 10000000)
