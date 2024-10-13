@@ -56,6 +56,7 @@ class LMClusteredTopic(ClusteredTopic):
     """
     Output of the clustering algorithm
     """
+    name: str
     chunks: List[str]
 
 class LMClusteredTopicList(BaseModel):
