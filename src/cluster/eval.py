@@ -1,51 +1,60 @@
 import ell
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Tuple
 
 from .types import ClusteredTopic
 
-
 class BinaryChoice(BaseModel):
     choice: str
+
+    @field_validator('choice')
+    def validate_choice(cls, v):
+        if v not in ["A", "B"]:
+            raise ValueError("Choice must be 'A' or 'B'")
+        return v
 
 # TODO: Make this generic for number of compares
 # TODO: Use dspy to auto-tune a list of topics
 @ell.complex(model="gpt-4o-2024-08-06", response_format=BinaryChoice)
-def compare_cluster(cluster_a: List[ClusteredTopic], 
-                 cluster_b: List[ClusteredTopic]) -> BinaryChoice:
-    EVAL_PROMPT = """
-You are given two sets of code clusters, A and B. Your task is to evaluate these clusters based on the principles of Single Responsibility Principle 
-(SRP) and overall code organization, and determine which one is preferable. Consider the following criteria:
+def compare_cluster(cluster_a: ClusteredTopic, cluster_b: ClusteredTopic) -> BinaryChoice:
+    print(cluster_a)
+    code_str = "\n".join([str(chunk) for chunk in set(cluster_a) | set(cluster_b)])
 
-1. Cohesion: How well do the elements within each cluster relate to each other and serve a single purpose?
-2. Separation of Concerns: How effectively does each clustering separate different functionalities or responsibilities?
-3. Modularity: How well do the clusters promote modular design, allowing for easier maintenance and scalability?
-4. Clarity: How clear and intuitive is the organization of code in each clustering?
-5. Adherence to SRP: How well does each clustering adhere to the Single Responsibility Principle?
+    print("Codestr: \n", code_str)
+#     EVAL_PROMPT = """
+# You are a software engineer.
+# You are given a piece of source code and two sets clusters of the source, A and B.
+# Your task is to evaluate which cluster best encapsulates a functional component of the source
+# All the chunks in the cluster should make sense together, and be internally cohesive without overreaching
 
-Cluster Set A:
-{cluster_a}
+# Here is the source code:
+# {code_chunks}
 
-Cluster Set B:
-{cluster_b}
+# Cluster Set A:
+# {cluster_a}
 
-Based on your analysis, output only one of the following responses:
-"A" if Cluster Set A is preferable
-"B" if Cluster Set B is preferable
+# Cluster Set B:
+# {cluster_b}
 
-Do not provide any additional explanation or text in your response.
-"""
-    return EVAL_PROMPT.format(cluster_a=cluster_a, cluster_b=cluster_b)
+# Based on your analysis, output only one of the following responses:
+# "A" if Cluster Set A is preferable
+# "B" if Cluster Set B is preferable
+
+# Do not provide any additional explanation or text in your response.
+# """
+#     return EVAL_PROMPT.format(code_chunks=code_str, cluster_a=cluster_a, cluster_b=cluster_b)
+    return ""
 
 
 def compare_eval(cluster_a: List[ClusteredTopic], 
-                 cluster_b: List[ClusteredTopic]) -> List[int]:
+                 cluster_b: List[ClusteredTopic],
+                 a_label: str,
+                 b_label: str) -> List[int]:
     """
     Loops through all clusters to find the best match for each cluster in the other set.
     """
     min_match = 0
-
-    matches = []
+    matched_clusters = []
     for a in cluster_a:
         best_match = None
         best_score = -1
@@ -55,6 +64,16 @@ def compare_eval(cluster_a: List[ClusteredTopic],
                 best_score = score
                 best_match = b
         if best_score >= min_match:
-            matches.append((a, best_match))
+            matched_clusters.append((a, best_match))
 
-    return matches
+    results = []
+    for a, b in matched_clusters:
+        print(f"Comparing {a.name} and {b.name}")
+        result = compare_cluster(a, b).parsed
+        results.append(result.choice)
+    
+    total_a = results.count("A")
+    total_b = results.count("B")
+
+    print(f"Total A: {total_a}, Total B: {total_b}, Total Matches: {len(matched_clusters)}")
+    return total_a, total_b

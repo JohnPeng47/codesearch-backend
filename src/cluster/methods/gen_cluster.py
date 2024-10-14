@@ -1,16 +1,19 @@
 import ell
 from typing import List
 
-from src.cluster.types import ClusterChunk, LMClusteredTopic, LMClusteredTopicList
+from src.cluster.types import SourceChunk, LMClusteredTopic, LMClusteredTopicList
 
 ell.init(
     store="logdir",
     autocommit=True,
 )
 
+
+
+
 # TODO: Use dspy to auto-tune a list of topics
 @ell.complex(model="gpt-4o-2024-08-06", response_format=LMClusteredTopicList)
-def generate_clusters(chunks: List[ClusterChunk], 
+def generate_clusters(chunks: List[SourceChunk], 
                       simple_names: List[str]) -> LMClusteredTopicList:
     
     codebase = "".join([chunk.to_str(name=name) for name, chunk in zip(simple_names, chunks)])

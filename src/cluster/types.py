@@ -1,17 +1,24 @@
 from pydantic import BaseModel
-from typing import List, NewType, Optional
+from typing import List, Optional
 from enum import Enum
-import uuid
+from abc import ABC, abstractmethod
 
 from moatless.types import MoatlessChunkID
 
+class ClusterInput(ABC):
+    @abstractmethod
+    def get_chunkinfo(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_content(self) -> str:
+        pass
 
 class ClusterInputType(str, Enum):
     FILE = "file"
     CHUNK = "chunk"
 
-
-class ClusterChunk(BaseModel):
+class SourceChunk(BaseModel, ClusterInput):
     """
     Input to the clustering algorithm that represents either a whole file
     or a partial partial input
@@ -20,37 +27,61 @@ class ClusterChunk(BaseModel):
     input_type: ClusterInputType
     content: str
     filepath: Optional[str] = None
-
-    def to_str(self, name: str = "") -> str:
-        output = ""
-        output += f"{name}\n" if name else f"Chunk {self.id}\n"
-        output += f"Filename: {self.filepath}\n" if self.filepath else ""
-        output += f"{self.content}\n\n"
-
-        return output
     
+    def get_chunkinfo(self) -> str:
+        return  (
+            f"Filename: {self.filepath}\n" if self.filepath else ""
+        )
+
+    def get_content(self) -> str:
+        return self.content
+
     def __hash__(self) -> int:
         return hash(self.id)
+    
+class CodeType(str, Enum):
+    LOGIC = "logic"
+    DATA = "data"
 
-# LLM unnion type lol:
-# A LLM reduced type that contains a subset of the parent class
-# with lower granularity
-# Going from parent -> child is easy
-# Going from child -> parent .. requires additional args to be supplied
-# in the context of the "upscaling" event 
-# Tmrw: 
+class SummaryChunk(SourceChunk, ClusterInput):
+    """
+    Input to the clustering algorithm that represents a summary of a chunk of 
+    source code, derived from SourceChunk
+    """
+    title: str # NOTE: not actually used since we are using generic chunk name
+    summary: str
+    code_type: CodeType # NOTE: not tuned, this ouptut is kinda sketchy
+    definitions: List[str]
+    references: List[str]
+
+    def get_content(self) -> str:
+        return self.summary
+
+
+# TODO(Prompt Optimizations):
+# order of summary wrt to defs/refs? Adding it after could benefit
+# from the refs/defs being used as the scratchpad
+class LMSummaryChunk(BaseModel):
+    """
+    Version of SummaryChunk as output from LM
+    """
+    title: str
+    summary: str
+    code_type: CodeType
+    definitions: List[str]
+    references: List[str]
+
 class ClusteredTopic(BaseModel):
-    """
-    Output of the clustering algorithm
-    """
+    """Output of the clustering algorithm"""
     name: str
-    chunks: List[ClusterChunk]
+    chunks: List[SourceChunk]
 
     def __str__(self):
-        chunk_list = "\n-> " \
-            + "\n-> ".join([str(input) for input in self.chunks])
-        
-        return f"{self.name}:\n{chunk_list}\n\n"
+        chunk_list = "\n-> " + "\n-> ".join([str(input) for input in self.chunks])
+        return (
+            f"{self.name}:\n"
+            f"{chunk_list}\n\n"
+        )
 
 class LMClusteredTopic(ClusteredTopic):
     """

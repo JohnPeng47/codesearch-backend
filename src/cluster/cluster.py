@@ -7,8 +7,8 @@ from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.transforms.cluster import cluster as cluster_cg
 from src.index.service import get_or_create_index
 
-from .types import LMClusteredTopic, ClusteredTopic, ClusterChunk, ClusterInputType, LMClusteredTopicList
-from .methods.lmp import generate_clusters
+from .types import LMClusteredTopic, ClusteredTopic, SourceChunk, ClusterInputType, LMClusteredTopicList
+from .methods.gen_cluster import generate_clusters
 from .chunk_repo import chunk_repo, temp_index_dir
 from .utils import get_attrs_or_key
 
@@ -77,7 +77,7 @@ def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
         ClusteredTopic(
             name="random",
             chunks=[
-                ClusterChunk(
+                SourceChunk(
                     id=chunk.og_id,
                     content=chunk.content,
                     filepath=chunk.file_path,
