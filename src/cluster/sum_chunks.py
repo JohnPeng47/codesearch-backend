@@ -1,14 +1,10 @@
 import ell
-from typing import List
-from pathlib import Path
 
-from ..types import SourceChunk, LMSummaryChunk, SummaryChunk
-from ..chunk_repo import chunk_repo
+from .types import CodeChunk, LMSummaryChunk
+from .chunk_repo import chunk_repo
 
-
-
-@ell.complex(model="gpt-4o-mini", response_format=LMSummaryChunk)
-def summarize_chunk(cluster: SourceChunk, num_lines: int = 2) -> LMSummaryChunk:
+@ell.complex(model="gpt-4o-mini", temperature=0, response_format=LMSummaryChunk)
+def summarize_chunk(cluster: CodeChunk, num_lines: int = 2) -> LMSummaryChunk:
     SUMMARY_PROMPT_V1 = """
 You are given a chunk of code that represents a cluster in a larger codebase. Your task is to provide a structured summary of this cluster.
 Write a summary of {num_lines} lines that captures the main intent of the code
@@ -25,16 +21,6 @@ Here is the code cluster:
 Provide your response in a structured format.
 """
     return SUMMARY_PROMPT_V1.format(code=cluster.content, num_lines=num_lines)
-
-
-def summarize_chunks(repo_path: Path) -> List[LMSummaryChunk]:
-    chunks = chunk_repo(repo_path, mode="full")
-    for chunk in chunks[:5]:
-        print("Chunk: ", chunk.id)
-        print("Content: ", chunk.content)
-        print("Summary: ", summarize_chunk(chunk))
-
-
 
 SUMMARY_PROMPT_V2 = """
 You are given a chunk of code that represents a cluster in a larger codebase. Your task is to provide a structured summary of this cluster.

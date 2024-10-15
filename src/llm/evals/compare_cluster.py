@@ -2,7 +2,7 @@ import ell
 from pydantic import BaseModel, field_validator
 from typing import List, Tuple
 
-from .types import ClusteredTopic
+from ...cluster.types import ClusteredTopic
 
 class BinaryChoice(BaseModel):
     choice: str

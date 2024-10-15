@@ -14,7 +14,7 @@ from rtfs.chunk_resolution.graph import (
     ImportEdge as RefToEdge,
 )
 from src.index.service import get_or_create_index
-from src.cluster.types import SourceChunk, ClusterInputType
+from src.cluster.types import CodeChunk, ClusterInputType
 @dataclass
 class ChunkCtxtNode:
     ctxt_list: List[ChunkContext]
@@ -122,16 +122,18 @@ def temp_index_dir(repo_name: str):
     return index_dir
 
 
-def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[SourceChunk]:
+def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[CodeChunk]:
     cluster_input = []
     index_dir = temp_index_dir(repo_dir.name)
     chunk_nodes = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
     
+    print(f"[Chunker]: {len(chunk_nodes._docstore.docs)} chunks used")
+
     for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes._docstore.docs.values()):
         chunk_node, ctxt_list = chunk_ctxt
         if mode == "full":
             cluster_input.append(
-                SourceChunk(
+                CodeChunk(
                     id= chunk_node.node_id,
                     input_type=ClusterInputType.FILE, 
                     content=chunk_node.get_content().replace("\r\n", "\n"),
@@ -140,7 +142,7 @@ def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[Source
             )
         elif mode == "partial":
             cluster_input.append(
-                SourceChunk(
+                CodeChunk(
                     id=chunk_node.node_id,
                     input_type=ClusterInputType.CHUNK,
                     content="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n")
