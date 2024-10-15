@@ -1,19 +1,16 @@
 from starlette.config import Config
-from urllib.parse import urljoin
-import os
 from pathlib import Path
+
+from platformdirs import user_data_path
+
 
 from enum import Enum
 
 config = Config(".env")
 
-ENV = config("ENV", default="dev")
-CODESEARCH_DIR = (
-    "/home/ubuntu"
-    if ENV == "release"
-    else r"C:\Users\jpeng\Documents\projects\codesearch-backend\data"
-)
-PORT = int(config("PORT", default=3000))
+ENV             = config("ENV", default="dev")
+CODESEARCH_DIR  = user_data_path()
+PORT            = int(config("PORT", default=3001))
 
 # JWT settings
 COWBOY_JWT_SECRET = config("DISPATCH_JWT_SECRET", default="")

@@ -3,6 +3,7 @@ from contextvars import ContextVar
 import os
 
 from fastapi import FastAPI, status
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -42,17 +43,6 @@ log = getLogger(__name__)
 
 STATIC_DIR = "build"
 
-app.mount(
-    "/static", StaticFiles(directory=os.path.join(STATIC_DIR, "static")))
-
-@app.get("/")
-def read_root():
-    with open(os.path.join(STATIC_DIR, "index.html"), 'r') as f:
-        content = f.read()
-        return HTMLResponse(content=content)
-
-
-
 async def not_found(request, exc):
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -73,8 +63,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount(
+    "/static", StaticFiles(directory=os.path.join(STATIC_DIR, "static")))
 
-
+@app.get("/")
+def read_root():
+    with open(os.path.join(STATIC_DIR, "index.html"), 'r') as f:
+        content = f.read()
+        return HTMLResponse(content=content)
 
 # def get_path_params_from_request(request: Request) -> str:
 #     path_params = {}
@@ -275,7 +271,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="localhost",
         port=PORT,
         # workers=2,
         # workers=calculate_workers(),

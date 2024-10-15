@@ -45,6 +45,7 @@ pylint = "^3.2.7"
 pytest = "^8.3.3"
 instructor = "~1"
 sqlalchemy-utils = "^0.41.2"
+platformdirs = "^4.3.6"
 
 
 [build-system]
