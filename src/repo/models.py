@@ -35,6 +35,8 @@ class Repo(Base):
     repo_size = Column(Integer)
     cluster_files = Column(ARRAY(String))
 
+    time = Column(Integer) # clone / indexing duration
+
     # Paths
     file_path = Column(String)
     graph_path = Column(String)

@@ -27,7 +27,7 @@ from .models import (
     SummarizedClusterResponse,
     repo_ident,
 )
-from .tasks import InitIndexGraphTask
+from .tasks import InitIndexGraphTask, IndexGraphResponse
 from .graph import get_or_create_chunk_graph
 
 import json
@@ -85,29 +85,32 @@ async def create_repo(
         repo_dst = REPOS_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
         save_graph_path = GRAPH_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
 
-        max_size = 10000000000 * 1.5  # size of aider
-        git_repo = GitRepo.clone_repo(repo_dst, repo_in.url, max_size, "Python")
-
         # TODO: add error logging
         task = InitIndexGraphTask(
             task_args={
+                "url": repo_in.url,
                 "repo_dst": repo_dst,
                 "index_persist_dir": index_persist_dir,
                 "save_graph_path": save_graph_path,
             }
         )
-        cg: ClusterGraph = enqueue_task_and_wait(
+
+        # TODO: add error handling
+        result = enqueue_task_and_wait(
             task_queue=task_queue, user_id=curr_user.id, task=task
         )
+
+        time = result.time
+        repo_result: IndexGraphResponse = result.result
+        cg = repo_result.cg
         cluster(cg)
 
         # TODO: should maybe turn this into task as well
         # would need asyncSession to perform db_updates though
-        lang, sz = git_repo.get_lang_and_size()
         repo = Repo(
             **repo_in.dict(),
-            language=lang,
-            repo_size=sz,
+            language=repo_result.lang,
+            repo_size=repo_result.size,
             file_path=str(repo_dst),
             index_path=str(index_persist_dir),
             graph_path=str(save_graph_path),
