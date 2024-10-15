@@ -8,9 +8,13 @@ from enum import Enum
 
 config = Config(".env")
 
-ENV             = config("ENV", default="dev")
-CODESEARCH_DIR  = user_data_path()
-PORT            = int(config("PORT", default=3001))
+ENV = config("ENV", default="dev")
+CODESEARCH_DIR = (
+    "/home/ubuntu"
+    if ENV == "release"
+    else r"C:\Users\jpeng\Documents\projects\codesearch-data"
+)
+PORT = int(config("PORT", default=3000))
 
 # JWT settings
 COWBOY_JWT_SECRET = config("DISPATCH_JWT_SECRET", default="")

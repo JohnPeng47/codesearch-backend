@@ -4,8 +4,6 @@ from llama_index.core.schema import BaseNode
 from typing import List, Tuple, Dict
 import os
 from collections import deque
-import json
-import yaml
 
 from rtfs.utils import dfs_json
 from rtfs.scope_resolution.capture_refs import capture_refs
@@ -13,9 +11,9 @@ from rtfs.scope_resolution.graph_types import ScopeID
 from rtfs.repo_resolution.repo_graph import RepoGraph, RepoNodeID, repo_node_id
 from rtfs.fs import RepoFs
 from rtfs.utils import TextRange
-from rtfs.graph import Node, CodeGraph
 
 from rtfs.models import OpenAIModel, BaseModel
+from rtfs.cluster.graph import ClusterGraph
 
 from .graph import (
     ChunkMetadata,
@@ -38,25 +36,20 @@ logger = logging.getLogger(__name__)
 
 
 # DESIGN_TODO: make a generic Graph object to handle add/update Node
-class ChunkGraph(CodeGraph):
+class ChunkGraph(ClusterGraph):
     def __init__(
         self,
         repo_path: Path,
-        g: MultiDiGraph,
+        graph: MultiDiGraph,
         cluster_roots=[],
-        cluster_depth=None,
     ):
-        super().__init__(node_types=[ChunkNode, ClusterNode])
+        super().__init__(graph=graph, repo_path=repo_path, cluster_roots=cluster_roots)
 
         self.fs = RepoFs(repo_path)
-        self._graph = g
         self._repo_graph = RepoGraph(repo_path)
         self._file2scope = defaultdict(set)
         self._chunkmap: Dict[Path, List[ChunkNode]] = defaultdict(list)
         self._lm: BaseModel = OpenAIModel()
-
-        self._cluster_roots = cluster_roots
-        self._cluster_depth = cluster_depth
 
     # TODO: design decisions
     # turn import => export mapping into a function
@@ -77,7 +70,21 @@ class ChunkGraph(CodeGraph):
         skipped_chunks = 0
 
         for i, chunk in enumerate(chunks, start=1):
-            metadata = ChunkMetadata(**chunk.metadata)
+            # print("Repopath: ", repo_path)
+            # print("Metadata fullpath: ", chunk.metadata["file_path"])
+            # print(
+            #     "Metadata relpath: ",
+            #     os.path.relpath(repo_path, chunk.metadata["file_path"]),
+            # )
+            # chunk.metadata["file_path"] = os.path.relpath(
+            #     chunk.metadata["file_path"], repo_path
+            # )
+            try:
+                metadata = ChunkMetadata(**chunk.metadata)
+            except TypeError as e:
+                print(f"Chunk error, skipping..: {e}")
+                continue
+
             if skip_tests and metadata.file_name.startswith("test_"):
                 skipped_chunks += 1
                 continue
@@ -93,11 +100,10 @@ class ChunkGraph(CodeGraph):
             cg.add_node(chunk_node)
             cg._chunkmap[Path(metadata.file_path)].append(chunk_node)
 
+        # TODO: figure out what's going on here with ell...
         # shouldnt really happen but ...
-        if len(chunk_names) != len(chunks) - skipped_chunks:
-            raise ValueError("Collision has occurred in chunk names")
-
-        print(len(cg.get_all_nodes()))
+        # if len(chunk_names) != len(chunks) - skipped_chunks:
+        #     raise ValueError("Collision has occurred in chunk names")
 
         # main loop to build graph
         for chunk_node in cg.get_all_nodes():
@@ -112,101 +118,11 @@ class ChunkGraph(CodeGraph):
 
         return cg
 
-    @classmethod
-    def from_json(cls, repo_path: Path, json_data: Dict):
-        cg = node_link_graph(json_data["link_data"])
-        for _, node_data in cg.nodes(data=True):
-            if "metadata" in node_data:
-                node_data["metadata"] = ChunkMetadata(**node_data["metadata"])
-
-        return cls(
-            repo_path,
-            cg,
-            cluster_roots=json_data["cluster_roots"],
-            cluster_depth=json_data["cluster_depth"],
-        )
-
-    def to_graph(self):
-        return self._graph
-
-    def to_json(self, file_path: Path):
-        """
-        Special custom node_link_data class to handle ChunkMetadata
-        """
-
-        def custom_node_link_data(G: MultiDiGraph):
-            data = {
-                "directed": G.is_directed(),
-                "multigraph": G.is_multigraph(),
-                "graph": G.graph,
-                "nodes": [],
-                "links": [],
-            }
-
-            for n, node_data in G.nodes(data=True):
-                node_dict = node_data.copy()
-                if "metadata" in node_dict and isinstance(
-                    node_dict["metadata"], ChunkMetadata
-                ):
-                    node_dict["metadata"] = node_dict["metadata"].to_json()
-
-                node_dict["id"] = n
-                data["nodes"].append(node_dict)
-
-            for u, v, edge_data in G.edges(data=True):
-                edge = edge_data.copy()
-                edge["source"] = u
-                edge["target"] = v
-                data["links"].append(edge)
-
-            return data
-
-        graph_dict = {}
-        graph_dict["cluster_depth"] = self._cluster_depth
-        graph_dict["cluster_roots"] = self._cluster_roots
-        graph_dict["link_data"] = custom_node_link_data(self._graph)
-
-        print("Writing saved graph to: ", file_path)
-
-        with open(file_path, "w") as f:
-            graph_json = json.dumps(graph_dict)
-            f.write(graph_json)
-
-    # def get_node(self, node_id: str) -> ChunkNode:
-    #     data = self._graph._node.get(node_id, None)
-    #     if not data:
-    #         return None
-
-    #     # BUG: hacky fix but for some reason node_link_data stores
-    #     # the data wihtout id
-    #     if data.get("id", None):
-    #         del data["id"]
-
-    #     if data["kind"] == NodeKind.Cluster:
-    #         node = ClusterNode(id=node_id, **data)
-    #     elif data["kind"] == NodeKind.Chunk:
-    #         node = ChunkNode(id=node_id, **data)
-
-    #     return node
-
-    def remove_node(self, node_id: str):
-        """
-        Remove a node from the graph by its ID.
-
-        Parameters:
-        node_id (str): The ID of the node to be removed.
-        """
-        if node_id in self._graph:
-            self._graph.remove_node(node_id)
-        else:
-            raise ValueError(f"Node with ID {node_id} does not exist in the graph.")
-
+    # TODO: confirm that node.filter_nodes({}) returns all nodes, then refactor this method
     def get_all_nodes(self) -> List[ChunkNode]:
         return [self.get_node(n) for n in self._graph.nodes]
 
-    def update_node(self, chunk_node: ChunkNode):
-        self.add_node(chunk_node)
-
+    # TODO: REST OF THIS CODE SHOULD BE INSIDE CLUSTER NODE
     # TODO: use this to build the call graph
     # find unique paths:
     # find all root nodes (no incoming edges)
@@ -251,7 +167,6 @@ class ChunkGraph(CodeGraph):
 
                 # differentiate between ImportToExport chunks and CallToExport chunks
                 # so in the future we can use this for file level edges
-                print("Adding edge: ", chunk_node.id, dst_chunk.id)
                 ref_edge = ImportEdge(src=chunk_node.id, dst=dst_chunk.id, ref=ref.name)
                 # print(f"Adding edge: {chunk_node.id} -> {dst_chunk.id}")
                 self.add_edge(ref_edge)
@@ -278,15 +193,15 @@ class ChunkGraph(CodeGraph):
                 return cluster_node
         return None
 
-    def children(self, node_id: str):
-        return [child for child, _ in self._graph.in_edges(node_id)]
+    # def children(self, node_id: str):
+    #     return [child for child, _ in self._graph.in_edges(node_id)]
 
-    # TODO: this only works for cluster nodes
-    def parent(self, node_id: str):
-        parents = [parent for _, parent in self._graph.out_edges(node_id)]
-        if parents:
-            return parents[0]
-        return None
+    # # TODO: this only works for cluster nodes
+    # def parent(self, node_id: str):
+    #     parents = [parent for _, parent in self._graph.out_edges(node_id)]
+    #     if parents:
+    #         return parents[0]
+    #     return None
 
     def get_clusters_at_depth(self, roots: List[ClusterNode], level):
         queue = deque([(root, 0) for root in roots])
@@ -316,33 +231,10 @@ class ChunkGraph(CodeGraph):
         roots = []
         for node in self._graph.nodes:
             if isinstance(self.get_node(node), ClusterNode):
-                if not self.parent(node):
+                if not self.parents(node)[0]:
                     roots.append(node)
 
         return roots
-
-    def cluster(self, alg: str = "infomap") -> Dict[ChunkNodeID, Tuple]:
-        """
-        Entry method for cluster construction on ChunkGraph
-        """
-        if alg == "infomap":
-            cluster_dict = cluster_infomap(self._graph)
-        else:
-            raise Exception(f"{alg} not supported")
-
-        print("Cluster dict: ")
-        print(json.dumps(cluster_dict, indent=4))
-
-        for chunk_node, cluster in cluster_dict.items():
-            if not self._graph.has_node(cluster):
-                self.add_node(ClusterNode(id=cluster))
-
-            cluster_edge = ClusterEdge(
-                src=chunk_node, dst=cluster, kind=ClusterEdgeKind.ChunkToCluster
-            )
-            self.add_edge(cluster_edge)
-
-        return cluster_dict
 
     # TODO: code quality degrades exponentially from this point forward .. dont look
     def get_chunks_attached_to_clusters(self):
@@ -382,13 +274,9 @@ class ChunkGraph(CodeGraph):
         return chunks_attached_to_clusters
 
     def _chunk_short_name(self, chunk_node: BaseNode, i: int) -> str:
-        # class_func = self._get_classes_and_funcs(
-        #     Path(chunk_node.metadata["file_path"]), head_scope
-        # )[0]
-
-        filename = "/".join(chunk_node.metadata["file_path"].split(os.sep)[-2:])
+        # take out the root path and only last two subdirectories
+        filename = "/".join(chunk_node.metadata["file_path"].split(os.sep)[1:-2])
         size = chunk_node.metadata["end_line"] - chunk_node.metadata["start_line"]
-        # return f"{filename}.{class_func}.{size}"
 
         return f"{filename}#{i}.{size}"
 
@@ -504,45 +392,6 @@ class ChunkGraph(CodeGraph):
                         cluster_node = self.get_node(child)
                         repr += f"  ClusterNode: {cluster_node.id}\n"
         return repr
-
-    def clusters_to_json(self):
-        def dfs_cluster(cluster_id, depth=0):
-            graph_json = {}
-
-            node_data = self._graph.nodes[cluster_id]
-
-            title = node_data.get("title", "<MISSING>")
-            key_variables = node_data.get("key_variables", [])[:4]
-            summary = node_data.get("summary", "MISSING")
-
-            graph_json["title"] = title
-            graph_json["key_variables"] = key_variables
-            graph_json["summary"] = summary
-            graph_json["chunks"] = []
-            graph_json["children"] = []
-
-            for child, _, edge_data in self._graph.in_edges(cluster_id, data=True):
-                if edge_data["kind"] == ClusterEdgeKind.ChunkToCluster:
-                    chunk_node = self.get_node(child)
-                    # TODO: change to include file name
-                    chunk_info = {
-                        "id": chunk_node.id,
-                        "og_id": chunk_node.og_id,
-                        "file_path": chunk_node.metadata.file_path.replace("\\", "/"),
-                    }
-                    graph_json["chunks"].append(chunk_info)
-
-                elif edge_data["kind"] == ClusterEdgeKind.ClusterToCluster:
-                    graph_json["children"].append(dfs_cluster(child, depth + 1))
-
-            return graph_json
-
-        graph_jsons = []
-        for node_id, node_data in self._graph.nodes(data=True):
-            if node_data["kind"] == "Cluster" and not self.parent(node_id):
-                graph_jsons.append(dfs_cluster(node_id))
-
-        return graph_jsons
 
     def clusters_to_str(self):
         INDENT_SYM = lambda d: "-" * d + " " if d > 0 else ""

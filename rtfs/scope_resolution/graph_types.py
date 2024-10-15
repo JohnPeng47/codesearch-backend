@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 from rtfs.graph import Node
 from rtfs.utils import TextRange
-import random
-import string
+
+from pydantic import Field
 
 
 class NodeKind(str, Enum):

@@ -1,4 +1,4 @@
-from networkx import DiGraph, dfs_postorder_nodes
+from networkx import DiGraph
 from typing import Dict, Optional, Iterator, List, NewType, Tuple
 from enum import Enum
 from collections import defaultdict
@@ -20,7 +20,7 @@ from rtfs.scope_resolution.interval_tree import IntervalGraph
 
 class ScopeGraph(CodeGraph):
     def __init__(self, range: TextRange):
-        super().__init__(node_types=[ScopeNode])
+        super().__init__(graph=DiGraph(), node_types=[ScopeNode])
 
         # TODO: put all this logic into a separate Graph class
         self._node_counter = 0

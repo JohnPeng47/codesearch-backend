@@ -1,12 +1,13 @@
 from src.auth.models import User
+from src.utils import rm_tree
 
 from .repository import GitRepo
 from .models import Repo
 
-import shutil
 from typing import List, Tuple
 from pathlib import Path
 from logging import getLogger
+import glob
 
 logger = getLogger(__name__)
 
@@ -48,11 +49,12 @@ def delete(*, db_session, curr_user: User, owner: str, repo_name: str) -> Repo:
         # if there is only one user of repo then delete the repo
         if len(repo.users) == 1:
             GitRepo.delete_repo(Path(repo.file_path))
-            shutil.rmtree(repo.graph_path, ignore_errors=True)
-            shutil.rmtree(repo.index_path, ignore_errors=True)
+            for g in glob.glob(f"{repo.graph_path}*"):
+                rm_tree(g)
 
+            rm_tree(repo.index_path)
             if repo.summary_path:
-                shutil.rmtree(repo.summary_path, ignore_errors=True)
+                rm_tree(repo.summary_path)
 
         return repo
     return None
@@ -62,8 +64,9 @@ def list_repos(*, db_session, curr_user: User) -> Tuple[List[Repo], List[Repo]]:
     """
     Lists all the repos on the user's frontpage
     """
-    recommended_repos = db_session.query(Repo).order_by(Repo.views.desc()).all()
+    recommended_repos = db_session.query(Repo).all()
     user_repos = db_session.query(Repo).filter(Repo.users.contains(curr_user)).all()
+
     return user_repos, recommended_repos
 
 

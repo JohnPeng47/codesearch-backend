@@ -1,0 +1,228 @@
+[
+  {
+    "title": "Crash Analysis and Debugging Utilities",
+    "key_variables": [
+      "CrashedBytes",
+      "BinDiff",
+      "GDBJob",
+      "GDBExecutor"
+    ],
+    "summary": "This code provides utilities to analyze crash dumps, execute gdb jobs, and determine the differences between parent and child crash states. It includes functionality to measure performance and handle exceptions related to crash analysis.",
+    "chunks": [
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#2.20",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_CrashedBytes_CrashedBytes.__init__.self_offset_self_modifie",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#6.15",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_BinDiff_BinDiff._dword_byte_pos.return.int_math_log_delta_2_",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#7.15",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_BinDiff._check_segfault_BinDiff._check_segfault.return.child_sgsev_parent_sgsev",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/crashwalk.py#20.50",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\crashwalk.py__usr_bin_python_CrashwalkError.pass",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/crashwalk.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/crashwalk.py#21.56",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\crashwalk.py__TODO_should_not_have_w_GDBJob.generate_exploitable.return.Exploitable_self_output_",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/crashwalk.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/utils.py#33.30",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\utils.py_GDBExecutor_if___name_____main___.pass",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/utils.py"
+      }
+    ],
+    "children": []
+  },
+  {
+    "title": "Fault Analysis and Crashing Offset Detection",
+    "key_variables": [
+      "CrashedBytes",
+      "get_crashing_offset",
+      "CustomThreadPoolExecutor",
+      "GDB_PROCS"
+    ],
+    "summary": "This feature involves analyzing modified file bytes to determine the specific offset causing program crashes by using a multithreaded approach.",
+    "chunks": [
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#3.46",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_CrashedBytes.get_crashing_offset_CrashedBytes.get_crashing_offset.return.offset_modified_bytes_p",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/utils.py#29.22",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\utils.py__multithread_stuff_CustomThreadPoolExecutor.shutdown.if_wait_.for_t_in_self__threads_.t_join_",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/utils.py"
+      }
+    ],
+    "children": []
+  },
+  {
+    "title": "Binary Differential Analysis",
+    "key_variables": [
+      "BinDiff",
+      "find_closest_ancestor",
+      "diff_crash",
+      "hex_str_to_int"
+    ],
+    "summary": "This set of codes is used for analyzing and comparing binary crash files to identify differences and relationships between them, particularly focusing on finding linear relationships in segmentation faults and identifying the closest ancestor crash files.",
+    "chunks": [
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#8.18",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_BinDiff._is_linear_BinDiff._is_linear.return.linearity_byte_pos",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#14.26",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_find_closest_ancestor_diff_crash.return.diff",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+      },
+      {
+        "id": "JohnPeng47_CrashOffsetFinder.git/utils.py#27.27",
+        "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\utils.py_os_add_bytes.return._a_b_256",
+        "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/utils.py"
+      }
+    ],
+    "children": []
+  },
+  {
+    "title": "Crash Analysis and Debugging",
+    "key_variables": [],
+    "summary": "",
+    "chunks": [],
+    "children": []
+  },
+  {
+    "title": "Crash Analysis and Debugging",
+    "key_variables": [],
+    "summary": "",
+    "chunks": [],
+    "children": [
+      {
+        "title": "Crash Analysis and Debugging Utilities",
+        "key_variables": [
+          "CrashedBytes",
+          "BinDiff",
+          "GDBJob",
+          "GDBExecutor"
+        ],
+        "summary": "This code provides utilities to analyze crash dumps, execute gdb jobs, and determine the differences between parent and child crash states. It includes functionality to measure performance and handle exceptions related to crash analysis.",
+        "chunks": [
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#2.20",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_CrashedBytes_CrashedBytes.__init__.self_offset_self_modifie",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#6.15",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_BinDiff_BinDiff._dword_byte_pos.return.int_math_log_delta_2_",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#7.15",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_BinDiff._check_segfault_BinDiff._check_segfault.return.child_sgsev_parent_sgsev",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/crashwalk.py#20.50",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\crashwalk.py__usr_bin_python_CrashwalkError.pass",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/crashwalk.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/crashwalk.py#21.56",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\crashwalk.py__TODO_should_not_have_w_GDBJob.generate_exploitable.return.Exploitable_self_output_",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/crashwalk.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/utils.py#33.30",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\utils.py_GDBExecutor_if___name_____main___.pass",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/utils.py"
+          }
+        ],
+        "children": []
+      },
+      {
+        "title": "Crash Analysis and Debugging",
+        "key_variables": [],
+        "summary": "",
+        "chunks": [],
+        "children": []
+      }
+    ]
+  },
+  {
+    "title": "Fault and Offset Detection",
+    "key_variables": [],
+    "summary": "",
+    "chunks": [],
+    "children": [
+      {
+        "title": "Fault Analysis and Crashing Offset Detection",
+        "key_variables": [
+          "CrashedBytes",
+          "get_crashing_offset",
+          "CustomThreadPoolExecutor",
+          "GDB_PROCS"
+        ],
+        "summary": "This feature involves analyzing modified file bytes to determine the specific offset causing program crashes by using a multithreaded approach.",
+        "chunks": [
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#3.46",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_CrashedBytes.get_crashing_offset_CrashedBytes.get_crashing_offset.return.offset_modified_bytes_p",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/utils.py#29.22",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\utils.py__multithread_stuff_CustomThreadPoolExecutor.shutdown.if_wait_.for_t_in_self__threads_.t_join_",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/utils.py"
+          }
+        ],
+        "children": []
+      }
+    ]
+  },
+  {
+    "title": "Binary File Analysis",
+    "key_variables": [],
+    "summary": "",
+    "chunks": [],
+    "children": [
+      {
+        "title": "Binary Differential Analysis",
+        "key_variables": [
+          "BinDiff",
+          "find_closest_ancestor",
+          "diff_crash",
+          "hex_str_to_int"
+        ],
+        "summary": "This set of codes is used for analyzing and comparing binary crash files to identify differences and relationships between them, particularly focusing on finding linear relationships in segmentation faults and identifying the closest ancestor crash files.",
+        "chunks": [
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#8.18",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_BinDiff._is_linear_BinDiff._is_linear.return.linearity_byte_pos",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/bin_diff.py#14.26",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\bin_diff.py_find_closest_ancestor_diff_crash.return.diff",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/bin_diff.py"
+          },
+          {
+            "id": "JohnPeng47_CrashOffsetFinder.git/utils.py#27.27",
+            "og_id": "C:\\Users\\jpeng\\Documents\\projects\\codesearch-backend\\data\\repo\\JohnPeng47_CrashOffsetFinder.git\\utils.py_os_add_bytes.return._a_b_256",
+            "file_path": "C:/Users/jpeng/Documents/projects/codesearch-backend/data/repo/JohnPeng47_CrashOffsetFinder.git/utils.py"
+          }
+        ],
+        "children": []
+      }
+    ]
+  }
+]

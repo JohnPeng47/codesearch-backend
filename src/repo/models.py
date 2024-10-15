@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, JSON, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, JSON, ForeignKey, Boolean, ARRAY
 from sqlalchemy.orm import relationship
 from pydantic import BaseModel, Field, root_validator, field_validator, model_validator
+
+from rtfs.summarize.summarize import SummarizedCluster, SummarizedChunk
 
 from src.models import RTFSBase
 from src.database.core import Base
@@ -9,11 +11,15 @@ from src.model_relations import user_repo
 import re
 from typing import List, Optional
 
+from .graph import GraphType
+
 
 def repo_ident(owner: str, repo_name: str):
     return f"{owner}_{repo_name}"
 
 
+# TODO: redefine all backend models using FastAPI SQLModel
+# create separate path objects for the file paths, especially graph_path
 class Repo(Base):
     """
     Stores configuration for a repository
@@ -27,6 +33,7 @@ class Repo(Base):
     url = Column(String)
     language = Column(String)
     repo_size = Column(Integer)
+    cluster_files = Column(ARRAY(String))
 
     # Paths
     file_path = Column(String)
@@ -104,22 +111,26 @@ class RepoCreate(BaseModel):
         return self
 
 
-class RepoGetRequest(BaseModel):
+# TODO: define this repoBase
+class RepoIdent(BaseModel):
     owner: str
     repo_name: str
 
 
-class RepoDeleteRequest(RepoGetRequest):
+class RepoResponse(RepoIdent):
     pass
 
 
-class RepoSummarizeRequest(RepoGetRequest):
+class RepoGetRequest(RepoIdent):
     pass
 
 
-class RepoResponse(RepoBase):
-    owner: str
-    repo_name: str
+class RepoSummaryRequest(RepoGetRequest):
+    graph_type: GraphType
+
+
+class SummarizedClusterResponse(BaseModel):
+    summarized_clusters: List[SummarizedCluster]
 
 
 class RepoListResponse(RTFSBase):

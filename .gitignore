@@ -65,3 +65,5 @@ log/*.log
 alembic.ini
 run
 data
+
+**/logdir

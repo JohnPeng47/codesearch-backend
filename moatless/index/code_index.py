@@ -1114,7 +1114,7 @@ class CodeIndex:
             )
 
             return {
-                "file_path": file_path,
+                "file_path": os.path.relpath(file_path, repo_path),
                 "file_name": os.path.basename(file_path),
                 "file_type": mimetypes.guess_type(file_path)[0],
                 "category": category,

@@ -1,10 +1,10 @@
 from .models import Task, TaskStatus
 
 from fastapi import Request
-from threading import Lock
+from threading import Lock, Event
 from collections import defaultdict
-from typing import List, Dict, Callable
-from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Callable, Any
+from concurrent.futures import ThreadPoolExecutor, Future
 
 
 class TaskQueue:
@@ -52,7 +52,36 @@ class TaskQueue:
             self.queue[user_id].append(task)
             self.executor.submit(self._execute_and_complete, task, user_id)
 
-    def _execute_and_complete(self, task: Task, user_id: int):
+    def put_and_wait(self, user_id: int, task: Task) -> Any:
+        with self._acquire_lock(user_id):
+            if task.status != TaskStatus.PENDING.value:
+                raise ValueError("Task must be in PENDING state to be added to queue")
+
+            self.queue[user_id].append(task)
+            completion_event = Event()
+            future = self.executor.submit(
+                self._execute_and_complete_with_event, task, user_id, completion_event
+            )
+
+        # Wait for the task to complete
+        completion_event.wait()
+
+        # Get the result or raise the exception if one occurred
+        try:
+            return future.result()
+        except Exception as e:
+            raise e
+
+    def _execute_and_complete_with_event(
+        self, task: Task, user_id: int, completion_event: Event
+    ) -> Any:
+        try:
+            result = self._execute_and_complete(task, user_id)
+            return result
+        finally:
+            completion_event.set()
+
+    def _execute_and_complete(self, task: Task, user_id: int) -> Any:
         with self._acquire_lock(user_id):
             task.status = TaskStatus.STARTED.value
 
@@ -60,15 +89,18 @@ class TaskQueue:
             print("Started task: ", task.task_id)
             task.result = task.task(**task.task_args)
             task.status = TaskStatus.COMPLETE.value
+            return task.result
         except Exception as e:
             print("Task failed with : ", e)
             task.result = str(e)
             task.status = TaskStatus.FAILED.value
-
-        with self._acquire_lock(user_id):
-            for i in range(len(self.queue[user_id])):
-                if self.queue[user_id][i].task_id == task.task_id:
-                    self.queue[user_id].pop(i)
+            raise e
+        finally:
+            with self._acquire_lock(user_id):
+                for i in range(len(self.queue[user_id])):
+                    if self.queue[user_id][i].task_id == task.task_id:
+                        self.queue[user_id].pop(i)
+                        break
 
     def get_all(self, user_id: int) -> List[Task]:
         if len(self.queue[user_id]) == 0:

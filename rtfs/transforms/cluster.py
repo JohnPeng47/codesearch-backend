@@ -14,16 +14,16 @@ from rtfs.graph import CodeGraph
 logger = getLogger(__name__)
 
 
-def cluster_infomap(digraph: nx.DiGraph) -> Dict[str, int]:
+def cluster_infomap(network: CodeGraph) -> Dict[str, int]:
     # Initialize Infomap
     infomap = Infomap("--seed 42 --two-level", silent=True)
 
     # Taking the first element of the tuple as the node id
-    node_id_map = {node: idx for idx, node in enumerate(digraph.nodes())}
+    node_id_map = {node: idx for idx, node in enumerate(network._graph.nodes())}
     reverse_node_id_map = {idx: node for node, idx in node_id_map.items()}
 
     # Add nodes and edges to Infomap using integer IDs
-    for edge in digraph.edges():
+    for edge in network._graph.edges():
         infomap.addLink(node_id_map[edge[0]], node_id_map[edge[1]])
 
     # Run Infomap clustering

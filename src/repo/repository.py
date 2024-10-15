@@ -13,11 +13,11 @@ from typing import List, Union, Tuple, Dict
 from pydantic import BaseModel
 import dotenv
 
-from src.repo.extensions import EXTENSIONS
+from src.utils import rm_tree
+from src.repo.extensions import EXTTOFILE, FILETOEXT
 
 dotenv.load_dotenv()
-
-log = getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class NoRemoteException(Exception):
@@ -29,6 +29,10 @@ class NoMainBranch(Exception):
 
 
 class PrivateRepoError(Exception):
+    pass
+
+
+class RepoSizeExceededError(Exception):
     pass
 
 
@@ -93,20 +97,40 @@ class GitRepo:
         self.branch_prefix = "cowboy_"
 
     @classmethod
-    def clone_repo(cls, clone_dst: Path, url: str) -> "GitRepo":
+    def clone_repo(
+        cls, clone_dst: Path, url: str, max_size: int, language: str
+    ) -> "GitRepo":
         """
         Creates a clone of the repo locally
         """
         if not os.path.exists(clone_dst):
             os.makedirs(clone_dst)
         try:
-            Repo.clone_from(url, clone_dst)
+            # Clone with depth 1 to only get the latest commit
+            temp_repo = Repo.clone_from(url, clone_dst, depth=1)
+
+            # Check repo size
+            repo_size = sum(
+                blob.size
+                for blob in temp_repo.tree().traverse()
+                if blob.path.endswith(FILETOEXT[language])
+            )
+            if repo_size > max_size:
+                logger.error(
+                    f"Repo: {url} size {repo_size} exceeds maximum allowed size {max_size}, diff => {repo_size - max_size}"
+                )
+
+                raise RepoSizeExceededError(
+                    f"Repo size {repo_size} exceeds maximum allowed size {max_size}"
+                )
+
+            # If size is okay, fetch the full repo
+            temp_repo.git.fetch("--unshallow")
 
             return cls(clone_dst)
         except GitCommandError as e:
             if "Permission denied (publickey)." in str(e):
                 raise PrivateRepoError
-
             raise e
 
     @classmethod
@@ -120,6 +144,7 @@ class GitRepo:
             return
 
         if platform.system() == "Windows":
+            # rm_tree(str(repo_dst))
             shutil.rmtree(repo_dst, onerror=del_file)
         else:
             shutil.rmtree(repo_dst)
@@ -156,7 +181,7 @@ class GitRepo:
 
         content_dict = self.to_json()
         for file_path, content in content_dict.items():
-            for ext, language in EXTENSIONS.items():
+            for ext, language in EXTTOFILE.items():
                 if language == "JSON":
                     continue
                 if file_path.endswith(ext) and len(content) > max_content_length:
@@ -346,11 +371,11 @@ class GitRepo:
             self.push(branch_name=branch_name)
             origin_url = self.origin.url.replace(".git", "")
         except Exception as e:
-            log.error(f"Exception in {self.repo_name}: {str(e)}")
+            logger.error(f"Exception in {self.repo_name}: {str(e)}")
             pass
         finally:
             self.checkout(self.main)
-            log.info(f"Resetting to branch {self.main}")
+            logger.info(f"Resetting to branch {self.main}")
 
         # url for branch merge request
         return f"{origin_url}/compare/{self.main}...{self.username}:{self.repo_name}:{branch_name}?expand=1"
@@ -418,7 +443,7 @@ class PatchFileContext:
                 self.repo.reverse_patch(self.patch)
 
         except GitCommandError as e:
-            log.info(f"Error reversing patch")
+            logger.info(f"Error reversing patch")
             raise PatchApplyExcepion(e)
 
 
