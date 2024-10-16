@@ -84,6 +84,9 @@ class SummaryChunk(CodeChunk, ClusterInput):
 
     def get_content(self) -> str:
         return self.summary
+    
+    def get_filecontent(self) -> str:
+        return self.content
 
 class ClusteredTopic(BaseModel):
     """Output of the clustering algorithm"""

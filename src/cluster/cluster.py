@@ -75,7 +75,7 @@ def _calculate_clustered_range(matched_indices, length):
 
 # TODO: need to add way to dedup chunks -> wait but we want overlapping clusters though
 # Should track how good we are at tracking faraway chunks
-def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 3) -> List[ClusteredTopic]:
+def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -> List[ClusteredTopic]:
     new_clusters = []
 
     # need sensible name because its easier for LLm to track
@@ -115,11 +115,13 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 3) -
             except KeyError as e:
                 print(f"Chunk Name: {g_chunk_name} hallucinated, skipping...")
                 continue
-            
+
             new_clusters.append(
                 ClusteredTopic(
                     name=g_cluster.name, 
-                    chunks=chunks
+                    # yep, gotta convert pydantic to dict before it accepts it
+                    # as a valid input ...
+                    chunks=[chunk.dict() for chunk in chunks]
                 ))
         
         print(f"Unclassified chunks, iter:[{i}]: ", len(unsorted_names))
@@ -133,7 +135,7 @@ def generate_full_code_clusters(repo_path: Path) -> List[ClusteredTopic]:
 
 
 def generate_summarized_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = chunk_repo(repo_path, mode="partial", exclusions=EXCLUSIONS)
+    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
 
     return _generate_llm_clusters(
         [
