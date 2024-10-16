@@ -100,7 +100,7 @@ class RepoCreate(BaseModel):
     def extract_info(self) -> "RepoCreate":
         if self.owner is None or self.repo_name is None:
             match = re.match(
-                r"(?:https?://github\.com/|git@github\.com:)([\w.-]+)/([\w.-]+)(?:\.git)?$",
+                r"(?:https?://github\.com/|git@github\.com:)([\w.-]+)/([\w.-]+?)(?:\.git)?$",
                 self.url,
             )
 

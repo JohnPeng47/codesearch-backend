@@ -9,8 +9,14 @@ from src.index.service import get_or_create_index
 from src.queue.service import enqueue_task, enqueue_task_and_wait
 from src.exceptions import ClientActionException
 from src.models import HTTPSuccess
-from src.config import REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT, ENV
-
+from src.config import (
+    REPOS_ROOT, 
+    INDEX_ROOT, 
+    GRAPH_ROOT, 
+    ENV, 
+    GITHUB_API_TOKEN,
+    REPO_MAX_SIZE_MB
+)
 from rtfs.summarize.summarize import Summarizer
 from rtfs.transforms.cluster import cluster
 from rtfs.cluster.graph import ClusterGraph
@@ -29,9 +35,9 @@ from .models import (
 )
 from .tasks import InitIndexGraphTask, IndexGraphResponse
 from .graph import get_or_create_chunk_graph
+from .utils import get_repo_size, http_to_ssh, get_repo_main_language
 
 import json
-import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pathlib import Path
@@ -40,17 +46,11 @@ from logging import getLogger
 
 logger = getLogger(__name__)
 
-
 repo_router = APIRouter()
 
-
-def http_to_ssh(url):
-    """Convert HTTP(S) URL to SSH URL."""
-    match = re.match(r"https?://(?:www\.)?github\.com/(.+)/(.+)\.git", url)
-    if match:
-        return f"git@github.com:{match.group(1)}/{match.group(2)}.git"
-    return url  # Return original if not a GitHub HTTP(S) URL
-
+SUPPORTED_LANGS = [
+    "python"
+]
 
 # TODO: rewrite repo using class based approach and set the path
 # as methods
@@ -84,7 +84,19 @@ async def create_repo(
         index_persist_dir = INDEX_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
         repo_dst = REPOS_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
         save_graph_path = GRAPH_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
+        
+        language = get_repo_main_language(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN)
+        if language.lower() not in SUPPORTED_LANGS:
+            raise ClientActionException(
+                message=f"Language {language} not supported. Supported languages: {SUPPORTED_LANGS}"
+            )
 
+        repo_size = get_repo_size(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN) 
+        if repo_size > REPO_MAX_SIZE_MB:
+            raise RepoSizeExceededError(
+                f"Repository size exceeded limit. Please try a smaller repository. Size: {repo_size:.2f} MB"
+            )
+                
         # TODO: add error logging
         task = InitIndexGraphTask(
             task_args={
@@ -99,9 +111,9 @@ async def create_repo(
         result = enqueue_task_and_wait(
             task_queue=task_queue, user_id=curr_user.id, task=task
         )
-
         time = result.time
         repo_result: IndexGraphResponse = result.result
+
         cg = repo_result.cg
         cluster(cg)
 
@@ -116,6 +128,7 @@ async def create_repo(
             graph_path=str(save_graph_path),
             users=[curr_user],
             cluster_files=cg.get_chunk_files(),
+            time=time,
         )
 
         db_session.add(repo)
@@ -128,11 +141,10 @@ async def create_repo(
     except RepoSizeExceededError as e:
         raise ClientActionException(
             message="Repository size exceeded limit. Please try a smaller repository.",
-            ex=e,
         )
 
     except PrivateRepoError as e:
-        raise ClientActionException(message="Private repo not yet supported", ex=e)
+        raise ClientActionException(message="Private repo not yet supported")
 
     # TODO: think
     except Exception as e:

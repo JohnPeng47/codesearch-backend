@@ -76,3 +76,10 @@ def get_repo_contents(*, db_session, curr_user: User, repo_name: str) -> Repo:
     """
     repo = get_repo(db_session=db_session, curr_user=curr_user, repo_name=repo_name)
     return GitRepo(repo.file_path).to_json()
+
+
+def predict_time_to_index(*, db_session) -> int:
+    """
+    Predicts the time it will take to index a repo
+    """
+    repo = db_session.query(Repo).all()

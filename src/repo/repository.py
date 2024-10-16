@@ -98,7 +98,7 @@ class GitRepo:
 
     @classmethod
     def clone_repo(
-        cls, clone_dst: Path, url: str, max_size: int, language: str
+        cls, clone_dst: Path, url: str
     ) -> "GitRepo":
         """
         Creates a clone of the repo locally
@@ -106,27 +106,7 @@ class GitRepo:
         if not os.path.exists(clone_dst):
             os.makedirs(clone_dst)
         try:
-            # Clone with depth 1 to only get the latest commit
-            temp_repo = Repo.clone_from(url, clone_dst, depth=1)
-
-            # Check repo size
-            repo_size = sum(
-                blob.size
-                for blob in temp_repo.tree().traverse()
-                if blob.path.endswith(FILETOEXT[language])
-            )
-            if repo_size > max_size:
-                logger.error(
-                    f"Repo: {url} size {repo_size} exceeds maximum allowed size {max_size}, diff => {repo_size - max_size}"
-                )
-
-                raise RepoSizeExceededError(
-                    f"Repo size {repo_size} exceeds maximum allowed size {max_size}"
-                )
-
-            # If size is okay, fetch the full repo
-            temp_repo.git.fetch("--unshallow")
-
+            Repo.clone_from(url, clone_dst)
             return cls(clone_dst)
         except GitCommandError as e:
             if "Permission denied (publickey)." in str(e):
@@ -181,8 +161,10 @@ class GitRepo:
 
         content_dict = self.to_json()
         for file_path, content in content_dict.items():
-            for ext, language in EXTTOFILE.items():
-                if language == "JSON":
+            for ext, language in [(ext, language.lower()) 
+                                  for ext, language in EXTTOFILE.items()]:
+                
+                if language in ["json", "txt", "md", "csv"]:
                     continue
                 if file_path.endswith(ext) and len(content) > max_content_length:
                     max_content_length = len(content)

@@ -32,12 +32,16 @@ class InitIndexGraphTask(Task):
         save_graph_path,
         graph_type=GraphType.STANDARD
     ) -> IndexGraphResponse:
-        max_size = 10000000000 * 1.5  # size of aider
-        git_repo = GitRepo.clone_repo(repo_dst, url, max_size, "Python")
+        print(f"Cloning repo {url} ...")
+        git_repo = GitRepo.clone_repo(repo_dst, url)
+        
+        print(f"Finished cloning starting indexing {url} ...")
         code_index = get_or_create_index(
             str(repo_dst),
             str(index_persist_dir),
         )
+
+        print("Creating graph ...")
         cg = get_or_create_chunk_graph(
             code_index, repo_dst, save_graph_path, graph_type
         )

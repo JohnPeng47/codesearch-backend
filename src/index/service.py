@@ -1,18 +1,8 @@
 import os
-from typing import Dict
 
 from moatless.index import CodeIndex
 from moatless.index.settings import IndexSettings
 from moatless import FileRepository
-from moatless.index.epic_split import EpicSplitter
-
-import os
-import fnmatch
-import mimetypes
-from typing import Dict, List
-from pathlib import Path
-
-from llama_index.core import SimpleDirectoryReader
 
 
 def get_or_create_index(repo_path: str, persist_dir: str):

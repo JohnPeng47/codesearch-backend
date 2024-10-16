@@ -55,22 +55,6 @@ def read_root():
 NO_DB_PATHS = ["/task/get"]
 
 
-# class LogfireLogUser(BaseHTTPMiddleware):
-#     async def dispatch(self, request: Request, call_next):
-#         try:
-#             # we have to skip requests with x-task-auth or else logfire will log an exception for this
-#             # request when it tries to acces request.state.db
-#             if not request.headers.get("x-task-auth", None):
-#                 with logfire.span("request"):
-#                     user = get_current_user(request)
-#                     logfire.info("{user}", user=user.email)
-#         except AttributeError as e:
-#             pass
-#         finally:
-#             response = await call_next(request)
-#             return response
-
-
 app.add_middleware(ExceptionMiddleware)
 app.add_middleware(DBMiddleware)
 app.add_middleware(AddTaskQueueMiddleware)
@@ -125,7 +109,7 @@ if __name__ == "__main__":
         port=PORT,
         # workers=2,
         # workers=calculate_workers(),
-        # reload=True,
+        reload=True,
         # reload_excludes=["data"],
         # log_config=config,
     )
