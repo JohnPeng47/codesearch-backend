@@ -73,7 +73,7 @@ def _calculate_clustered_range(matched_indices, length):
     """Measures how wide the range of the clustered chunks are"""
     pass
 
-# TODO: need to add way to dedup chunks
+# TODO: need to add way to dedup chunks -> wait but we want overlapping clusters though
 # Should track how good we are at tracking faraway chunks
 def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 3) -> List[ClusteredTopic]:
     new_clusters = []
@@ -89,29 +89,38 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 3) -
         output = generate_clusters(cluster_inputs, unsorted_names)
         # TODO: add structured parsing support to ell
         parsed = get_attrs_or_key(output, "parsed")
-        clusters = LMClusteredTopicList.parse_obj(parsed).topics
-        if not isinstance(clusters, list):
-            raise LLMException(f"Failed to generate list: {clusters}")
+        g_clusters = LMClusteredTopicList.parse_obj(parsed).topics # generated clusters
+        if not isinstance(g_clusters, list):
+            raise LLMException(f"Failed to generate list: {g_clusters}")
         
         # calculate the clustered range
         # NOTE: chunk_name != chunk.id, former is for LLM, later is for us
-        matched_indices = [i for cluster in clusters for i, chunk in enumerate(unsorted_names) 
+        matched_indices = [i for cluster in g_clusters for i, chunk in enumerate(unsorted_names) 
                            if chunk in cluster.chunks]
         _calculate_clustered_range(matched_indices, len(unsorted_names))
-
-        # convert LMClusteredTopic to ClusteredTopic
-        for cluster in clusters:
-            new_clusters.append(
-                ClusteredTopic(
-                    name=cluster.name, 
-                    chunks=[name_to_chunk[chunk_name] for chunk_name in cluster.chunks]
-                ))
 
         # remove chunks that have already been clustered
         cluster_inputs = [chunk for i, chunk in enumerate(cluster_inputs) 
                           if i not in matched_indices]
         unsorted_names = [chunk_name for i, chunk_name in enumerate(unsorted_names)
                           if i not in matched_indices]
+
+        # convert LMClusteredTopic to ClusteredTopic
+        for g_cluster in g_clusters:
+            chunks = []
+            # in case of hallucinating chunk name
+            try:
+                for g_chunk_name in g_cluster.chunks:
+                    chunks.append(name_to_chunk[g_chunk_name])
+            except KeyError as e:
+                print(f"Chunk Name: {g_chunk_name} hallucinated, skipping...")
+                continue
+            
+            new_clusters.append(
+                ClusteredTopic(
+                    name=g_cluster.name, 
+                    chunks=chunks
+                ))
         
         print(f"Unclassified chunks, iter:[{i}]: ", len(unsorted_names))
 
