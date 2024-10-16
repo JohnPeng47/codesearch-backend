@@ -62,6 +62,7 @@ async def create_repo(
     curr_user: User = Depends(get_current_user),
     task_queue: TaskQueue = Depends(get_queue),
 ):
+    print('Repo: ', repo_in.owner, repo_in.repo_name)
     try:
         existing_repo = get_repo(
             db_session=db_session,
@@ -133,6 +134,7 @@ async def create_repo(
 
     # TODO: think
     except Exception as e:
+        print("Error: ", e)
         db_session.rollback()
 
         GitRepo.delete_repo(repo_dst)

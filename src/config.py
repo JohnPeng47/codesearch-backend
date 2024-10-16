@@ -1,8 +1,7 @@
 from starlette.config import Config
+from urllib.parse import urljoin
+import os
 from pathlib import Path
-
-from platformdirs import user_data_path
-
 
 from enum import Enum
 
@@ -10,7 +9,7 @@ config = Config(".env")
 
 ENV = config("ENV", default="dev")
 CODESEARCH_DIR = (
-    "/home/ubuntu"
+    "/home/ubuntu/codesearch-data"
     if ENV == "release"
     else r"C:\Users\jpeng\Documents\projects\codesearch-data"
 )
@@ -24,11 +23,9 @@ COWBOY_JWT_EXP = config("DISPATCH_JWT_EXP", cast=int, default=308790000)  # Seco
 COWBOY_OPENAI_API_KEY = config("OPENAI_API_KEY")
 
 DB_PASS = config("DB_PASS")
-SQLALCHEMY_DATABASE_URI = (
-    f"postgresql://postgres:{DB_PASS}@127.0.0.1:5432/codesearch"
-    if ENV == "release"
-    else f"postgresql://postgres:{DB_PASS}@{config('DB_URL')}:5432/codesearch"
-)
+DB_USER = config("POSTGRES_USER")
+SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASS}@{config('POSTGRES_REMOTE_IP')}:{config('POSTGRES_PORT')}/{config('POSTGRES_DB')}"
+
 SQLALCHEMY_ENGINE_POOL_SIZE = 50
 
 ALEMBIC_INI_PATH = "."

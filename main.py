@@ -125,7 +125,7 @@ if __name__ == "__main__":
         port=PORT,
         # workers=2,
         # workers=calculate_workers(),
-        # reload=True,
+        reload=True,
         # reload_excludes=["data"],
         # log_config=config,
     )
