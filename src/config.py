@@ -41,6 +41,12 @@ REPOS_ROOT = Path(CODESEARCH_DIR) / "repo"
 INDEX_ROOT = Path(CODESEARCH_DIR) / "index"
 GRAPH_ROOT = Path(CODESEARCH_DIR) / "graphs"
 SUMMARIES_ROOT = Path(CODESEARCH_DIR) / "summaries"
+GITHUB_API_TOKEN = config("GITHUB_API_TOKEN")
+REPO_MAX_SIZE_MB = 80
+
+SUPPORTED_LANGS = [
+    "python"
+]
 
 AWS_REGION = "us-east-2"
 ANON_LOGIN = True

@@ -10,6 +10,7 @@ from rtfs.summarize.summarize import Summarizer
 from rtfs.transforms.cluster import cluster
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.aider_graph.aider_graph import AiderGraph
+from rtfs.cluster.graph import ClusterGraph
 from src.utils import rm_tree
 
 from logging import getLogger
@@ -24,7 +25,7 @@ class GraphType(str, Enum):
 
 def get_or_create_chunk_graph(
     code_index: CodeIndex, repo_path: str, graph_path: str, type: GraphType
-):
+) -> ClusterGraph:
     graph_path = f"{graph_path}_{type}.json"
     nodes = code_index._docstore.docs.values()
     try:

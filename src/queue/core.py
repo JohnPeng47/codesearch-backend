@@ -1,11 +1,16 @@
 from .models import Task, TaskStatus
 
+from pydantic import BaseModel
 from fastapi import Request
 from threading import Lock, Event
 from collections import defaultdict
 from typing import List, Dict, Callable, Any
+import time
 from concurrent.futures import ThreadPoolExecutor, Future
 
+class TaskResult(BaseModel):
+    result: Any
+    time: float
 
 class TaskQueue:
     """
@@ -52,13 +57,14 @@ class TaskQueue:
             self.queue[user_id].append(task)
             self.executor.submit(self._execute_and_complete, task, user_id)
 
-    def put_and_wait(self, user_id: int, task: Task) -> Any:
+    def put_and_wait(self, user_id: int, task: Task) -> TaskResult:
         with self._acquire_lock(user_id):
             if task.status != TaskStatus.PENDING.value:
                 raise ValueError("Task must be in PENDING state to be added to queue")
 
             self.queue[user_id].append(task)
             completion_event = Event()
+            start_time = time.time()
             future = self.executor.submit(
                 self._execute_and_complete_with_event, task, user_id, completion_event
             )
@@ -68,7 +74,9 @@ class TaskQueue:
 
         # Get the result or raise the exception if one occurred
         try:
-            return future.result()
+            result = future.result()
+            execution_time = time.time() - start_time
+            return TaskResult(result=result, time=execution_time)
         except Exception as e:
             raise e
 

@@ -35,6 +35,8 @@ class Repo(Base):
     repo_size = Column(Integer)
     cluster_files = Column(ARRAY(String))
 
+    time = Column(Integer) # clone / indexing duration
+
     # Paths
     file_path = Column(String)
     graph_path = Column(String)
@@ -90,24 +92,22 @@ class RepoCreate(BaseModel):
         
         return v
 
-    @model_validator(mode='after')
-    def extract_info(self) -> 'RepoCreate':
-        http_match = re.match(r"^https?://github\.com/([\w.-]+)/([\w.-]+)$", self.url)
-        ssh_match = re.match(r"^git@github\.com:([\w.-]+)/([\w.-]+)(?:\.git)?$", self.url)
-        
-        if http_match:
-            owner, repo_name = http_match.groups()
-        elif ssh_match:
-            owner, repo_name = ssh_match.groups()
-        else:
-            raise ValueError(
-                "Invalid GitHub URL format. Must be either HTTP(S) or SSH form."
+    @model_validator(mode="after")
+    def extract_info(self) -> "RepoCreate":
+        if self.owner is None or self.repo_name is None:
+            match = re.match(
+                r"(?:https?://github\.com/|git@github\.com:)([\w.-]+)/([\w.-]+?)(?:\.git)?$",
+                self.url,
             )
 
-        self.owner = owner
-        self.repo_name = repo_name
+            if match:
+                self.owner = self.owner or match.group(1)
+                self.repo_name = self.repo_name or match.group(2)
+            else:
+                raise ValueError("Could not extract owner and repo_name from URL")
 
         return self
+    
 # TODO: define this repoBase
 class RepoIdent(BaseModel):
     owner: str
