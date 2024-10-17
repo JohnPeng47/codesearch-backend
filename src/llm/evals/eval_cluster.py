@@ -1,7 +1,5 @@
 from typing import List, Optional, Tuple
-from pathlib import Path
 from pydantic import BaseModel, field_validator
-from enum import Enum
 
 from src.cluster.types import ClusteredTopic
 from src.cluster.cluster import (
@@ -13,6 +11,8 @@ from src.cluster.cluster import (
 
 from openai import OpenAI
 from pydantic import BaseModel, Field
+
+from .utils import EvalReport
 
 CLUSTER_METHODS = {
     "FULL_CODE": generate_full_code_clusters,
@@ -105,66 +105,66 @@ Evaluate the coherence and output your rating.
     return response.choices[0].message.parsed.rating
 
 
+# TODO: make a log_report object with add_section() method
 def eval_coherence_clusters(clusters: List[ClusteredTopic], 
                             iters: int,
-                            min_chunks: int = 4,
-                            output_file: str = "") -> List[int]:
-    
-    # need this for notebook rel path :(
-    COHERENCE_LOG = Path(r"C:\Users\jpeng\Documents\projects\codesearch-backend\src\llm\evals") / "log" / "coherence"
+                            eval_name: str,
+                            min_chunks: int = 4) -> List[int]:
+    log_output = EvalReport(eval_name)
     to_eval = [cluster for cluster in clusters if len(cluster.chunks) >= min_chunks]
-    scores = []
+    if not to_eval:
+        NO_CLUSTERS_MSG = f"No clusters found matching min_chunks requirement for {eval_name}, exiting..."
+        log_output.add_line(NO_CLUSTERS_MSG)
+        print(NO_CLUSTERS_MSG)
+        return
 
+    log_output = EvalReport(eval_name)
+    scores = []
     for _ in range(iters):
         eval_i_scores = []
-        for i, eval_cluster in enumerate(to_eval):
+        for eval_cluster in to_eval:
             eval_i_scores.append(eval_coherence_single(eval_cluster))
         scores.append(eval_i_scores)
 
-    # calculate estimated variance of a single cluster across iterations        
-    if iters > 1:
-        cluster_scores = [[] for _ in range(len(to_eval))]
-        for i in range(iters):
-            for j in range(len(to_eval)):
-                cluster_scores[j].append(scores[i][j])
-        
-        cluster_variances = []
-        for j, s in enumerate(cluster_scores):
-            mean = sum(s) / len(s)
-            variance = sum((x - mean) ** 2 for x in s) / len(s)
-            cluster_variances.append(variance)
-            print(f"Cluster {j} variance: {variance}")
-        
-    if output_file:
-        with open(COHERENCE_LOG / output_file, "w") as f:
-            # LEARN: zip(*scores) is a way to transpose a list of lists
-            total_scores = [(c_index, agg_score) for c_index, agg_score in 
-                            enumerate([sum(score)/len(score) for score in zip(*scores)])]
-            total_scores = sorted(total_scores, key=lambda x: x[1], reverse=True)
-            clusters_n_scores = [(to_eval[index], score) for index, score in total_scores]
+    # LEARN: zip(*scores) is a way to transpose a list of lists
+    # calculate estimated variance of a single cluster across iterations 
+    cluster_scores = [c_scores for c_scores in zip(*scores)]
+    if iters > 1:        
+        for j, c_scores in enumerate(cluster_scores):
+            mean = sum(c_scores) / len(c_scores)
+            variance = sum((x - mean) ** 2 for x in c_scores) / len(c_scores)
+            log_output.add_section(f"Cluster Variance")
+            log_output.add_line(f"Cluster {j} variance: {variance}")
 
-            for cluster, score in clusters_n_scores:
-                f.write(f"Score: {score}\n")
-                f.write(f"Cluster name: {cluster.name}\n")
-                f.write(f"{cluster}\n")
-                f.write("\n")
+    mean_cluster_scores = [(c_index, agg_score) for c_index, agg_score in 
+                    enumerate([sum(score)/len(score) for score in cluster_scores])]
+    mean_cluster_scores = sorted(mean_cluster_scores, key=lambda x: x[1], reverse=True)
 
-            # TODO: code not run before, not sure working
-            # Take the higest and lowest coherence scores and the index into
-            # clusters from to_eval
-            # total_scores = [(c_index, agg_score) for c_index, agg_score in 
-            #                 enumerate([sum(score)/iters for score in scores])]
-            # total_scores = sorted(total_scores, key=lambda x: x[1], reverse=True)
-            # top_scores = total_scores[:4]
-            # bottom_scores = total_scores[-4:]
-            
-            # chunks_n_scores = [(to_eval[index], score) for index, score in top_scores + bottom_scores]
-            # for chunk, score in chunks_n_scores:
-            #     f.write(f"Coherence score: ")
+    clusters_n_scores = [(to_eval[index], score) for index, score in mean_cluster_scores]
+    for cluster, score in clusters_n_scores:
+        log_output.add_section(f"Cluster Coherence")
+        log_output.add_line(f"Score: {score}")
+        log_output.add_line(f"Cluster name: {cluster.name}")
+        log_output.add_line(f"{cluster}")
+
+    # TODO: code not run before, not sure working
+    # Take the higest and lowest coherence scores and the index into
+    # clusters from to_eval
+    # total_scores = [(c_index, agg_score) for c_index, agg_score in 
+    #                 enumerate([sum(score)/iters for score in scores])]
+    # total_scores = sorted(total_scores, key=lambda x: x[1], reverse=True)
+    # top_scores = total_scores[:4]
+    # bottom_scores = total_scores[-4:]
     
-    total_score = sum(sum(iter_score) / len(to_eval) for iter_score in scores) / iters
-    return total_score
+    # chunks_n_scores = [(to_eval[index], score) for index, score in top_scores + bottom_scores]
+    # for chunk, score in chunks_n_scores:
+    #     f.write(f"Coherence score: ")
 
+    total_score = sum(sum(iter_score) / len(to_eval) for iter_score in scores) / iters
+    log_output.add_line(f"Total coherence score: {total_score}")
+    log_output.write("coherence", subfolder=f"coherence/{eval_name}")
+
+    return total_score
 
 def eval_clusters_metrics(repo_path, iters: int = 1):
     # Generate clusters

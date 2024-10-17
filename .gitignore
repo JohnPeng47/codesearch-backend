@@ -67,3 +67,5 @@ run
 data
 
 **/logdir
+src/llm/evals/log
+profile.out
