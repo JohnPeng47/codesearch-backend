@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from enum import Enum
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from moatless.types import MoatlessChunkID
 
@@ -30,14 +31,20 @@ class CodeChunk(BaseModel, ClusterInput):
     
     def get_chunkinfo(self) -> str:
         return  (
-            f"Filename: {self.filepath}\n" if self.filepath else ""
+            f"Filename: {self.short_fn()}\n" if self.filepath else ""
         )
+
+    def short_fn(self) -> str:
+        return "/".join(Path(self.filepath).parts[-3:])
 
     def get_content(self) -> str:
         return self.content
 
     def __hash__(self) -> int:
         return hash(self.id)
+    
+    def __str__(self) -> str:
+        return self.get_chunkinfo() + "\n" + self.get_content()
     
 class CodeType(str, Enum):
     LOGIC = "logic"

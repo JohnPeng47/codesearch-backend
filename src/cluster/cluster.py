@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import List
 import ell
+import random
 
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.aider_graph.aider_graph import AiderGraph
@@ -154,15 +155,29 @@ def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
 
     return [
         ClusteredTopic(
-            name="random",
+            name="Graph Cluster",
             chunks=[
                 CodeChunk(
                     id=chunk.og_id,
                     content=chunk.content,
                     filepath=chunk.file_path,
                     input_type=ClusterInputType.CHUNK
-                ) for chunk in cluster.chunks
+                ).dict() for chunk in cluster.chunks
             ],
         ) 
         for cluster in cg.get_clusters()
     ]
+
+
+def generate_random_clusters(repo_path: Path, size: int = 4, num_clusters: int = 4) -> List[ClusteredTopic]:
+    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
+
+    return [
+        ClusteredTopic(
+            name=f"Random {i}",
+            chunks=[
+                chunk.dict() for chunk in random.sample(chunks, size)
+            ],
+        )
+        for i in range(num_clusters)
+    ] 
