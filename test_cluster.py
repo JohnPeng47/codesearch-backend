@@ -1,14 +1,15 @@
 from src.cluster.cluster import (
     generate_full_code_clusters, 
     generate_graph_clusters, 
-    generate_summarized_clusters
+    generate_summarized_clusters,
+    generate_random_clusters
 )
 from src.llm.evals.eval_cluster import eval_clusters_metrics, eval_coherence_clusters
 from src.llm.evals.utils import EvalReport
 
 from pathlib import Path
 
-repo_name = "CrashOffsetFinder"
+repo_name = "ell"
 repo_path = Path("src/cluster/repos") / repo_name
 
 # for i in range(10):
@@ -16,7 +17,8 @@ repo_path = Path("src/cluster/repos") / repo_name
 #     report.add_line("hello")
 #     report.write("hello", subfolder="coherence/ello")
 
-code_cluster = generate_full_code_clusters(repo_path)
-eval_coherence_clusters(code_cluster, 1, "FullCode")
+# random_clusters = generate_random_clusters(repo_path, size=4, num_clusters=1)
+# eval_coherence_clusters(random_clusters, 1, "Random", repo_name, log_local=True)
 
-# eval_clusters_metrics(repo_path, iters=5)
+eval_clusters_metrics(repo_path, iters=1)
+# generate_summarized_clusters(repo_path)

@@ -1,5 +1,6 @@
-from typing import List, Optional, Tuple
+from typing import List
 from pydantic import BaseModel, field_validator
+from pathlib import Path
 
 from src.cluster.types import ClusteredTopic
 from src.cluster.cluster import (
@@ -8,11 +9,13 @@ from src.cluster.cluster import (
     generate_graph_clusters,
     generate_random_clusters
 )
+from src.config import EVAL_ROOT
 
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from .utils import EvalReport
+
 
 CLUSTER_METHODS = {
     "FULL_CODE": generate_full_code_clusters,
@@ -109,16 +112,16 @@ Evaluate the coherence and output your rating.
 def eval_coherence_clusters(clusters: List[ClusteredTopic], 
                             iters: int,
                             eval_name: str,
+                            log_local: bool = False,
                             min_chunks: int = 4) -> List[int]:
-    log_output = EvalReport(eval_name)
+    
+    eval_report = EvalReport(eval_name, reportdir=Path(eval_name), log_local=log_local)
     to_eval = [cluster for cluster in clusters if len(cluster.chunks) >= min_chunks]
     if not to_eval:
         NO_CLUSTERS_MSG = f"No clusters found matching min_chunks requirement for {eval_name}, exiting..."
-        log_output.add_line(NO_CLUSTERS_MSG)
-        print(NO_CLUSTERS_MSG)
+        eval_report.add_line(NO_CLUSTERS_MSG)
         return
 
-    log_output = EvalReport(eval_name)
     scores = []
     for _ in range(iters):
         eval_i_scores = []
@@ -133,8 +136,8 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
         for j, c_scores in enumerate(cluster_scores):
             mean = sum(c_scores) / len(c_scores)
             variance = sum((x - mean) ** 2 for x in c_scores) / len(c_scores)
-            log_output.add_section(f"Cluster Variance")
-            log_output.add_line(f"Cluster {j} variance: {variance}")
+            eval_report.add_section(f"Cluster Variance")
+            eval_report.add_line(f"Cluster {j} variance: {variance}")
 
     mean_cluster_scores = [(c_index, agg_score) for c_index, agg_score in 
                     enumerate([sum(score)/len(score) for score in cluster_scores])]
@@ -142,10 +145,10 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
 
     clusters_n_scores = [(to_eval[index], score) for index, score in mean_cluster_scores]
     for cluster, score in clusters_n_scores:
-        log_output.add_section(f"Cluster Coherence")
-        log_output.add_line(f"Score: {score}")
-        log_output.add_line(f"Cluster name: {cluster.name}")
-        log_output.add_line(f"{cluster}")
+        eval_report.add_section(f"Cluster Coherence")
+        eval_report.add_line(f"Score: {score}")
+        eval_report.add_line(f"Cluster name: {cluster.name}")
+        eval_report.add_line(f"{cluster}")
 
     # TODO: code not run before, not sure working
     # Take the higest and lowest coherence scores and the index into
@@ -161,23 +164,24 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
     #     f.write(f"Coherence score: ")
 
     total_score = sum(sum(iter_score) / len(to_eval) for iter_score in scores) / iters
-    log_output.add_line(f"Total coherence score: {total_score}")
-    log_output.write("coherence", subfolder=f"coherence/{eval_name}")
+    eval_report.add_line(f"Total coherence score: {total_score}")
+    eval_report.write()
 
     return total_score
 
-def eval_clusters_metrics(repo_path, iters: int = 1):
-    # Generate clusters
+def eval_clusters_metrics(repo_path: Path, iters: int = 1):
+    repo_name = repo_path.name
+    eval_report = EvalReport("cluster_metrics", reportdir=EVAL_ROOT / repo_path.name / "cluster_metrics")
+
     full_code_clusters = generate_full_code_clusters(repo_path)
     graph_clusters = generate_graph_clusters(repo_path)
     random_clusters = generate_random_clusters(repo_path)
     summary_clusters = generate_summarized_clusters(repo_path)
 
-    # Evaluate coherence for each cluster type
-    full_code_coherence = eval_coherence_clusters(full_code_clusters, iters=iters)
-    graph_coherence = eval_coherence_clusters(graph_clusters, iters=iters)
-    random_coherence = eval_coherence_clusters(random_clusters, iters=iters)
-    summary_coherence = eval_coherence_clusters(summary_clusters, iters=iters)
+    full_code_coherence = eval_coherence_clusters(full_code_clusters, iters, "FullCode", repo_name)
+    graph_coherence = eval_coherence_clusters(graph_clusters, iters, "Graph", repo_name)
+    random_coherence = eval_coherence_clusters(random_clusters, iters, "Random", repo_name)
+    summary_coherence = eval_coherence_clusters(summary_clusters, iters, "Summary", repo_name)
 
     # Create a list of tuples with cluster type and coherence score
     coherence_scores = [
@@ -190,16 +194,18 @@ def eval_clusters_metrics(repo_path, iters: int = 1):
     # Sort the list based on coherence scores in descending order
     sorted_scores = sorted(coherence_scores, key=lambda x: x[1], reverse=True)
 
-    print("\nCoherence scores ordered from highest to lowest:")
+    eval_report.add_line("\nCoherence scores ordered from highest to lowest:")
     for cluster_type, score in sorted_scores:
-        print(f"{cluster_type}: {score:.4f}")
+        eval_report.add_line(f"{cluster_type}: {score:.4f}")
 
     # Print pair-wise comparisons
-    print("Pair-wise coherence comparisons:")
-    print(f"Full Code vs Graph: {full_code_coherence - graph_coherence:.4f}")
-    print(f"Full Code vs Random: {full_code_coherence - random_coherence:.4f}")
-    print(f"Full Code vs Summary: {full_code_coherence - summary_coherence:.4f}")
-    print(f"Graph vs Random: {graph_coherence - random_coherence:.4f}")
-    print(f"Graph vs Summary: {graph_coherence - summary_coherence:.4f}")
-    print(f"Random vs Summary: {random_coherence - summary_coherence:.4f}")
+    eval_report.add_line("Pair-wise coherence comparisons:")
+    eval_report.add_line(f"Full Code vs Graph: {full_code_coherence - graph_coherence:.4f}")
+    eval_report.add_line(f"Full Code vs Random: {full_code_coherence - random_coherence:.4f}")
+    eval_report.add_line(f"Full Code vs Summary: {full_code_coherence - summary_coherence:.4f}")
+    eval_report.add_line(f"Graph vs Random: {graph_coherence - random_coherence:.4f}")
+    eval_report.add_line(f"Graph vs Summary: {graph_coherence - summary_coherence:.4f}")
+    eval_report.add_line(f"Random vs Summary: {random_coherence - summary_coherence:.4f}")
+
+    eval_report.write("coherence_stats")
 

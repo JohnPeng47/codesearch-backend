@@ -103,7 +103,7 @@ class ClusteredTopic(BaseModel):
     chunks: List[CodeChunk]
 
     def __str__(self):
-        chunk_list = "\n-> " + "\n-> ".join([str(input) + DELMITER for input in self.chunks])
+        chunk_list = "\n-> " + "\n-> ".join([str(input) + CHUNK_DELMITER for input in self.chunks])
         return (
             f"{self.name}:\n"
             f"{chunk_list}\n\n"

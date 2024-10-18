@@ -2,11 +2,13 @@ from pathlib import Path
 from typing import List
 import ell
 import random
+from openai import LengthFinishReasonError
 
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.aider_graph.aider_graph import AiderGraph
 from rtfs.transforms.cluster import cluster as cluster_cg
 from src.index.service import get_or_create_index
+from src.utils import num_tokens_from_string
 
 from .types import (
     CodeChunk,
@@ -138,12 +140,39 @@ def generate_full_code_clusters(repo_path: Path) -> List[ClusteredTopic]:
 def generate_summarized_clusters(repo_path: Path) -> List[ClusteredTopic]:
     chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
 
-    return _generate_llm_clusters(
-        [
-            SummaryChunk.from_chunk(chunk, summarize_chunk(chunk).parsed) 
-            for chunk in chunks
-        ]
-    )
+    summary_chunks = []
+    for chunk in chunks:
+        try:
+            summary = summarize_chunk(chunk).parsed
+        except LengthFinishReasonError as e:
+            print(f"[Summarize Chunk] Chunk too long: {len(chunk.content)}, continuing...")
+            continue
+
+        summary_chunk = SummaryChunk.from_chunk(chunk, summary)
+        summary_chunks.append(summary_chunk)
+
+    summary_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in summary_chunks]))
+    code_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in chunks]))
+
+    print(f"Summary tokens: {summary_tokens}, \
+          Code tokens: {code_tokens}, \
+          Ratio: {summary_tokens / code_tokens}")
+
+    return _generate_llm_clusters(summary_chunks)
+
+
+# TEST by printing out the original chunk order
+# then print the chunk order after graph clustering
+# def generate_hybrid_clusters(repo_path: Path) -> List[ClusteredTopic]:
+#     chunks = get_or_create_index(str(repo_path), str(temp_index_dir(repo_path.name)), 
+#                                  exclusions=EXCLUSIONS)._docstore.docs.values()
+#     cg = AiderGraph.from_chunks(repo_path, chunks)
+    
+#     cluster_cg(cg)
+    
+#     gclustered_chunks = [chunk for chunk in cluster for cluster in cg.get_clusters()]
+
+
 
 # NOTE: generated clusters are not named
 def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
