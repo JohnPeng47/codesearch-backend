@@ -6,19 +6,19 @@ from rtfs_rewrite.ts import cap_ts_queries, TSLangs
 from rtfs.cluster.graph import ClusterGraph
 from rtfs.chunk_resolution.graph import (
     ChunkNode,
-    ChunkMetadata,
     FunctionContext,
     ScopeType,
     ChunkContext,
     ImportEdge as RefToEdge,
 )
 
+from src.cluster.types import CodeChunk
 import networkx as nx
 
 
 class AiderGraph(ClusterGraph):
     @classmethod
-    def from_chunks(cls, repo_path: Path, chunks: List[BaseNode]):
+    def from_chunks(cls, repo_path: Path, chunks: List[CodeChunk]):
         graph = cls(repo_path=repo_path, graph=nx.MultiDiGraph(), cluster_roots=[])
 
         all_chunks = []
@@ -68,7 +68,7 @@ class AiderGraph(ClusterGraph):
             node = ChunkNode(
                 id=chunk.node_id,
                 og_id=chunk.node_id,
-                metadata=ChunkMetadata(**chunk.metadata),
+                metadata=chunk.metadata,
                 content=chunk.get_content(),
                 ctxt_list=[module_ctxt] + class_ctxts,
                 # TODO: maybe we should add these fields to CHunkNode

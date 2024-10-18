@@ -121,13 +121,6 @@ class ChunkNode(Node):
     references: List[str] = field(default_factory=list)
     definitions: List[str] = field(default_factory=list)
 
-    def __post_init__(self):
-        self.id = self._chunk_short_name(self.metadata)
-
-    def _chunk_short_name(self, metadata: ChunkMetadata) -> str:
-        filename = "/".join(metadata.file_path.split(os.sep)[-2:])
-        return f"{filename}#{metadata.start_line}-{metadata.end_line}"
-
     @property
     def range(self):
         return TextRange(

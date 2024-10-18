@@ -51,10 +51,7 @@ class EvalReport:
 
         self._content = f"_____ {title} _____\n\n"
 
-        print("Initializing parent with: ", self._currdir)
-
     def _init_child(self, title: str, child_dir: Path, log_local: bool = False):
-        print("Initializing child with: ", self._currdir)
         if not log_local:
             self._currdir = self._currdir / child_dir
             if not self._currdir.exists():

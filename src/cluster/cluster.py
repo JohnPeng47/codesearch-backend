@@ -163,14 +163,38 @@ def generate_summarized_clusters(repo_path: Path) -> List[ClusteredTopic]:
 
 # TEST by printing out the original chunk order
 # then print the chunk order after graph clustering
-# def generate_hybrid_clusters(repo_path: Path) -> List[ClusteredTopic]:
-#     chunks = get_or_create_index(str(repo_path), str(temp_index_dir(repo_path.name)), 
-#                                  exclusions=EXCLUSIONS)._docstore.docs.values()
-#     cg = AiderGraph.from_chunks(repo_path, chunks)
+def generate_hybrid_clusters(repo_path: Path) -> List[ClusteredTopic]:
+    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
+
+    index_dir = temp_index_dir(repo_path.name)
+    chunk_index = get_or_create_index(str(repo_path), str(index_dir), exclusions=EXCLUSIONS)
+    g_chunks = chunk_index._docstore.docs.values()
+
+    cg1 = AiderGraph.from_chunks(repo_path, chunks)
+    cg2 = ChunkGraph.from_chunks(repo_path, g_chunks)
     
-#     cluster_cg(cg)
+    cluster_cg(cg1)
+    cluster_cg(cg2)
+
+    gclustered_chunks = [chunk for cluster in cg1.get_clusters() for chunk in cluster.chunks]
+
+    print("Chunk Graph:")
+    for cluster in cg2.get_clusters():
+        print("Cluster: ")
+        for chunk in cluster.chunks:
+            print(chunk.id)
+
+        print("\n")
     
-#     gclustered_chunks = [chunk for chunk in cluster for cluster in cg.get_clusters()]
+    print("Aider graph:")
+    for cluster in cg1.get_clusters():
+        print("Cluster: ")
+        for chunk in cluster.chunks:
+            print(chunk.id)
+
+        print("\n")
+    
+    
 
 
 

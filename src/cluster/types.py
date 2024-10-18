@@ -4,6 +4,7 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from rtfs.chunk_resolution.graph import ChunkMetadata
 from moatless.types import MoatlessChunkID
 
 CHUNK_DELMITER = "\n===================================================================="
@@ -30,11 +31,18 @@ class CodeChunk(BaseModel, ClusterInput):
     input_type: ClusterInputType
     content: str
     filepath: Optional[str] = None
+
+    # for backwards compat
+    metadata: ChunkMetadata
+    node_id: MoatlessChunkID
     
     def get_chunkinfo(self) -> str:
         return  (
             f"Filename: {self.short_fn()}\n" if self.filepath else ""
         )
+    
+    # def get_short_id(self) -> str:
+        
 
     def short_fn(self) -> str:
         return "/".join(Path(self.filepath).parts[-3:])

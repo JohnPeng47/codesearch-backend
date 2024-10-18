@@ -125,27 +125,43 @@ def temp_index_dir(repo_name: str):
 def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[CodeChunk]:
     cluster_input = []
     index_dir = temp_index_dir(repo_dir.name)
-    chunk_nodes = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
-    
-    print(f"[Chunker]: {len(chunk_nodes._docstore.docs)} chunks used")
+    chunk_index = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
+    chunk_nodes = chunk_index._docstore.docs.values()
 
-    for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes._docstore.docs.values()):
+    print(f"[Chunker]: {len(chunk_nodes)} chunks used")
+
+    chunk_fp, chunk_i = list(chunk_nodes)[0].metadata["file_path"], 1
+    for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes):
         chunk_node, ctxt_list = chunk_ctxt
+
+        if chunk_fp == chunk_node.metadata["file_path"]:
+            chunk_i += 1
+        else:
+            chunk_fp = chunk_node.metadata["file_path"]
+            chunk_i = 1
+
+        short_name = f"{os.path.sep}".join(chunk_fp.split(os.path.sep)[-2:])
+        node_id = f"{short_name}::{chunk_i}"
+        
         if mode == "full":
             cluster_input.append(
                 CodeChunk(
-                    id= chunk_node.node_id,
+                    id= node_id,
+                    metadata=chunk_node.metadata,
+                    node_id=node_id,
                     input_type=ClusterInputType.FILE, 
                     content=chunk_node.get_content().replace("\r\n", "\n"),
-                    filepath=chunk_node.metadata["file_name"]
+                    filepath=chunk_node.metadata["file_name"],
                 ),
             )
         elif mode == "partial":
             cluster_input.append(
                 CodeChunk(
-                    id=chunk_node.node_id,
-                    input_type=ClusterInputType.CHUNK,
-                    content="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n")
+                    id= node_id,
+                    metadata=chunk_node.metadata,
+                    node_id=node_id,                    input_type=ClusterInputType.CHUNK,
+                    content="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n"),
+                    metadata=chunk_node.metadata,
             )
             
     return cluster_input

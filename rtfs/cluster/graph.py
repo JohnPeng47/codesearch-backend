@@ -168,8 +168,8 @@ class ClusterGraph(CodeGraph):
                         og_id=child_node.og_id,
                         file_path=child_node.metadata.file_path,
                         content=child_node.content,
-                        start_line=child_node.range.line_range()[0] + 1,
-                        end_line=child_node.range.line_range()[1] + 1,
+                        start_line=child_node.range.line_range()[0],
+                        end_line=child_node.range.line_range()[1],
                     )
                     chunks.append(chunk_info)
                 elif child_node.kind == NodeKind.Cluster:

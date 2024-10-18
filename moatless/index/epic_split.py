@@ -481,7 +481,7 @@ class EpicSplitter(NodeParser):
             )
             metadata["span_ids"] = list(span_ids)
 
-            node_id += f"_{chunk[0].path_string()}_{chunk[-1].path_string()}"
+            node_id += f"_{chunk[0].path_string()}_{chunk[-1].path_string()}"        
 
         content = content.strip("\n")
 

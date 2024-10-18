@@ -80,6 +80,7 @@ class ChunkGraph(ClusterGraph):
             # )
             try:
                 metadata = ChunkMetadata(**chunk.metadata)
+                # metadata = chunk.metadata
             except TypeError as e:
                 print(f"Chunk error, skipping..: {e}")
                 continue
