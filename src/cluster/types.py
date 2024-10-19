@@ -18,6 +18,10 @@ class ClusterInput(ABC):
     def get_content(self) -> str:
         pass
 
+    @abstractmethod
+    def get_name(self) -> str:
+        pass
+
 class ClusterInputType(str, Enum):
     FILE = "file"
     CHUNK = "chunk"
@@ -37,18 +41,24 @@ class CodeChunk(BaseModel, ClusterInput):
     node_id: MoatlessChunkID = Field(default="", validate_default=False)
     
     def get_chunkinfo(self) -> str:
-        return  (
-            f"Filename: {self.short_fn()}\n" if self.filepath else ""
-        )        
+        return f"Chunk: {self.id}\n\n"
 
     def short_fn(self) -> str:
         return "/".join(Path(self.filepath).parts[-3:])
 
     def get_content(self) -> str:
         return self.content
+    
+    def get_name(self) -> str:
+        return self.id
 
     def __hash__(self) -> int:
         return hash(self.id)
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CodeChunk):
+            return False
+        return self.id == other.id
     
     def __str__(self) -> str:
         return self.get_chunkinfo() + "\n" + self.get_content()

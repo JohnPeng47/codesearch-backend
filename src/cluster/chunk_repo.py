@@ -165,7 +165,7 @@ def chunk_vanilla(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[Cod
                     node_id=node_id,
                     input_type=ClusterInputType.FILE, 
                     content=chunk_node.get_content().replace("\r\n", "\n"),
-                    filepath=chunk_node.metadata["file_name"],
+                    filepath=chunk_node.metadata["file_path"],
                 ),
             )
         elif mode == "partial":

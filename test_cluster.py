@@ -24,5 +24,5 @@ repo_path = Path("src/cluster/repos") / repo_name
 # eval_clusters_metrics(repo_path, iters=1)
 # generate_summarized_clusters(repo_path)
 
-clusters = generate_full_code_clusters(repo_path.resolve(), ChunkStrat.HYBRID)
-eval_coherence_clusters(clusters, 1, "FullCodeHybrid", log_local=True)
+clusters = generate_full_code_clusters(repo_path.resolve(), ChunkStrat.VANILLA)
+# eval_coherence_clusters(clusters, 1, "FullCodeHybrid", log_local=True)

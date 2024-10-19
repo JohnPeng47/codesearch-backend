@@ -23,46 +23,15 @@ from .sum_chunks import summarize_chunk
 from .chunk_repo import chunk_repo, temp_index_dir, ChunkStrat
 from .utils import get_attrs_or_key
 
+# from .lmp.cluster_v1 import generate_clusters
+from .lmp.cluster_v2 import generate_clusters
+
 from src.config import GRAPH_ROOT
 
 ell.init(
-    store="logdir",
+    store="./ell_storage/chunk_alt",
     autocommit=True,
 )
-
-DELIMETER = "\n\n########" # only 3 tokens lol
-
-# TODO: Use dspy to auto-tune a list of topics
-@ell.complex(model="gpt-4o-2024-08-06", response_format=LMClusteredTopicList)
-def generate_clusters(chunks: List[ClusterInput], 
-                      simple_names: List[str]) -> LMClusteredTopicList:
-    codebase = ""
-    for name, chunk in zip(simple_names, chunks):
-        codebase += f"NAME: {name}" + "\n"
-        codebase += chunk.get_chunkinfo()
-        codebase += chunk.get_content() + DELIMETER
-
-    CLUSTER_PROMPT = """
-You are given a codebase comprised of chunks separated by {delimiter}. Identify clusters of code that accomplish a common goal. Make sure
-that the topics you identify adhere to the following guidelines of SRP as best as possible:
-- A cluster should have one, and only one, reason to change.
-- Each cluser should focus on doing one thing well, rather than trying to handle multiple responsibilities.
-- It promotes high cohesion within cluster, meaning that the chunks within a clusters are closely related and 
-focused on a single purpose.
-
-To reiterate, your output should be a list of clusters, where each chunk should be identified by the name provided:
-
-ie. topics: [
-    "Chunk 1",
-    "Chunk 3",
-    "Chunk 2"
-    ...
-]
-
-Here is the codebase:
-{codebase}
-"""
-    return CLUSTER_PROMPT.format(codebase=codebase, delimiter=DELIMETER)
 
 EXCLUSIONS = [
     "**/tests/**",
@@ -79,8 +48,10 @@ def _calculate_clustered_range(matched_indices, length):
     """Measures how wide the range of the clustered chunks are"""
     pass
 
-# TODO: need to add way to dedup chunks -> wait but we want overlapping clusters though
-# Should track how good we are at tracking faraway chunks
+# TODO: test how well LLM can select chunks using the short ID
+# should prolly use this, to reduce code, if not increase token cost
+# 2x more token usage ~ 5 tokens more per id
+# 5 * 200 = 1000 tokens extra using this id ...
 def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -> List[ClusteredTopic]:
     new_clusters = []
 
@@ -137,10 +108,52 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -
 
     return new_clusters
 
+def _generate_llm_clusters_v2(cluster_inputs: List[ClusterInput], tries: int = 4) -> List[ClusteredTopic]:
+    new_clusters = []
+
+    for i in range(1, tries + 1):
+        if len(cluster_inputs) == 0:
+            break
+        
+        output = generate_clusters(cluster_inputs)
+        # TODO: add structured parsing support to ell
+        parsed = get_attrs_or_key(output, "parsed")
+        g_clusters = LMClusteredTopicList.parse_obj(parsed).topics # generated clusters
+        if not isinstance(g_clusters, list):
+            raise LLMException(f"Failed to generate list: {g_clusters}")
+
+        for i, cluster in enumerate(g_clusters):
+            chunks = []
+            for chunk in cluster.chunks:
+                try:
+                    matching_chunk = next(filter(lambda c: c.get_name() == chunk, cluster_inputs))
+                except StopIteration as e:
+                    print(f"Chunk Name: {chunk} hallucinated, skipping...")
+                    continue
+
+                chunks.append(matching_chunk)
+                cluster_inputs.remove(matching_chunk)
+
+            print("New Cluster: ", cluster)
+
+            new_clusters.append(
+                ClusteredTopic(
+                    name=cluster.name, 
+                    chunks=[
+                        {k:v for k,v in chunk.dict().items()
+                            if k != "metadata"} for chunk in chunks]
+                )
+            )
+
+        print(f"Unclassified chunks, iter:[{i}]: ", len(cluster_inputs))
+        return
+
+    return new_clusters
+
 def generate_full_code_clusters(repo_path: Path, 
                                 chunk_strat: ChunkStrat = ChunkStrat.VANILLA) -> List[ClusteredTopic]:
     chunks = chunk_repo(repo_path, chunk_strat, mode="full", exclusions=EXCLUSIONS)
-    return _generate_llm_clusters(chunks)
+    return _generate_llm_clusters_v2(chunks)
 
 
 def generate_summarized_clusters(repo_path: Path,
