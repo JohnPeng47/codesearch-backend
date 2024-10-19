@@ -5,6 +5,12 @@ from llama_index.core.schema import BaseNode
 from dataclasses import field, dataclass
 import tempfile
 import os
+import json
+from enum import Enum
+import random
+
+from rtfs.chunk_resolution.chunk_graph import ChunkGraph
+from rtfs.transforms.cluster import cluster as cluster_cg
 
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
 from rtfs.chunk_resolution.graph import (
@@ -15,6 +21,7 @@ from rtfs.chunk_resolution.graph import (
 )
 from src.index.service import get_or_create_index
 from src.cluster.types import CodeChunk, ClusterInputType
+from src.config import GRAPH_ROOT
 @dataclass
 class ChunkCtxtNode:
     ctxt_list: List[ChunkContext]
@@ -122,7 +129,14 @@ def temp_index_dir(repo_name: str):
     return index_dir
 
 
-def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[CodeChunk]:
+#### CHUNKING STRATEGIES ####
+
+class ChunkStrat(str, Enum):
+    VANILLA = "vanilla"
+    HYBRID = "hybrid"
+    RANDOM = "random"
+
+def chunk_vanilla(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[CodeChunk]:
     cluster_input = []
     index_dir = temp_index_dir(repo_dir.name)
     chunk_index = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
@@ -166,21 +180,59 @@ def chunk_repo(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[CodeCh
             
     return cluster_input
 
+def chunk_hybrid(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[CodeChunk]:
+    chunks = chunk_vanilla(repo_dir, mode="full", exclusions=exclusions)
+    ell_json = json.loads(open(GRAPH_ROOT / "MadcowD_ell_standard.json", "r").read())
+    cg = ChunkGraph.from_json(repo_dir, ell_json)
+
+    cluster_cg(cg)
+
+    graph_chunks = [
+        CodeChunk(
+            id=chunk.og_id,
+            content=chunk.content,
+            filepath=chunk.file_path,
+            input_type=ClusterInputType.CHUNK
+        )
+        for cluster 
+        in cg.get_clusters() for chunk in cluster.chunks
+    ]
+    left_chunks = [chunk for chunk in chunks if chunk not in graph_chunks]
+
+    for i, c in enumerate(graph_chunks):
+        print(f"Chunk {i}:")
+        print(c.id)
+
+    return graph_chunks + left_chunks
+
+def chunk_random(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[CodeChunk]:
+    chunks = chunk_repo(repo_dir, ChunkStrat.RANDOM, mode="full", exclusions=exclusions)
+    return random.shuffle(chunks)
+
+def chunk_repo(repo_dir: Path, 
+               chunk_strat: ChunkStrat,
+               mode: str = "full", 
+               exclusions=[]) -> List[CodeChunk]:
+    
+    if chunk_strat == ChunkStrat.VANILLA:
+        return chunk_vanilla(repo_dir, mode=mode, exclusions=exclusions)
+    elif chunk_strat == ChunkStrat.HYBRID:
+        return chunk_hybrid(repo_dir, mode=mode, exclusions=exclusions)
+    elif chunk_strat == ChunkStrat.RANDOM:
+        return chunk_random(repo_dir, mode=mode, exclusions=exclusions)
+    else:
+        raise ValueError(f"Invalid chunking strategy: {chunk_strat}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Concatenate Python files in a directory and generate a directory tree, with exclusions."
     )
     parser.add_argument("directory", help="The directory to process")
-    parser.add_argument(
-        "-o",
-        "--output",
-        default="output.txt",
-        help="The output file name (default: output.txt)",
-    )
-    parser.add_argument(
-        "-e", "--exclude", nargs="*", default=[], help="Glob patterns for exclusions"
-    )
+    parser.add_argument("--strattype", type=ChunkStrat, choices=list(ChunkStrat), default=ChunkStrat.VANILLA,
+                        help="The chunking strategy to use")
+    parser.add_argument("-e", "--exclude", action="append", default=[],
+                        help="Exclusion patterns (can be used multiple times)")
     # parser.add_argument(
     #     "-f",
     #     "--full",
@@ -211,4 +263,14 @@ if __name__ == "__main__":
     exclusions = default_exclusions + args.exclude
     print(f"Exclusion patterns: {exclusions}")
 
-    chunk_repo(Path(args.directory), mode="partial")
+    chunks = chunk_repo(Path(args.directory), chunk_strat=args.strattype, mode="full", exclusions=exclusions)
+    
+    # Write chunks to chunks.txt
+    with open("chunks.txt", "w", encoding="utf-8") as f:
+        for chunk in chunks:
+            f.write(f"Chunk ID: {chunk.id}\n")
+            f.write(f"Filepath: {chunk.filepath}\n")
+            f.write(f"Content:\n{chunk.content}\n")
+            f.write("-" * 80 + "\n")
+    
+    print(f"Chunks have been written to chunks.txt")

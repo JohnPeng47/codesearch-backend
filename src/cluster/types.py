@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from enum import Enum
 from abc import ABC, abstractmethod
@@ -32,17 +32,14 @@ class CodeChunk(BaseModel, ClusterInput):
     content: str
     filepath: Optional[str] = None
 
-    # for backwards compat
-    metadata: ChunkMetadata
-    node_id: MoatlessChunkID
+    # for backwards compat with BaseNode
+    metadata: Optional[ChunkMetadata] = Field(default=None, validate_default=False)
+    node_id: MoatlessChunkID = Field(default="", validate_default=False)
     
     def get_chunkinfo(self) -> str:
         return  (
             f"Filename: {self.short_fn()}\n" if self.filepath else ""
-        )
-    
-    # def get_short_id(self) -> str:
-        
+        )        
 
     def short_fn(self) -> str:
         return "/".join(Path(self.filepath).parts[-3:])

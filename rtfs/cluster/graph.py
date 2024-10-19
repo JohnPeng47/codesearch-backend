@@ -38,6 +38,11 @@ class SummarizedChunk:
     start_line: int
     end_line: int
 
+    def __eq__(self, other: "SummarizedChunk"):
+        return self.id == other.id
+    
+    def __hash__(self):
+        return hash(self.id)
 
 @dataclass(kw_only=True)
 class SummarizedCluster:

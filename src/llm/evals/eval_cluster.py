@@ -45,13 +45,13 @@ def eval_cross_file_single(cluster: ClusteredTopic) -> float:
         return 0.0
 
     # Calculate the ratio of files to chunks
-    ratio = num_files ** 2.0 / num_chunks
+    score = num_files ** 2.0 / num_chunks
 
-    return ratio
+    return num_files, num_chunks, score
     
 
 def eval_cross_file_cluster(clusters: List[ClusteredTopic], min_chunks: int = 3) -> float:
-    cross_file_scores = [eval_cross_file_single(cluster) for cluster in clusters 
+    cross_file_scores = [eval_cross_file_single(cluster)[2] for cluster in clusters 
                          if len(cluster.chunks) >= min_chunks]
 
     # Calculate the average cross-file score
@@ -113,31 +113,38 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
                             iters: int,
                             eval_name: str,
                             log_local: bool = False,
+                            subdir: str = "",
                             min_chunks: int = 4) -> List[int]:
-    
-    eval_report = EvalReport(eval_name, reportdir=Path(eval_name), log_local=log_local)
+    reportdir = Path(eval_name) if not subdir else Path(eval_name) / subdir
+    eval_report = EvalReport(eval_name, reportdir=reportdir, log_local=log_local)
     to_eval = [cluster for cluster in clusters if len(cluster.chunks) >= min_chunks]
     if not to_eval:
         NO_CLUSTERS_MSG = f"No clusters found matching min_chunks requirement for {eval_name}, exiting..."
         eval_report.add_line(NO_CLUSTERS_MSG)
         return
 
+    # coherence scores
     scores = []
     for _ in range(iters):
         eval_i_scores = []
         for eval_cluster in to_eval:
-            eval_i_scores.append(eval_coherence_single(eval_cluster))
+            eval_i_scores.append(
+                eval_coherence_single(eval_cluster)
+            )
+
         scores.append(eval_i_scores)
 
     # LEARN: zip(*scores) is a way to transpose a list of lists
     # calculate estimated variance of a single cluster across iterations 
     cluster_scores = [c_scores for c_scores in zip(*scores)]
-    if iters > 1:        
-        for j, c_scores in enumerate(cluster_scores):
-            mean = sum(c_scores) / len(c_scores)
-            variance = sum((x - mean) ** 2 for x in c_scores) / len(c_scores)
-            eval_report.add_section(f"Cluster Variance")
-            eval_report.add_line(f"Cluster {j} variance: {variance}")
+
+    # kinda broken does not account for cf scores
+    # if iters > 1:        
+    #     for j, c_scores in enumerate(cluster_scores):
+    #         mean = sum(c_scores) / len(c_scores)
+    #         variance = sum((x - mean) ** 2 for x in c_scores) / len(c_scores)
+    #         eval_report.add_section(f"Cluster Variance")
+    #         eval_report.add_line(f"Cluster {j} variance: {variance}")
 
     mean_cluster_scores = [(c_index, agg_score) for c_index, agg_score in 
                     enumerate([sum(score)/len(score) for score in cluster_scores])]
@@ -145,7 +152,7 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
 
     clusters_n_scores = [(to_eval[index], score) for index, score in mean_cluster_scores]
     for cluster, score in clusters_n_scores:
-        eval_report.add_section(f"Cluster Coherence")
+        eval_report.add_section(f"Cluster Eval")
         eval_report.add_line(f"Score: {score}")
         eval_report.add_line(f"Cluster name: {cluster.name}")
         eval_report.add_line(f"{cluster}")

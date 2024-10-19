@@ -3,6 +3,7 @@ from typing import List
 import ell
 import random
 from openai import LengthFinishReasonError
+import json
 
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.aider_graph.aider_graph import AiderGraph
@@ -19,8 +20,10 @@ from .types import (
     LMClusteredTopicList
 )
 from .sum_chunks import summarize_chunk
-from .chunk_repo import chunk_repo, temp_index_dir
+from .chunk_repo import chunk_repo, temp_index_dir, ChunkStrat
 from .utils import get_attrs_or_key
+
+from src.config import GRAPH_ROOT
 
 ell.init(
     store="logdir",
@@ -111,7 +114,6 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -
         # convert LMClusteredTopic to ClusteredTopic
         for g_cluster in g_clusters:
             chunks = []
-            # in case of hallucinating chunk name
             try:
                 for g_chunk_name in g_cluster.chunks:
                     chunks.append(name_to_chunk[g_chunk_name])
@@ -124,21 +126,26 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -
                     name=g_cluster.name, 
                     # yep, gotta convert pydantic to dict before it accepts it
                     # as a valid input ...
-                    chunks=[chunk.dict() for chunk in chunks]
+                    chunks=[
+                        # TODO: need to do this or else pydantic shits bed
+                        # for empty {} validation for metadata field
+                        {k:v for k,v in chunk.dict().items()
+                            if k != "metadata"} for chunk in chunks]
                 ))
         
         print(f"Unclassified chunks, iter:[{i}]: ", len(unsorted_names))
 
     return new_clusters
 
-def generate_full_code_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
-
+def generate_full_code_clusters(repo_path: Path, 
+                                chunk_strat: ChunkStrat = ChunkStrat.VANILLA) -> List[ClusteredTopic]:
+    chunks = chunk_repo(repo_path, chunk_strat, mode="full", exclusions=EXCLUSIONS)
     return _generate_llm_clusters(chunks)
 
 
-def generate_summarized_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
+def generate_summarized_clusters(repo_path: Path,
+                                chunk_strat: ChunkStrat = ChunkStrat.VANILLA) -> List[ClusteredTopic]:
+    chunks = chunk_repo(repo_path, chunk_strat, mode="full", exclusions=EXCLUSIONS)
 
     summary_chunks = []
     for chunk in chunks:
@@ -160,50 +167,11 @@ def generate_summarized_clusters(repo_path: Path) -> List[ClusteredTopic]:
 
     return _generate_llm_clusters(summary_chunks)
 
-
-# TEST by printing out the original chunk order
-# then print the chunk order after graph clustering
-def generate_hybrid_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
-
-    index_dir = temp_index_dir(repo_path.name)
-    chunk_index = get_or_create_index(str(repo_path), str(index_dir), exclusions=EXCLUSIONS)
-    g_chunks = chunk_index._docstore.docs.values()
-
-    cg1 = AiderGraph.from_chunks(repo_path, chunks)
-    cg2 = ChunkGraph.from_chunks(repo_path, g_chunks)
-    
-    cluster_cg(cg1)
-    cluster_cg(cg2)
-
-    gclustered_chunks = [chunk for cluster in cg1.get_clusters() for chunk in cluster.chunks]
-
-    print("Chunk Graph:")
-    for cluster in cg2.get_clusters():
-        print("Cluster: ")
-        for chunk in cluster.chunks:
-            print(chunk.id)
-
-        print("\n")
-    
-    print("Aider graph:")
-    for cluster in cg1.get_clusters():
-        print("Cluster: ")
-        for chunk in cluster.chunks:
-            print(chunk.id)
-
-        print("\n")
-    
-    
-
-
-
 # NOTE: generated clusters are not named
 def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = get_or_create_index(str(repo_path), str(temp_index_dir(repo_path.name)), 
-                                 exclusions=EXCLUSIONS)._docstore.docs.values()
+    chunks = chunk_repo(repo_path, ChunkStrat.VANILLA, mode="full", exclusions=EXCLUSIONS)
     cg = AiderGraph.from_chunks(repo_path, chunks)
-    
+
     cluster_cg(cg)
 
     return [
@@ -214,7 +182,7 @@ def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
                     id=chunk.og_id,
                     content=chunk.content,
                     filepath=chunk.file_path,
-                    input_type=ClusterInputType.CHUNK
+                    input_type=ClusterInputType.CHUNK,
                 ).dict() for chunk in cluster.chunks
             ],
         ) 
@@ -223,7 +191,7 @@ def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
 
 
 def generate_random_clusters(repo_path: Path, size: int = 4, num_clusters: int = 4) -> List[ClusteredTopic]:
-    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
+    chunks = chunk_repo(repo_path, ChunkStrat.VANILLA, mode="full", exclusions=EXCLUSIONS)
 
     return [
         ClusteredTopic(
