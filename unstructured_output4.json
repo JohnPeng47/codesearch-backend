@@ -1,0 +1,27 @@
+role='assistant' content=[ContentBlock(text=Here are the clusters according to the provided guidelines:
+
+1. Configuration and Model Registration Cluster:
+
+Seed: ell\configurator.py::2 (Core configuration management functionality)
+models\__init__.py::1 (Model registration imports and setup)
+models\openai.py::2 (Function for registering OpenAI models to the configuration)
+providers\__init__.py::1 (Collection of provider integrations)
+ell\provider.py::3 (Abstract class for defining provider interfaces)
+
+2. Language Model Program Definition Cluster:
+
+Seed: lmp\complex.py::2 (Implementation of the complex decorator for LMPs)
+lmp\simple.py::1 (The simple decorator for basic LMPs)
+lmp\tool.py::2 (Decorator for defining tools within LMPs)
+ell\types\message.py::1 (Defines foundational Message class)
+ell\types\studio.py::4 (Data structures related to LMP storage and retrieval)
+
+3. Real-time Interaction and Client Handling Cluster:
+
+Seed: openai_realtime\client.py::1 (RealtimeClient class for OpenAI real-time interactions)
+openai_realtime\api.py::2 (Handling the connection setup to the OpenAI real-time API)
+openai_realtime\conversation.py::1 (Conversation management for real-time sessions)
+openai_realtime\event_handler.py::1 (Event handling infrastructure for real-time interactions)
+openai_realtime\utils.py::1 (Utilities to support real-time processes)
+
+These clusters encapsulate different functionalities within the codebase, each focused on distinct aspects of the library's operation — configuration and model integration, defining language model programs, and managing real-time interactions.)]

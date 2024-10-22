@@ -1,7 +1,6 @@
 from enum import Enum
 from typing import List, Optional, NewType, Literal
 from dataclasses import dataclass, field
-import os
 
 from rtfs.graph import Node, Edge
 from rtfs.utils import TextRange

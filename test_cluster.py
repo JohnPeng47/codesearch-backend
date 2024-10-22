@@ -10,7 +10,7 @@ from src.cluster.chunk_repo import ChunkStrat
 
 from pathlib import Path
 
-repo_name = "ell"
+repo_name = "repo_generator"
 repo_path = Path("src/cluster/repos") / repo_name
 
 # for i in range(10):

@@ -8,6 +8,14 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Test Cluster",
+            "type": "python",
+            "request": "launch",
             "program": "test_cluster.py",
             "console": "integratedTerminal",
             "justMyCode": true

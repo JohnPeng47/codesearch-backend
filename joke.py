@@ -11,6 +11,6 @@ def tell_joke():
     """
     return JOKE_PROMPT
 
-# Use the function to generate and print a joke
-for i in range(5):
-    print(tell_joke())
+a, metadata, c = tell_joke()
+print(metadata)
+print(c)

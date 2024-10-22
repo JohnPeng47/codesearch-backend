@@ -1,35 +1,33 @@
 from typing import List, Tuple
 from pydantic import BaseModel
-import ell
-from enum import Enum
 from ..types import (
     ClusterInput,
     ClusteredTopic,
     LMClusteredTopicList
 )
+from src.llm.llm import BaseLLMModel, OpenAIModel, ModelArguments
+
+from src.config import OPENAI_API_KEY
 
 DELIMETER = f"\n\n{'-' * 80}\n" # only 1 tokens good deal!
 
-class SeedChunkType(str, Enum):
-    LOGIC = "CORE_LOGIC"
-    DATASTRUCTS = "DATASTRUCTS"
+# Initialize the OpenAIModel
+model_args = ModelArguments(model_name="gpt-4o", api_key=OPENAI_API_KEY)
+llm = BaseLLMModel(model_args)
 
-# TODO: try again with code at the top of the prompt to trigger caching
-@ell.complex(model="gpt-4o-2024-08-06")
-def identify_key_chunks(chunks: List[ClusterInput],
-                        seed_chunk_type: SeedChunkType = SeedChunkType.LOGIC, 
-                        n_chunks: int = 6) -> LMClusteredTopicList:
+async def identify_key_chunks(chunks: List[ClusterInput], 
+                      n_chunks: int = 6) -> LMClusteredTopicList:
     codebase = ""
     for chunk in chunks:
         codebase += chunk.get_chunkinfo()
         codebase += chunk.get_content() + DELIMETER
 
-    IMPORTANT_CHUNKS = """
+    IMPORTANT_CHUNKS = f"""
 Here are chunks of code representing a repo:
-{code}
+{{code}}
 
-List the {n_chunks} most important chunks of type {seed_chunk_type} in this code and 
-give a short reason why. These chunks are going to be used as seeds in a clustering algorithm, so its important
+List the {n_chunks} most important chunks in this code and give a short reason why. These
+chunks are going to be used as seeds in a clustering algorithm, so its important
 that they dont overlap in terms of functionality
 
 Here is an example output:
@@ -42,27 +40,26 @@ text into vector representations for efficient similarity search.
 
 Now generate the output
 """
-    return IMPORTANT_CHUNKS.format(code=codebase, n_chunks=n_chunks)
+    prompt = IMPORTANT_CHUNKS.format(code=codebase)
+    response = await llm.query(prompt)
+    return response
 
-
-@ell.complex(model="gpt-4o-2024-08-06", response_format=LMClusteredTopicList)
-def generate_clusters(chunks: List[ClusterInput], 
-                      chunk_range: Tuple[int, int] = (10, 10),
-                      seed_chunk_type: SeedChunkType = SeedChunkType.LOGIC) -> LMClusteredTopicList:
+async def generate_clusters(chunks: List[ClusterInput], 
+                      chunk_range: Tuple[int, int] = (5, 10)) -> LMClusteredTopicList:
     codebase = ""
     for chunk in chunks:
         codebase += chunk.get_chunkinfo()
         codebase += chunk.get_content() + DELIMETER
     
-    IMPORTANT_CHUNKS = """
+    IMPORTANT_CHUNKS = f"""
 Here are chunks of code representing a repo:
-{code}
+{{code}}
 
 Now take each of the seed chunks below and identify a group of other chunks,
 together with the seed chunk, which forms a coherent set code grouping that
 implements some functionality in the codebase. You are encouraged to optimize
 for file diversity in your clusters, and to keep the size of your clusters
-within {chunk_range_0} to {chunk_range_1} chunks.
+within {chunk_range[0]} to {chunk_range[1]} chunks.
 
 Here are some example outputs on what you clusters should look like:
 
@@ -84,13 +81,13 @@ utils\serialization.py::4 (Serialization methods for vector data)
 config\storage_config.py::1 (Configuration for vector storage)
 
 Here are the seed clusters:
-{seed_chunks}
+{{seed_chunks}}
 
 Now generate the list of clusters according to the examples above
 """
-    return IMPORTANT_CHUNKS.format(
-        code=codebase, 
-        seed_chunks=identify_key_chunks(chunks, seed_chunk_type=seed_chunk_type, n_chunks=6),
-        chunk_range_0=chunk_range[0],
-        chunk_range_1=chunk_range[1]
-    )
+    seed_chunks = await identify_key_chunks(chunks, n_chunks=6)
+    prompt = IMPORTANT_CHUNKS.format(code=codebase, seed_chunks=seed_chunks)
+    response = await llm.query(prompt)
+    return response
+
+

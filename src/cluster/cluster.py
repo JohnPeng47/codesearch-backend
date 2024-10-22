@@ -3,9 +3,7 @@ from typing import List
 import ell
 import random
 from openai import LengthFinishReasonError
-import json
 
-from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.aider_graph.aider_graph import AiderGraph
 from rtfs.transforms.cluster import cluster as cluster_cg
 from src.index.service import get_or_create_index
@@ -24,7 +22,9 @@ from .chunk_repo import chunk_repo, temp_index_dir, ChunkStrat
 from .utils import get_attrs_or_key
 
 # from .lmp.cluster_v1 import generate_clusters
-from .lmp.cluster_v2 import generate_clusters
+from .lmp.cluster_v2 import generate_clusters as gen_structured_clusters
+from .lmp.cluster_v3 import generate_clusters as gen_unstructured_clusters
+# from .lmp.cluster_basellm import generate_clusters
 
 from src.config import GRAPH_ROOT
 
@@ -83,17 +83,17 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -
                           if i not in matched_indices]
 
         # convert LMClusteredTopic to ClusteredTopic
-        for g_cluster in g_clusters:
-            chunks = []
-            try:
-                for g_chunk_name in g_cluster.chunks:
-                    chunks.append(name_to_chunk[g_chunk_name])
-            except KeyError as e:
-                print(f"Chunk Name: {g_chunk_name} hallucinated, skipping...")
-                continue
-
-            new_clusters.append(
-                ClusteredTopic(
+        with open(f"structured_output{i}.json", "w") as f:
+            for g_cluster in g_clusters:
+                chunks = []
+                try:
+                    for g_chunk_name in g_cluster.chunks:
+                        chunks.append(name_to_chunk[g_chunk_name])
+                except KeyError as e:
+                    print(f"Chunk Name: {g_chunk_name} hallucinated, skipping...")
+                    continue
+                
+                new_cluster = ClusteredTopic(
                     name=g_cluster.name, 
                     # yep, gotta convert pydantic to dict before it accepts it
                     # as a valid input ...
@@ -102,7 +102,10 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -
                         # for empty {} validation for metadata field
                         {k:v for k,v in chunk.dict().items()
                             if k != "metadata"} for chunk in chunks]
-                ))
+                )
+                new_clusters.append(new_cluster)
+                f.write(str(new_cluster) + "\n")
+            
         
         print(f"Unclassified chunks, iter:[{i}]: ", len(unsorted_names))
 
@@ -115,35 +118,35 @@ def _generate_llm_clusters_v2(cluster_inputs: List[ClusterInput], tries: int = 4
         if len(cluster_inputs) == 0:
             break
         
-        output = generate_clusters(cluster_inputs)
-        # TODO: add structured parsing support to ell
-        parsed = get_attrs_or_key(output, "parsed")
-        g_clusters = LMClusteredTopicList.parse_obj(parsed).topics # generated clusters
-        if not isinstance(g_clusters, list):
-            raise LLMException(f"Failed to generate list: {g_clusters}")
+        g_clusters: LMClusteredTopicList = gen_unstructured_clusters(cluster_inputs).parsed
+        # with open(f"unstructured_output{i}.json", "w") as f:
+        #     f.write(str(output))
 
-        for i, cluster in enumerate(g_clusters):
-            chunks = []
-            for chunk in cluster.chunks:
-                try:
-                    matching_chunk = next(filter(lambda c: c.get_name() == chunk, cluster_inputs))
-                except StopIteration as e:
-                    print(f"Chunk Name: {chunk} hallucinated, skipping...")
-                    continue
+        print(f"Writin to structured_output{i}.json")
+        with open(f"structured_output{i}.json", "w") as f:
+            for _, cluster in enumerate(g_clusters.topics):
+                chunks = []
+                for chunk in cluster.chunks:
+                    try:
+                        matching_chunk = next(filter(lambda c: c.get_name() == chunk, cluster_inputs))
+                        chunks.append(matching_chunk)
+                        cluster_inputs.remove(matching_chunk)
+                    except StopIteration as e:
+                        print(f"Chunk Name: {chunk} hallucinated, skipping...")
+                        continue
 
-                chunks.append(matching_chunk)
-                cluster_inputs.remove(matching_chunk)
+                print("New Cluster: ", cluster)
 
-            print("New Cluster: ", cluster)
+                f.write(str(cluster) + "\n")
 
-            new_clusters.append(
-                ClusteredTopic(
-                    name=cluster.name, 
-                    chunks=[
-                        {k:v for k,v in chunk.dict().items()
-                            if k != "metadata"} for chunk in chunks]
+                new_clusters.append(
+                    ClusteredTopic(
+                        name=cluster.name, 
+                        chunks=[
+                            {k:v for k,v in chunk.dict().items()
+                                if k != "metadata"} for chunk in chunks]
+                    )
                 )
-            )
 
         print(f"Unclassified chunks, iter:[{i}]: ", len(cluster_inputs))
         return
@@ -152,8 +155,9 @@ def _generate_llm_clusters_v2(cluster_inputs: List[ClusterInput], tries: int = 4
 
 def generate_full_code_clusters(repo_path: Path, 
                                 chunk_strat: ChunkStrat = ChunkStrat.VANILLA) -> List[ClusteredTopic]:
+    print("Generating full code clusters...")
     chunks = chunk_repo(repo_path, chunk_strat, mode="full", exclusions=EXCLUSIONS)
-    return _generate_llm_clusters_v2(chunks)
+    return _generate_llm_clusters_v2(chunks, tries=3)
 
 
 def generate_summarized_clusters(repo_path: Path,

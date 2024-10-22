@@ -264,7 +264,8 @@ if __name__ == "__main__":
     print(f"Exclusion patterns: {exclusions}")
 
     chunks = chunk_repo(Path(args.directory), chunk_strat=args.strattype, mode="full", exclusions=exclusions)
-    
+    print(f"Finisehd chunking with {len(chunks)} chunks")
+
     # Write chunks to chunks.txt
     with open("chunks.txt", "w", encoding="utf-8") as f:
         for chunk in chunks:

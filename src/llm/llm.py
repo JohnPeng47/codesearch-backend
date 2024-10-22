@@ -2,6 +2,9 @@ import logging
 import asyncio
 import os
 import yaml
+from enum import Enum
+import ell
+import inspect
 
 from anthropic import Anthropic, RateLimitError
 from dataclasses import dataclass, fields
@@ -15,8 +18,6 @@ from tenacity import (
 )
 import tiktoken
 import yaml
-
-# from typing import Optional
 
 from openai import AsyncOpenAI
 
@@ -81,15 +82,47 @@ def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> i
     return num_tokens
 
 
-class BaseModel:
+class ModelType(Enum):
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
+
+
+class BaseLLMModel:
+    _instance = None
     MODELS = {}
     SHORTCUTS = {}
+    stats = APIStats()
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(BaseLLMModel, cls).__new__(cls)
+        return cls._instance
 
     def __init__(self, args: ModelArguments = None):
-        self.args = args
-        self.model_metadata = {}
-        self.stats = APIStats()
+        if not hasattr(self, 'initialized'):
+            self.args = args
+            self.SHORTCUTS = {**AnthropicModel.SHORTCUTS, **OpenAIModel.SHORTCUTS}
+            self.model_metadata = {OpenAIModel.MODELS, AnthropicModel.MODELS}
 
+            # Map model name to metadata (cost, context info)
+            MODELS = {
+                **{dest: self.MODELS[src] for dest, src in self.SHORTCUTS.items()},
+                **self.MODELS,
+            }
+            if args.model_name in MODELS:
+                self.model_metadata = MODELS[args.model_name]
+            else:
+                raise ValueError(
+                    f"Unregistered model ({args.model_name}) \n"
+                    f"Available models: {list(MODELS.keys())}"
+                )
+
+            self.anthropic_model = AnthropicModel(args)
+            self.openai_model = OpenAIModel(args)
+
+            self.initialized = True
+
+    def _check_model(self, model_name: str):
         # Map `model_name` to API-compatible name `api_model`
         self.api_model = (
             self.SHORTCUTS[self.args.model_name]
@@ -106,8 +139,10 @@ class BaseModel:
             self.model_metadata = MODELS[args.model_name]
         else:
             raise ValueError(
-                f"Unregistered model ({args.model_name}). Add model name to MODELS metadata to {self.__class__}"
+                f"Unregistered model ({args.model_name}) \n"
+                f"Available models: {list(MODELS.keys())}"
             )
+
 
     def reset_stats(self, other: APIStats = None):
         if other is None:
@@ -127,64 +162,79 @@ class BaseModel:
         """
         return self.model_metadata["cost_per_output_token"] * output_tokens
 
-    def update_stats(self, input_tokens, output_tokens):
+    @classmethod
+    def update_stats(cls, input_tokens, output_tokens, func_name):
         """
-        Calculates the cost of a response from the openai API.
+        Calculates the cost of a response and updates the class-level stats.
 
         Args:
         input_tokens (int): The number of tokens in the prompt.
         output_tokens (int): The number of tokens in the response.
+        func_name (str): The name of the function that called query.
 
         Returns:
         float: The cost of the response.
         """
-        # Calculate cost and update cost related fields
-        cost = self.input_cost(input_tokens) + self.output_cost(output_tokens)
-        self.stats.total_cost += cost
-        self.stats.instance_cost += cost
-        self.stats.tokens_sent += input_tokens
-        self.stats.tokens_received += output_tokens
-        self.stats.api_calls += 1
+        # Calculate cost
+        cost = cls.input_cost(input_tokens) + cls.output_cost(output_tokens)
+        
+        # Update class-level stats
+        cls.stats = cls.stats + APIStats(
+            total_cost=cost,
+            instance_cost=cost,
+            tokens_sent=input_tokens,
+            tokens_received=output_tokens,
+            api_calls=1
+        )
 
-        # Log updated cost values to std. out.
-        # logger.info(
-        #     f"input_tokens={input_tokens:_}, "
-        #     f"output_tokens={output_tokens:_}, "
-        #     f"instance_cost={self.stats.instance_cost:.2f}, "
-        #     f"cost={cost:.2f}"
-        # )
-        # logger.info(
-        #     f"total_tokens_sent={self.stats.tokens_sent:_}, "
-        #     f"total_tokens_received={self.stats.tokens_received:_}, "
-        #     f"total_cost={self.stats.total_cost:.2f}, "
-        #     f"total_api_calls={self.stats.api_calls:_}"
-        # )
+        # Log updated cost values
+        logger.info(
+            f"Function: {func_name}, "
+            f"input_tokens={input_tokens:_}, "
+            f"output_tokens={output_tokens:_}, "
+            f"instance_cost={cls.stats.instance_cost:.2f}, "
+            f"cost={cost:.2f}"
+        )
 
         # Check whether total cost or instance cost limits have been exceeded
-        # if (
-        #     self.args.total_cost_limit > 0
-        #     and self.stats.total_cost >= self.args.total_cost_limit
-        # ):
-        #     logger.warning(
-        #         f"Cost {self.stats.total_cost:.2f} exceeds limit {self.args.total_cost_limit:.2f}"
-        #     )
-        #     raise CostLimitExceededError("Total cost limit exceeded")
+        if (
+            cls.args.total_cost_limit > 0
+            and cls.stats.total_cost >= cls.args.total_cost_limit
+        ):
+            logger.warning(
+                f"Cost {cls.stats.total_cost:.2f} exceeds limit {cls.args.total_cost_limit:.2f}"
+            )
+            raise CostLimitExceededError("Total cost limit exceeded")
 
-        # if (
-        #     self.args.per_instance_cost_limit > 0
-        #     and self.stats.instance_cost >= self.args.per_instance_cost_limit
-        # ):
-        #     logger.warning(
-        #         f"Cost {self.stats.instance_cost:.2f} exceeds limit {self.args.per_instance_cost_limit:.2f}"
-        #     )
-        #     raise CostLimitExceededError("Instance cost limit exceeded")
+        if (
+            cls.args.per_instance_cost_limit > 0
+            and cls.stats.instance_cost >= cls.args.per_instance_cost_limit
+        ):
+            logger.warning(
+                f"Cost {cls.stats.instance_cost:.2f} exceeds limit {cls.args.per_instance_cost_limit:.2f}"
+            )
+            raise CostLimitExceededError("Instance cost limit exceeded")
+        
         return cost
 
-    async def query(self, prompt: str) -> str:
-        raise NotImplementedError("Use a subclass of BaseModel")
+    async def query(self, prompt: str, model_type: ModelType) -> str:
+        if model_type == ModelType.ANTHROPIC:
+            return await self.anthropic_model.query(prompt)
+        elif model_type == ModelType.OPENAI:
+            return await self.openai_model.query(prompt)
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
+
+    def query_sync(self, prompt: str, model_type: ModelType) -> str:
+        if model_type == ModelType.ANTHROPIC:
+            return self.anthropic_model.query_sync(prompt)
+        elif model_type == ModelType.OPENAI:
+            return self.openai_model.query_sync(prompt)
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
 
 
-class AnthropicModel(BaseModel):
+class AnthropicModel(BaseLLMModel):
     MODELS = {
         "claude-instant": {
             "max_context": 100_000,
@@ -252,17 +302,17 @@ class AnthropicModel(BaseModel):
         stop=stop_after_attempt(15),
         retry=retry_if_not_exception_type((RateLimitError,)),
     )
-    def query(self, prompt: str) -> str:
+    async def query(self, prompt: str) -> str:
         """
         Query the Anthropic API with the given `history` and return the response.
         """
-        return anthropic_query(self, prompt)
+        return await anthropic_query(self, prompt)
 
     def query_sync(self, prompt: str) -> str:
-        return self.query(prompt)
+        return asyncio.run(self.query(prompt))
 
 
-def anthropic_query(model: AnthropicModel, message) -> str:
+async def anthropic_query(model: AnthropicModel, message) -> str:
     """
     Query the Anthropic API with the given `history` and return the response.
     """
@@ -270,7 +320,7 @@ def anthropic_query(model: AnthropicModel, message) -> str:
     message = {"role": "user", "content": message}
 
     # Perform Anthropic API call
-    response = model.api.messages.create(
+    response = await model.api.messages.create(
         messages=[message],
         max_tokens=model.model_metadata["max_tokens"],
         model=model.api_model,
@@ -279,11 +329,12 @@ def anthropic_query(model: AnthropicModel, message) -> str:
     )
 
     # Calculate + update costs, return response
-    model.update_stats(response.usage.input_tokens, response.usage.output_tokens)
+    caller_name = inspect.currentframe().f_back.f_code.co_name
+    BaseLLMModel.update_stats(response.usage.input_tokens, response.usage.output_tokens, caller_name)
     return "\n".join([x.text for x in response.content])
 
 
-class OpenAIModel(BaseModel):
+class OpenAIModel(BaseLLMModel):
     MODELS = {
         "gpt-3.5-turbo-0125": {
             "max_context": 16_385,
@@ -405,20 +456,21 @@ class OpenAIModel(BaseModel):
         stop=stop_after_attempt(3),
         retry=retry_if_not_exception_type((CostLimitExceededError, RuntimeError)),
     )
-    def query(self, prompt: str) -> str:
+    async def query(self, prompt: str) -> str:
         """
         Query the OpenAI API with the given `history` and return the response.
         """
 
         try:
             # Perform OpenAI API call
-            response = self.client.chat.completions.create(
+            response = await self.async_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}], model=self.api_model
             )
 
             input_tokens = response.usage.prompt_tokens
             output_tokens = response.usage.completion_tokens
-            self.update_stats(input_tokens, output_tokens)
+            caller_name = inspect.currentframe().f_code.co_name
+            BaseLLMModel.update_stats(input_tokens, output_tokens, caller_name)
             return response.choices[0].message.content
 
         except BadRequestError as e:
@@ -426,32 +478,8 @@ class OpenAIModel(BaseModel):
                 f"Context window ({self.model_metadata['max_context']} tokens) exceeded"
             )
 
-    @retry(
-        wait=wait_random_exponential(min=1, max=15),
-        reraise=True,
-        stop=stop_after_attempt(3),
-        retry=retry_if_not_exception_type((CostLimitExceededError, RuntimeError)),
-    )
-    async def query_async(self, prompt: str) -> str:
-        """
-        Query the OpenAI API with the given `history` and return the response.
-        """
-
-        try:
-            # Perform OpenAI API call
-            response = await self.client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}], model=self.api_model
-            )
-
-            input_tokens = response.usage.prompt_tokens
-            output_tokens = response.usage.completion_tokens
-            self.update_stats(input_tokens, output_tokens)
-            return response.choices[0].message.content
-
-        except BadRequestError as e:
-            raise CostLimitExceededError(
-                f"Context window ({self.model_metadata['max_context']} tokens) exceeded"
-            )
+    def query_sync(self, prompt: str) -> str:
+        return asyncio.run(self.query(prompt))
 
     async def query_yaml(self, prompt):
         """
@@ -471,11 +499,6 @@ class OpenAIModel(BaseModel):
             except Exception as e:
                 print("Failed attempt sleeping for: ", back_off**attempt)
                 await asyncio.sleep(back_off**attempt)
-
-    def query_sync(self, prompt: str) -> str:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self.query(prompt))
 
 
 if __name__ == "__main__":
@@ -507,3 +530,4 @@ if __name__ == "__main__":
 
     # Run the async function
     asyncio.run(run_query())
+

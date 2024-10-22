@@ -1,0 +1,47 @@
+role='assistant' content=[ContentBlock(text=Here are the clusters based on the provided seed chunks:
+
+1. Configuration and Provider Management Cluster:
+
+   Seed: ell\configurator.py::2 (Core `Config` class for configuration management)
+   - ell\configurator.py::3 (Model registration functionality within `Config`)
+   - ell\configurator.py::6 (Provider registration in the `Config` class)
+   - ell\provider.py::3 (Abstract `Provider` class for API interfaces)
+   - ell\provider.py::4 (Provider call method implementation)
+   - ell\provider.py::5 (Parameter validation for provider calls)
+
+2. OpenAI Integration and Model Registration Cluster:
+
+   Seed: models\openai.py::1 (OpenAI model registration process)
+   - models\openai.py::2 (Function to register OpenAI models with specific clients)
+   - ell\configurator.py::5 (Function to get clients for models in the config)
+   - providers\openai.py::1 (Handles the OpenAI provider implementation)
+   - ell\provider.py::6 (Validation for messages to ensure origin tracking)
+
+3. LMP Complex Functionality Cluster:
+
+   Seed: lmp\complex.py::2 (Implementation of the `complex` decorator)
+   - lmp\complex.py::3 (Return logic for LMP calls processed by `complex`)
+   - ell\configurator.py::8 (Initialization of ELL configuration)
+   - ell\configurator.py::9 (Deprecated store and provider helper functions)
+   - lmp\simple.py::1 (Implementation of the `simple` decorator)
+   - lmp\tool.py::1 (Tool decorator for use in LMPs)
+
+4. SQL Storage and Persistence Cluster:
+
+   Seed: stores\sql.py::2 (`SQLStore` class handling SQL storage operations)
+   - stores\sql.py::3 (Invocation write functionality in `SQLStore`)
+   - stores\sql.py::4 (Cache and invocation retrieval in `SQLStore`)
+   - stores\sql.py::5 (Method to get the latest LMPs in `SQLStore`)
+   - stores\sql.py::6 (General LMP retrieval method in `SQLStore`)
+   - ell\store.py::2 (Abstract base class for storage interfaces, including blob storage)
+
+5. Lexical Closure and Serialization Cluster:
+
+   Seed: util\closure.py::2 (`lexical_closure` function for code serialization)
+   - util\closure.py::3 (Function to format and handle source formatting)
+   - util\closure.py::14 (Helper function to process module dependencies)
+   - util\serialization.py::1 (Serialization hooks and format handling for images and complex types)
+   - util\serialization.py::2 (Function for immutable variable conversion)
+   - util\serialization.py::4 (Function for preparing invocation parameters)
+
+These clusters are formed in accordance with the functionality and file diversity guidelines, aiming to maintain coherence within each cluster's purpose and implementation scope.)]

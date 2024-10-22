@@ -1,27 +1,14 @@
 from pathlib import Path
-from typing import List, Dict
 from llama_index.core.schema import BaseNode
 import networkx as nx
 from dataclasses import dataclass
 from pydantic import BaseModel
+from typing import Dict, List
+import random
 
 from rtfs.chunk_resolution.graph import ClusterNode, ChunkNode, ChunkMetadata, NodeKind
 from rtfs.graph import CodeGraph
 
-
-import yaml
-from typing import Dict, List
-import random
-from dataclasses import dataclass
-
-from ..chunk_resolution.graph import (
-    ChunkNode,
-    ClusterNode,
-    NodeKind,
-    SummarizedChunk,
-)
-
-from rtfs.graph import CodeGraph
 from moatless.types import MoatlessChunkID
 
 
