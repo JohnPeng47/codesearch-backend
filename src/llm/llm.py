@@ -87,6 +87,7 @@ class ModelType(Enum):
     OPENAI = "openai"
 
 
+
 class BaseLLMModel:
     _instance = None
     MODELS = {}
@@ -374,7 +375,8 @@ class OpenAIModel(BaseLLMModel):
         # TODO: double check
         "gpt-4o": {
             "max_context": 128_000,
-            "cost_per_input_token": 1e-06,
+            "cost_per_input_token": 2.5e-06,
+            
             "cost_per_output_token": 2e-06,
         },
         # TODO: correct this

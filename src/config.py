@@ -46,6 +46,8 @@ GRAPH_ROOT = Path(CODESEARCH_DIR) / "graphs"
 SUMMARIES_ROOT = Path(CODESEARCH_DIR) / "summaries"
 EVAL_ROOT = Path(CODESEARCH_DIR) / "evals"
 
+ELL_STORAGE = "./logdir"
+
 AWS_REGION = "us-east-2"
 ANON_LOGIN = True
 

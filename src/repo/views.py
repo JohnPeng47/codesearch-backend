@@ -9,7 +9,7 @@ from src.index.service import get_or_create_index
 from src.queue.service import enqueue_task, enqueue_task_and_wait
 from src.exceptions import ClientActionException
 from src.models import HTTPSuccess
-from src.config import REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT, ENV
+from src.config import REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT, ENV, ELL_STORAGE
 
 from rtfs.summarize.summarize import Summarizer
 from rtfs.transforms.cluster import cluster
@@ -35,6 +35,8 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pathlib import Path
+
+from ell.api import get_invocations_by_curr_sessionid
 
 from logging import getLogger
 
@@ -222,6 +224,8 @@ async def summarize_repo(
     logger.info(
         f"Summarizing stats: {request.graph_type} for {repo.file_path}: \n{cg.get_stats()}"
     )
+    invocations = get_invocations_by_curr_sessionid()
+    print(invocations)
 
     save_graph_path = GRAPH_ROOT / repo_ident(repo.owner, repo.repo_name)
     summary = summarizer.get_output()
