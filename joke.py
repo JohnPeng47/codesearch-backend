@@ -157,5 +157,5 @@ This prompt provides a foundation for a gothic mystery with elements of historic
 for i in range(3):
     tell_story()
 
-p_tokens, c_tokens, cached_tokens = get_session_cost()
-print(f"Prompt tokens: {p_tokens}, Completion tokens: {c_tokens}, Cached tokens: {cached_tokens}")
+cost = get_session_cost()
+print(cost)

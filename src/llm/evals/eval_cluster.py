@@ -16,17 +16,16 @@ from pydantic import BaseModel, Field
 
 from .utils import EvalReport
 
-
+# TODO: rerun this eval set to determine new number ranking
 CLUSTER_METHODS = {
     "FULL_CODE": generate_full_code_clusters,
     "SUMMARIZE": generate_summarized_clusters,
     "GRAPH": generate_graph_clusters,
     "RANDOM": generate_random_clusters
 } 
+EVAL_ITERATIONS = 5
 
 client = OpenAI()
-
-# ell.init(store="logdir", autocommit=True)
 
 def eval_cross_file_single(cluster: ClusteredTopic) -> float:
     # Calculate the number of unique files in the cluster
@@ -45,7 +44,7 @@ def eval_cross_file_single(cluster: ClusteredTopic) -> float:
         return 0.0
 
     # Calculate the ratio of files to chunks
-    score = num_files ** 2.0 / num_chunks
+    score = num_files ** 1.3 / num_chunks
 
     return num_files, num_chunks, score
     
@@ -79,15 +78,46 @@ def eval_coherence_single(cluster: ClusteredTopic):
     cluster_code = "\n".join([chunk.get_content() + DELIMITER for chunk in cluster.chunks])
 
     EVAL_COHERENCE = """
-You are given a cluster that is the output of a clustering algorithm designed to group together
-code from related features. Your task is to evaluate how well the code in this cluster works together
-as a cohesive functional unit in the wider codebase. Output your score on a scale of 1 to 5, where:
+You are given a cluster that is the output of a clustering algorithm designed to group together code from related features. 
+Your task is to evaluate how well the code in this cluster works together as a cohesive functional unit in the wider codebase. 
+Output your score on a scale of 1 to 5, where:
 
-1 indicates the cluster contains largely unrelated code snippets with no clear functional relationship
-2 indicates the cluster has some loosely related code, but lacks a coherent purpose or functionality
-3 indicates the cluster contains moderately related code with a somewhat discernible shared purpose, but with significant irrelevant or misplaced elements
-4 indicates the cluster has closely related code forming a mostly cohesive functional unit, with only minor inconsistencies or outliers
-5 indicates the cluster represents a highly cohesive functional unit with strongly related code snippets that clearly work together towards a common purpose
+1 indicates either:
+
+The cluster contains completely unrelated code snippets with no functional relationship whatsoever
+The code snippets actively conflict in their purposes or dependencies
+The grouping appears to be essentially random
+Less than 20% of the code could be reasonably considered part of the same feature
+
+2 indicates:
+
+The cluster has only superficial relationships (e.g., sharing some common utility functions)
+Most code snippets (>60%) would work better in different clusters
+The code lacks any meaningful architectural or functional cohesion
+While some pieces may be related, they don't form any meaningful functional unit
+
+3 indicates:
+
+The cluster has a recognizable theme but significant problems
+40-60% of the code belongs together, but the rest should be elsewhere
+The related code pieces have weak or indirect functional dependencies
+The cluster mixes multiple distinct functionalities that should be separated
+
+4 indicates:
+
+The cluster represents a clear functional unit with minor issues
+At least 80% of the code clearly belongs together
+Any outliers are at least tangentially related to the main functionality
+The code has strong functional dependencies and shared purpose
+No critical pieces of the functionality are missing
+
+5 indicates:
+The cluster represents a perfect or near-perfect functional unit
+Virtually all code (>95%) is strongly related and necessary for the feature
+The cluster captures complete functionality with no missing pieces
+Clear, strong functional dependencies between all components
+No code that should obviously be placed elsewhere
+Removing any piece would break the functionality
 
 Here is the code in the cluster:
 {code}
@@ -175,6 +205,13 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
     eval_report.write()
 
     return total_score
+
+def eval_clusters(clusters: List[ClusteredTopic]):
+    cf_score = eval_cross_file_cluster(clusters)
+    cohere_score = eval_coherence_clusters(clusters, EVAL_ITERATIONS, "coherence")
+
+    return 1.5 * cohere_score + cf_score
+    
 
 def eval_clusters_metrics(repo_path: Path, iters: int = 1):
     repo_name = repo_path.name

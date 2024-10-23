@@ -6,8 +6,9 @@ from openai import LengthFinishReasonError
 
 from rtfs.aider_graph.aider_graph import AiderGraph
 from rtfs.transforms.cluster import cluster as cluster_cg
-from src.index.service import get_or_create_index
 from src.utils import num_tokens_from_string
+from src.llm.utils import get_session_cost
+from src.llm.invoke_mt import invoke_multithread
 
 from .types import (
     CodeChunk,
@@ -21,9 +22,11 @@ from .sum_chunks import summarize_chunk
 from .chunk_repo import chunk_repo, temp_index_dir, ChunkStrat
 from .utils import get_attrs_or_key
 
-# from .lmp.cluster_v1 import generate_clusters
+
+from .lmp.cluster_v1 import generate_clusters as gen_clusters_v1
 from .lmp.cluster_v2 import generate_clusters as gen_structured_clusters
-from .lmp.cluster_v3 import generate_clusters as gen_unstructured_clusters
+from .lmp.cluster_v3 import generate_clusters as gen_unstructured_clustersv1
+from .lmp.cluster_v4 import generate_clusters as gen_unstructured_clustersv2, ChunkType
 # from .lmp.cluster_basellm import generate_clusters
 
 from src.config import GRAPH_ROOT
@@ -63,7 +66,7 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -
         if len(unsorted_names) == 0:
             break
         
-        output = generate_clusters(cluster_inputs, unsorted_names)
+        output = gen_clusters_v1(cluster_inputs, unsorted_names)
         # TODO: add structured parsing support to ell
         parsed = get_attrs_or_key(output, "parsed")
         g_clusters = LMClusteredTopicList.parse_obj(parsed).topics # generated clusters
@@ -83,46 +86,50 @@ def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 4) -
                           if i not in matched_indices]
 
         # convert LMClusteredTopic to ClusteredTopic
-        with open(f"structured_output{i}.json", "w") as f:
-            for g_cluster in g_clusters:
-                chunks = []
-                try:
-                    for g_chunk_name in g_cluster.chunks:
-                        chunks.append(name_to_chunk[g_chunk_name])
-                except KeyError as e:
-                    print(f"Chunk Name: {g_chunk_name} hallucinated, skipping...")
-                    continue
-                
-                new_cluster = ClusteredTopic(
-                    name=g_cluster.name, 
-                    # yep, gotta convert pydantic to dict before it accepts it
-                    # as a valid input ...
-                    chunks=[
-                        # TODO: need to do this or else pydantic shits bed
-                        # for empty {} validation for metadata field
-                        {k:v for k,v in chunk.dict().items()
-                            if k != "metadata"} for chunk in chunks]
-                )
-                new_clusters.append(new_cluster)
-                f.write(str(new_cluster) + "\n")
+        for g_cluster in g_clusters:
+            chunks = []
+            try:
+                for g_chunk_name in g_cluster.chunks:
+                    chunks.append(name_to_chunk[g_chunk_name])
+            except KeyError as e:
+                print(f"Chunk Name: {g_chunk_name} hallucinated, skipping...")
+                continue
             
+            new_cluster = ClusteredTopic(
+                name=g_cluster.name, 
+                # yep, gotta convert pydantic to dict before it accepts it
+                # as a valid input ...
+                chunks=[
+                    # TODO: need to do this or else pydantic shits bed
+                    # for empty {} validation for metadata field
+                    {k:v for k,v in chunk.dict().items()
+                        if k != "metadata"} for chunk in chunks]
+            )
+            new_clusters.append(new_cluster)            
         
         print(f"Unclassified chunks, iter:[{i}]: ", len(unsorted_names))
 
     return new_clusters
 
-def _generate_llm_clusters_v2(cluster_inputs: List[ClusterInput], tries: int = 4) -> List[ClusteredTopic]:
+def _generate_llm_clusters_v2(cluster_inputs: List[ClusterInput], tries: int = 4, structured: bool = False) -> List[ClusteredTopic]:
+    """
+    Multi-step clustering, first indentify centroids, then generate cluster
+    
+    """
+    
     new_clusters = []
 
     for i in range(1, tries + 1):
         if len(cluster_inputs) == 0:
             break
+    
+        g_clusters: LMClusteredTopicList = gen_unstructured_clustersv1(cluster_inputs).parsed if structured \
+            else gen_structured_clusters(cluster_inputs).parsed 
         
-        g_clusters: LMClusteredTopicList = gen_unstructured_clusters(cluster_inputs).parsed
         # with open(f"unstructured_output{i}.json", "w") as f:
         #     f.write(str(output))
 
-        print(f"Writin to structured_output{i}.json")
+        print(f"Writing to structured_output{i}.json")
         with open(f"structured_output{i}.json", "w") as f:
             for _, cluster in enumerate(g_clusters.topics):
                 chunks = []
@@ -136,9 +143,7 @@ def _generate_llm_clusters_v2(cluster_inputs: List[ClusterInput], tries: int = 4
                         continue
 
                 print("New Cluster: ", cluster)
-
                 f.write(str(cluster) + "\n")
-
                 new_clusters.append(
                     ClusteredTopic(
                         name=cluster.name, 
@@ -151,13 +156,111 @@ def _generate_llm_clusters_v2(cluster_inputs: List[ClusterInput], tries: int = 4
         print(f"Unclassified chunks, iter:[{i}]: ", len(cluster_inputs))
         return
 
+    cost = get_session_cost()
+    print(f"Clustering cost\n: {cost}")
+
+    return new_clusters
+
+def _generate_llm_clusters_v3(cluster_inputs: List[ClusterInput], 
+                              tries: int = 4) -> List[ClusteredTopic]:
+    """
+    Added support for identifying data structs and logic type chunks
+    """
+    new_clusters = []
+    all_chunks = [chunk for chunk in cluster_inputs]
+    name_to_cluster = {chunk.get_name():i for i, chunk in enumerate(all_chunks)}
+    
+    for i in range(1, tries + 1):
+        if len(cluster_inputs) < 0.3 * len(all_chunks):
+            break
+        
+        g_clusters = []
+        for t in ChunkType:
+            cluster: LMClusteredTopicList = gen_unstructured_clustersv2(cluster_inputs, 
+                                                                      chunk_type = t.value).parsed
+            g_clusters.extend(cluster.topics)
+            print(f"Generated clusters for type {t}:", [c.name for c in cluster.topics])
+
+        uniq_clustered_chunks = set()
+        total_clustered_chunks = 0
+        with open(f"structured_output{i}.json", "w") as f:
+            for _, cluster in enumerate(g_clusters):
+                chunks = []
+                for c in cluster.chunks:
+                    c_index = name_to_cluster.get(c, None)
+                    if not c_index:
+                        print(f"Chunk Name: {c} hallucinated, skipping...")
+                        continue
+                    
+                    matched_chunk = all_chunks[c_index]
+                    chunks.append(matched_chunk)
+                    
+                    # continuously remove chunks that have been clustered
+                    try:
+                        cluster_inputs.remove(matched_chunk)
+                    except ValueError:
+                        pass
+
+                    # for tracking
+                    uniq_clustered_chunks.add(matched_chunk)
+                    total_clustered_chunks += 1
+
+                f.write(str(cluster) + "\n")
+                new_clusters.append(
+                    ClusteredTopic(
+                        name=cluster.name, 
+                        chunks=[
+                            {k:v for k,v in chunk.dict().items()
+                                if k != "metadata"} for chunk in chunks]
+                    )
+                )
+    
+        print(f"Unclassified chunks, iter:{i}: {len(cluster_inputs)} / {len(all_chunks)}")
+        print(f"Unique chunks: {len(uniq_clustered_chunks)}")
+        print(f"Total clustered chunks: {total_clustered_chunks}")
+
+    cost = get_session_cost()
+    print(cost)
     return new_clusters
 
 def generate_full_code_clusters(repo_path: Path, 
-                                chunk_strat: ChunkStrat = ChunkStrat.VANILLA) -> List[ClusteredTopic]:
+                                chunk_strat: ChunkStrat = ChunkStrat.VANILLA,
+                                summarize: bool = False) -> List[ClusteredTopic]:
     print("Generating full code clusters...")
     chunks = chunk_repo(repo_path, chunk_strat, mode="full", exclusions=EXCLUSIONS)
-    return _generate_llm_clusters_v2(chunks, tries=3)
+    return _generate_llm_clusters(chunks, tries=3)
+
+
+def generate_full_code_clustersv2(repo_path: Path, 
+                                chunk_strat: ChunkStrat = ChunkStrat.VANILLA,
+                                summarize: bool = False) -> List[ClusteredTopic]:
+    print("Generating full code clusters...")
+    chunks = chunk_repo(repo_path, chunk_strat, mode="full", exclusions=EXCLUSIONS)
+    if summarize:
+        summary_chunks = []
+        # for chunk in chunks:
+        #     try:
+        #         summary = summarize_chunk(chunk).parsed
+        #     except LengthFinishReasonError as e:
+        #         print(f"[Summarize Chunk] Chunk too long: {len(chunk.content)}, continuing...")
+        #         continue
+
+        #     summary_chunk = SummaryChunk.from_chunk(chunk, summary)
+        #     summary_chunks.append(summary_chunk)
+        summarized  = [summed.parsed for summed in invoke_multithread(chunks[:4], summarize_chunk)]
+        for s in summarized:
+            print(s)
+
+    #     summary_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in summary_chunks]))
+    #     code_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in chunks]))
+
+    #     print(f"Summary tokens: {summary_tokens}, \
+    #         Code tokens: {code_tokens}, \
+    #         Ratio: {summary_tokens / code_tokens}")
+        
+    #     chunks = summary_chunks
+
+    # return _generate_llm_clusters_v3(chunks, tries=3)
 
 
 def generate_summarized_clusters(repo_path: Path,

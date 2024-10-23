@@ -1,5 +1,7 @@
+from pydantic import BaseModel
 from ell.api import get_invocations_by_session_id
-from typing import Tuple
+from typing import Tuple, List, Dict
+from enum import Enum
 
 OPENAI_MODELS = {
     "gpt-4o": {
@@ -18,25 +20,79 @@ OPENAI_MODELS = {
         "max_context": 128_000, # cap??? swear its 8192
         "prompt_token_cost": 1.5e-07,
         "cached_token_cost": 7.5e-08,
-        "cost_per_output_token": 6e-07,
+        "completion_token_cost": 6e-07,
     },
     "gpt-4o-mini-2024-07-18": {
         "max_context": 128_000, # cap??? swear its 8192
         "prompt_token_cost": 1.5e-07,
         "cached_token_cost": 7.5e-08,
-        "cost_per_output_token": 6e-07,
+        "completion_token_cost": 6e-07,
     }
 }
 
-def get_session_cost(model_name: str) -> Tuple[float, float]:
-    prompt_tokens, completion_tokens, cached_tokens = 0, 0, 0
-    invocations = get_invocations_by_session_id()
-    for invocation in invocations:
-        prompt_tokens += invocation.prompt_tokens
-        completion_tokens += invocation.completion_tokens
-        cached_tokens += invocation.cached_tokens
+class TokenType(str, Enum):
+    PROMPT = "prompt"
+    CACHED = "cached"
+    COMPLETION = "completion"
+
+class TokenUsage(BaseModel):
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+
+    @property
+    def prt_token_cost(self) -> float:
+        return OPENAI_MODELS[self.model]["prompt_token_cost"]
     
-    input_cost = (prompt_tokens - cached_tokens) * OPENAI_MODELS[model_name]["prompt_token_cost"] \
-                + cached_tokens * OPENAI_MODELS[model_name]["cached_token_cost"]
-    output_cost = completion_tokens * OPENAI_MODELS[model_name]["completion_token_cost"]
-    return input_cost, output_cost
+    @property
+    def cch_token_cost(self) -> float:
+        return OPENAI_MODELS[self.model]["cached_token_cost"]
+    
+    @property
+    def cpt_token_cost(self) -> float:
+        return OPENAI_MODELS[self.model]["completion_token_cost"]
+
+    # THIS IS WRONGNNNGGG
+    def total_cost(self) -> int:
+        return (self.prompt_tokens - self.cached_tokens) * self.prt_token_cost \
+                + self.cached_tokens * self.cch_token_cost \
+                + self.completion_tokens * self.cpt_token_cost
+
+    def cached_savings(self) -> float:
+        savings = self.cached_tokens * self.prt_token_cost - self.cached_tokens * self.cch_token_cost
+        return savings
+
+class LLMMetrics(BaseModel):
+    token_costs: List[TokenUsage]
+    exec_time: float
+    
+    def total_cost(self) -> float:
+        return sum([cost.total_cost() for cost in self.token_costs])
+    
+    def cached_savings(self) -> float:
+        return sum([cost.cached_savings() for cost in self.token_costs]) / self.total_cost() * 100
+    
+    def __str__(self) -> str:
+        return (
+            f"Total Cost: {self.total_cost()}\n"
+            f"Cached Savings: {self.cached_savings()} %\n"
+            f"Execution Time: {self.exec_time / 1000} s"
+        )
+
+def get_session_cost() -> LLMMetrics:
+    invocations = get_invocations_by_session_id()
+    token_usages: List[TokenUsage] = []
+    ex_time = 0
+
+    for invocation in invocations:
+        ex_time += invocation.latency_ms
+        token_usage = TokenUsage(
+            model=invocation.model,
+            prompt_tokens=invocation.prompt_tokens,
+            completion_tokens=invocation.completion_tokens,
+            cached_tokens=invocation.cached_tokens
+        )
+        token_usages.append(token_usage)
+
+    return LLMMetrics(token_costs=token_usages, exec_time=ex_time)
