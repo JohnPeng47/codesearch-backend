@@ -1,14 +1,14 @@
 from typing import List, Tuple
-from pydantic import BaseModel
 import ell
 from enum import Enum
-from ..types import (
-    ClusterInput,
+
+from src.utils import DELIMETER
+from src.chunk.models import ClusterInput
+from ..models import (
     ClusteredTopic,
     LMClusteredTopicList
 )
 
-DELIMETER = f"\n\n{'-' * 80}\n" # only 1 tokens good deal!
 
 class SeedChunkType(str, Enum):
     LOGIC = "CORE_LOGIC"

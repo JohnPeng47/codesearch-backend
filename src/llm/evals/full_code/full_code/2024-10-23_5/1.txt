@@ -1,0 +1,4896 @@
+_____ full_code _____
+
+###### Cluster Eval ######
+Score: 5.0
+Cluster name: Gym Environment and Reinforcement Learning
+Gym Environment and Reinforcement Learning:
+
+-> Chunk: 0.1.0\cem.py::1
+
+
+import gym
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+from gym.vector import AsyncVectorEnv
+import random
+
+# Set random seeds for reproducibility
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+
+# Hyperparameters
+NUM_ENVIRONMENTS = 4           # Reduced for simplicity
+NUM_ITERATIONS = 50            # Number of training iterations
+TRAJECTORIES_PER_ITER = 100    # Total number of trajectories per iteration
+ELITE_PERCENT = 10             # Top k% trajectories to select
+LEARNING_RATE = 1e-3
+BATCH_SIZE = 64
+MAX_STEPS = 500                # Max steps per trajectory
+ENV_NAME = 'CartPole-v1'
+====================================================================
+-> Chunk: 0.1.0\cem.py::2
+
+
+       # Gym environment
+
+# Define the Policy Network
+class PolicyNetwork(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_dim=128):
+        super(PolicyNetwork, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, action_dim)
+        )
+
+    def forward(self, state):
+        logits = self.fc(state)
+        return logits
+
+    def get_action(self, state):
+        logits = self.forward(state)
+        action_probs = torch.softmax(logits, dim=-1)
+        action = torch.multinomial(action_probs, num_samples=1)
+        return action.squeeze(-1)
+
+# Function to create multiple environments
+def make_env(env_name, seed):
+    def _init():
+        env = gym.make(env_name)
+        return env
+    return _init
+====================================================================
+-> Chunk: 0.1.0\cem.py::3
+
+
+def collect_trajectories(envs, policy, num_trajectories, max_steps):
+    trajectories = []
+    num_envs = envs.num_envs
+
+    # Handle the return type of reset()
+    reset_output = envs.reset()
+    if isinstance(reset_output, tuple) or isinstance(reset_output, list):
+        obs = reset_output[0]  # Extract observations
+    else:
+        obs = reset_output
+
+    done_envs = [False] * num_envs
+    steps = 0
+
+    # Initialize storage for states, actions, and rewards per environment
+    env_states = [[] for _ in range(num_envs)]
+    env_actions = [[] for _ in range(num_envs)]
+    env_rewards = [0.0 for _ in range(num_envs)]
+    total_collected = 0
+    # ... other code
+====================================================================
+-> Chunk: 0.1.0\cem.py::4
+
+
+def collect_trajectories(envs, policy, num_trajectories, max_steps):
+    # ... other code
+
+    while total_collected < num_trajectories and steps < max_steps:
+        # Convert observations to tensor efficiently
+        try:
+            # Ensure 'obs' is a NumPy array
+            if not isinstance(obs, np.ndarray):
+                print(f"Unexpected type for observations: {type(obs)}")
+                raise ValueError("Observations are not a NumPy array.")
+
+            # Convert observations to tensor using from_numpy for efficiency
+            obs_tensor = torch.from_numpy(obs).float()
+            # Ensure the observation dimension matches expected
+            assert obs_tensor.shape[1] == 4, f"Expected observation dimension 4, got {obs_tensor.shape[1]}"
+        except Exception as e:
+            print(f"Error converting observations to tensor at step {steps}: {e}")
+            print(f"Observations: {obs}")
+            raise e
+
+        with torch.no_grad():
+            actions = policy.get_action(obs_tensor).cpu().numpy()
+
+        # Unpack step based on Gym version
+        try:
+            # For Gym versions >=0.26, step returns five values
+            next_obs, rewards, dones, truncs, infos = envs.step(actions)
+        except ValueError:
+            # For older Gym versions, step returns four values
+            next_obs, rewards, dones, infos = envs.step(actions)
+            truncs = [False] * len(dones)  # Assume no truncations if not provided
+
+        # Handle the reset output of step()
+        if isinstance(next_obs, tuple) or isinstance(next_obs, list):
+            next_obs = next_obs[0]  # Extract observations
+
+        # Ensure infos is a list
+        if not isinstance(infos, list):
+            infos = [{} for _ in range(num_envs)]  # Default to empty dicts
+
+        for i in range(num_envs):
+            if not done_envs[i]:
+                # Check if obs[i] has the correct shape
+                if len(obs[i]) != 4:
+                    print(f"Unexpected observation shape for env {i}: {obs[i]}")
+                    continue  # Skip this step for the problematic environment
+
+                env_states[i].append(obs[i])
+                env_actions[i].append(actions[i])
+                env_rewards[i] += rewards[i]
+                if dones[i] or truncs[i]:
+                    # Extract reward from infos
+                    if isinstance(infos[i], dict):
+                        episode_info = infos[i].get('episode', {})
+                        traj_reward = episode_info.get('r') if 'r' in episode_info else env_rewards[i]
+                    else:
+                        # Handle cases where infos[i] is not a dict
+                        traj_reward = env_rewards[i]
+                        print(f"Warning: infos[{i}] is not a dict. Received type: {type(infos[i])}")
+
+                    trajectories.append({
+                        'states': env_states[i],
+                        'actions': env_actions[i],
+                        'reward': traj_reward
+                    })
+                    total_collected += 1
+                    env_states[i] = []
+                    env_actions[i] = []
+                    env_rewards[i] = 0.0
+                    done_envs[i] = True
+
+        obs = next_obs
+        steps += 1
+
+        # Reset environments that are done
+        if any(done_envs):
+            indices = [i for i, done in enumerate(done_envs) if done]
+            if total_collected < num_trajectories:
+                for i in indices:
+                    try:
+                        # Directly reset the environment
+                        reset_output = envs.envs[i].reset()
+                        if isinstance(reset_output, tuple) or isinstance(reset_output, list):
+                            # For Gym versions where reset returns (obs, info)
+                            obs[i] = reset_output[0]
+                        else:
+                            # For Gym versions where reset returns only obs
+                            obs[i] = reset_output
+                        done_envs[i] = False
+                    except Exception as e:
+                        print(f"Error resetting environment {i}: {e}")
+                        # Optionally, handle the failure (e.g., retry, terminate the environment)
+                        done_envs[i] = False  # Prevent infinite loop
+
+    return trajectories
+====================================================================
+-> Chunk: 0.1.0\cem.py::5
+
+
+def select_elite(trajectories, percentile=ELITE_PERCENT):
+    rewards = [traj['reward'] for traj in trajectories]
+    if not rewards:
+        return []
+    reward_threshold = np.percentile(rewards, 100 - percentile)
+    elite_trajectories = [traj for traj in trajectories if traj['reward'] >= reward_threshold]
+    return elite_trajectories
+
+# Function to create training dataset from elite trajectories
+def create_training_data(elite_trajectories):
+    states = []
+    actions = []
+    for traj in elite_trajectories:
+        states.extend(traj['states'])
+        actions.extend(traj['actions'])
+    if not states or not actions:
+        return None, None
+    # Convert lists to NumPy arrays first for efficiency
+    states = np.array(states, dtype=np.float32)
+    actions = np.array(actions, dtype=np.int64)
+    # Convert to PyTorch tensors
+    states = torch.from_numpy(states)
+    actions = torch.from_numpy(actions)
+    return states, actions
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.666666666666667
+Cluster name: Serialization Utility
+Serialization Utility:
+
+-> Chunk: util\serialization.py::1
+
+
+# Global converter
+import base64
+import hashlib
+from io import BytesIO
+import json
+import cattrs
+import numpy as np
+from pydantic import BaseModel
+import PIL
+from ell.types._lstr import _lstr
+
+
+pydantic_ltype_aware_cattr = cattrs.Converter()
+
+def serialize_image(img):
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+# Register hooks for complex types
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    np.ndarray,
+    lambda arr: {
+        "content": serialize_image(PIL.Image.fromarray(arr)),
+        "__limage": True
+    } if arr.ndim == 3 else (
+        {
+            "content": base64.b64encode(arr.tobytes()).decode(),
+            "dtype": str(arr.dtype),
+            "shape": arr.shape,
+            "__lndarray": True
+        }
+    )
+)
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    set,
+    lambda s: list(sorted(s))
+)
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    frozenset,
+    lambda s: list(sorted(s))
+)
+
+
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    PIL.Image.Image,
+    lambda obj: {
+        "content": serialize_image(obj),
+        "__limage": True
+    }
+)
+
+def unstructure_lstr(obj):
+    return dict(content=str(obj), **obj.__dict__, __lstr=True)
+
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    _lstr,
+    unstructure_lstr
+)
+
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    BaseModel,
+    lambda obj: obj.model_dump(exclude_none=True, exclude_unset=True)
+)
+====================================================================
+-> Chunk: util\serialization.py::2
+
+
+def get_immutable_vars(vars_dict):
+    converter = cattrs.Converter()
+
+    def handle_complex_types(obj):
+        if isinstance(obj, (int, float, str, bool, type(None))):
+            return obj
+        elif isinstance(obj, (list, tuple)):
+            return [handle_complex_types(item) if not isinstance(item, (int, float, str, bool, type(None))) else item for item in obj]
+        elif isinstance(obj, dict):
+            return {k: handle_complex_types(v) if not isinstance(v, (int, float, str, bool, type(None))) else v for k, v in obj.items()}
+        elif isinstance(obj, (set, frozenset)):
+            return list(sorted(handle_complex_types(item) if not isinstance(item, (int, float, str, bool, type(None))) else item for item in obj))
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return f"<Object of type {type(obj).__name__}>"
+
+    converter.register_unstructure_hook(object, handle_complex_types)
+    x = converter.unstructure(vars_dict)
+    return x
+====================================================================
+-> Chunk: util\serialization.py::3
+
+
+def compute_state_cache_key(ipstr, fn_closure):
+    _global_free_vars_str = f"{json.dumps(get_immutable_vars(fn_closure[2]), sort_keys=True, default=repr, ensure_ascii=False)}"
+    _free_vars_str = f"{json.dumps(get_immutable_vars(fn_closure[3]), sort_keys=True, default=repr, ensure_ascii=False)}"
+    state_cache_key = hashlib.sha256(f"{ipstr}{_global_free_vars_str}{_free_vars_str}".encode('utf-8')).hexdigest()
+    return state_cache_key
+====================================================================
+-> Chunk: util\serialization.py::4
+
+
+def prepare_invocation_params(params):
+    invocation_params = params
+
+    cleaned_invocation_params = pydantic_ltype_aware_cattr.unstructure(invocation_params)
+
+    # Thisis because we wneed the caching to work on the hash of a cleaned and serialized object.
+    jstr = json.dumps(cleaned_invocation_params, sort_keys=True, default=repr, ensure_ascii=False)
+
+    consumes = set()
+    import re
+    # XXX: Better than registering a hook in cattrs.
+    pattern = r'"__origin_trace__":\s*"frozenset\({(.+?)}\)"'
+
+    # Find all matches in the jstr
+    matches = re.findall(pattern, jstr)
+
+    # Process each match and add to consumes set
+    for match in matches:
+        # Remove quotes and spaces, then split by comma
+        items = [item.strip().strip("'") for item in match.split(',')]
+        consumes.update(items)
+    consumes = list(consumes)
+    # XXX: Only need to reload because of 'input' caching., we could skip this by making ultimate model caching rather than input hash caching; if prompt same use the same output.. irrespective of version.
+    return json.loads(jstr), jstr, consumes
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.333333333333333
+Cluster name: Language Model API Integration
+Language Model API Integration:
+
+-> Chunk: 0.1.0\autostreamprevention.py::1
+
+
+import openai
+import os
+
+# Define the function to stream the response
+def stream_openai_response(prompt):
+    try:
+        # Make the API call
+        response = openai.chat.completions.create(
+            model="o1-mini",  # Specify the model
+            messages=[{"role": "user", "content": prompt}],
+            stream=True  # Enable streaming
+        )
+
+        # Stream the response
+        for chunk in response:
+            if chunk.choices[0].delta.get("content"):
+                print(chunk.choices[0].delta.content, end="", flush=True)
+
+        print()  # Print a newline at the end
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+# Example usage
+prompt = "Tell me a short joke."
+stream_openai_response(prompt)
+====================================================================
+-> Chunk: providers\anthropic.py::1
+
+
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+
+from ell.types._lstr import _lstr
+from ell.types.message import LMP
+from ell.configurator import register_provider
+from ell.util.serialization import serialize_image
+import base64
+from io import BytesIO
+import json
+import requests
+from PIL import Image as PILImage
+
+try:
+    import anthropic
+    from anthropic import Anthropic
+    from anthropic.types import Message as AnthropicMessage, MessageParam, RawMessageStreamEvent
+    from anthropic.types.message_create_params import MessageCreateParamsStreaming
+    from anthropic._streaming import Stream
+
+    class AnthropicProvider(Provider):
+        dangerous_disable_validation = True
+
+        def provider_call_function(self, client : Anthropic, api_call_params : Optional[Dict[str, Any]] = None) -> Callable[..., Any]:
+            return client.messages.create
+
+        def translate_to_provider(self, ell_call : EllCallParams):
+            final_call_params = cast(MessageCreateParamsStreaming, ell_call.api_params.copy())
+            # XXX: Helper, but should be depreicated due to ssot
+            assert final_call_params.get("max_tokens") is not None, f"max_tokens is required for anthropic calls, pass it to the @ell.simple/complex decorator, e.g. @ell.simple(..., max_tokens=your_max_tokens) or pass it to the model directly as a parameter when calling your LMP: your_lmp(..., api_params=({{'max_tokens': your_max_tokens}}))."
+
+            dirty_msgs = [
+                MessageParam(
+                    role=cast(Literal["user", "assistant"], message.role), 
+                    content=[_content_block_to_anthropic_format(c) for c in message.content]) for message in ell_call.messages]
+            role_correct_msgs   : List[MessageParam] = []
+            for msg in dirty_msgs:
+                if (not len(role_correct_msgs) or role_correct_msgs[-1]['role'] != msg['role']):
+                    role_correct_msgs.append(msg)
+                else: cast(List, role_correct_msgs[-1]['content']).extend(msg['content'])
+
+            system_message = None
+            if role_correct_msgs and role_correct_msgs[0]["role"] == "system":
+                system_message = role_correct_msgs.pop(0)
+
+            if system_message:
+                final_call_params["system"] = system_message["content"][0]["text"]
+
+
+            final_call_params['stream'] = True
+            final_call_params["model"] = ell_call.model
+            final_call_params["messages"] = role_correct_msgs
+
+            if ell_call.tools:
+                final_call_params["tools"] = [
+                    #XXX: Cleaner with LMP's as a class.
+                    dict(
+                        name=tool.__name__,
+                        description=tool.__doc__,
+                        input_schema=tool.__ell_params_model__.model_json_schema(),
+                    )
+                    for tool in ell_call.tools
+                ]
+
+            # print(final_call_params)
+            return final_call_params
+
+        def translate_from_provider(
+            self,
+            provider_response : Union[Stream[RawMessageStreamEvent], AnthropicMessage],
+            ell_call: EllCallParams,
+            provider_call_params: Dict[str, Any],
+            origin_id: Optional[str] = None,
+            logger: Optional[Callable[..., None]] = None,
+        ) -> Tuple[List[Message], Metadata]:
+
+            usage = {}
+            tracked_results = []
+            metadata = {}
+
+            #XXX: Support n > 0
+
+            if provider_call_params.get("stream", False):
+                content = []
+                current_blocks: Dict[int, Dict[str, Any]] = {}
+                message_metadata = {}
+
+                with cast(Stream[RawMessageStreamEvent], provider_response) as stream:
+                    for chunk in stream:
+                        if chunk.type == "message_start":
+                            message_metadata = chunk.message.model_dump()
+                            message_metadata.pop("content", None)  # Remove content as we'll build it separately
+
+                        elif chunk.type == "content_block_start":
+                            block = chunk.content_block.model_dump()
+                            current_blocks[chunk.index] = block
+                            if block["type"] == "tool_use":
+                                if logger: logger(f" <tool_use: {block['name']}(")
+                                block["input"] = "" # force it to be a string, XXX: can implement partially parsed json later.
+                        elif chunk.type == "content_block_delta":
+                            if chunk.index in current_blocks:
+                                block = current_blocks[chunk.index]
+                                if (delta := chunk.delta).type == "text_delta":
+                                    block["text"] += delta.text
+                                    if logger: logger(delta.text)
+                                if delta.type == "input_json_delta":
+                                    block["input"] += delta.partial_json
+                                    if logger: logger(delta.partial_json)
+
+                        elif chunk.type == "content_block_stop":
+                            if chunk.index in current_blocks:
+                                block = current_blocks.pop(chunk.index)
+                                if block["type"] == "text":
+                                    content.append(ContentBlock(text=_lstr(block["text"],origin_trace=origin_id)))
+                                elif block["type"] == "tool_use":
+                                    try:
+                                        matching_tool = ell_call.get_tool_by_name(block["name"])
+                                        if matching_tool:
+                                            content.append(
+                                                ContentBlock(
+                                                    tool_call=ToolCall(
+                                                        tool=matching_tool,
+                                                        tool_call_id=_lstr(
+                                                            block['id'],origin_trace=origin_id
+                                                        ),
+                                                        params=json.loads(block['input']) if block['input'] else {},
+                                                    )
+                                                )
+                                            )
+                                    except json.JSONDecodeError:
+                                        if logger: logger(f" - FAILED TO PARSE JSON")
+                                        pass
+                                    if logger: logger(f")>")
+
+                        elif chunk.type == "message_delta":
+                            message_metadata.update(chunk.delta.model_dump())
+                            if chunk.usage:
+                                usage.update(chunk.usage.model_dump())
+
+                        elif chunk.type == "message_stop":
+                            tracked_results.append(Message(role="assistant", content=content))
+
+                        # print(chunk)
+                metadata = message_metadata
+
+            # process metadata for ell
+            # XXX: Unify an ell metadata format for ell studio.
+            usage["prompt_tokens"] = usage.get("input_tokens", 0)
+            usage["completion_tokens"] = usage.get("output_tokens", 0)
+            usage["total_tokens"] = usage['prompt_tokens'] + usage['completion_tokens']
+
+            metadata["usage"] = usage
+            return tracked_results, metadata
+
+    # XXX: Make a singleton.
+    anthropic_provider = AnthropicProvider()
+    register_provider(anthropic_provider, anthropic.Anthropic)
+    register_provider(anthropic_provider, anthropic.AnthropicBedrock)
+    register_provider(anthropic_provider, anthropic.AnthropicVertex)
+
+except ImportError:
+    pass
+====================================================================
+-> Chunk: providers\bedrock.py::1
+
+
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+from ell.types._lstr import _lstr
+import json
+from ell.configurator import config, register_provider
+from ell.types.message import LMP
+from ell.util.serialization import serialize_image
+from io import BytesIO
+import requests
+from PIL import Image as PILImage
+====================================================================
+-> Chunk: providers\openai.py::1
+
+
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+
+from pydantic import BaseModel
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall
+from ell.types._lstr import _lstr
+import json
+from ell.configurator import _Model, config, register_provider
+from ell.types.message import LMP
+from ell.util.serialization import serialize_image
+
+try:
+    # XXX: Could genericize.
+    import openai
+    from openai._streaming import Stream
+    from openai.types.chat import ChatCompletion, ParsedChatCompletion, ChatCompletionChunk, ChatCompletionMessageParam
+
+    class OpenAIProvider(Provider):
+        dangerous_disable_validation = True
+
+        def provider_call_function(self, client : openai.Client, api_call_params : Optional[Dict[str, Any]] = None) -> Callable[..., Any]:
+            if api_call_params and (isinstance(fmt := api_call_params.get("response_format"), type)) and issubclass(fmt, BaseModel):
+                return client.beta.chat.completions.parse
+            else:
+                return client.chat.completions.create
+
+        def translate_to_provider(self, ell_call : EllCallParams) -> Dict[str, Any]:
+            final_call_params = ell_call.api_params.copy()
+            final_call_params["model"] = ell_call.model
+            # Stream by default for verbose logging.
+            final_call_params["stream"] = True
+            final_call_params["stream_options"] = {"include_usage": True}
+
+            # XXX: Deprecation of config.registry.supports_streaming when streaming is implemented.
+            if ell_call.tools or final_call_params.get("response_format") or (regisered_model := config.registry.get(ell_call.model, None)) and regisered_model.supports_streaming is False:
+                final_call_params.pop("stream", None)
+                final_call_params.pop("stream_options", None)
+            if ell_call.tools:
+                final_call_params.update(
+                    tool_choice=final_call_params.get("tool_choice", "auto"),
+                    tools=[  
+                        dict(
+                            type="function",
+                            function=dict(
+                                name=tool.__name__,
+                                description=tool.__doc__,
+                                parameters=tool.__ell_params_model__.model_json_schema(),  #type: ignore
+                            )
+                        ) for tool in ell_call.tools
+                    ]
+                )
+            # messages
+            openai_messages : List[ChatCompletionMessageParam] = []
+            for message in ell_call.messages:
+                if (tool_calls := message.tool_calls):
+                    assert message.role == "assistant", "Tool calls must be from the assistant."
+                    assert all(t.tool_call_id for t in tool_calls), "Tool calls must have tool call ids."
+                    openai_messages.append(dict(
+                        tool_calls=[
+                            dict(
+                                id=cast(str, tool_call.tool_call_id),
+                                type="function",
+                                function=dict(
+                                    name=tool_call.tool.__name__,
+                                    arguments=json.dumps(tool_call.params.model_dump(), ensure_ascii=False)
+                                )
+                            ) for tool_call in tool_calls ],
+                        role="assistant",
+                        content=None,
+                    ))
+                elif (tool_results := message.tool_results):
+                    for tool_result in tool_results:
+                        assert all(cb.type == "text" for cb in tool_result.result), "Tool result does not match expected content blocks."
+                        openai_messages.append(dict(
+                            role="tool",
+                            tool_call_id=tool_result.tool_call_id,
+                            content=tool_result.text_only, 
+                        ))
+                else:
+                    openai_messages.append(cast(ChatCompletionMessageParam, dict(
+                        role=message.role,
+                        content=[_content_block_to_openai_format(c) for c in message.content] 
+                             if message.role != "system" 
+                             else message.text_only
+                    )))
+
+            final_call_params["messages"] = openai_messages
+
+            return final_call_params
+
+        def translate_from_provider(
+            self,
+            provider_response: Union[
+                ChatCompletion, 
+                ParsedChatCompletion,
+                Stream[ChatCompletionChunk], Any],
+            ell_call: EllCallParams,
+            provider_call_params: Dict[str, Any],
+            origin_id: Optional[str] = None,
+            logger: Optional[Callable[..., None]] = None,
+        ) -> Tuple[List[Message], Metadata]:
+
+            metadata : Metadata = {}
+            messages : List[Message] = []
+            did_stream = provider_call_params.get("stream", False)
+
+
+            if did_stream:
+                stream = cast(Stream[ChatCompletionChunk], provider_response)
+                message_streams = defaultdict(list)
+                role : Optional[str] = None
+                for chunk in stream:
+                    metadata.update(chunk.model_dump(exclude={"choices"}))
+
+                    for chat_compl_chunk in chunk.choices:
+                        message_streams[chat_compl_chunk.index].append(chat_compl_chunk)
+                        delta = chat_compl_chunk.delta
+                        role = role or delta.role
+                        if  chat_compl_chunk.index == 0 and logger:
+                            logger(delta.content, is_refusal=hasattr(delta, "refusal") and delta.refusal)
+                for _, message_stream in sorted(message_streams.items(), key=lambda x: x[0]):
+                    text = "".join((choice.delta.content or "") for choice in message_stream)
+                    messages.append(
+                        Message(role=role, 
+                                content=_lstr(content=text,origin_trace=origin_id)))
+                    #XXX: Support streaming other types.
+            else:
+                chat_completion = cast(Union[ChatCompletion, ParsedChatCompletion], provider_response)
+                metadata = chat_completion.model_dump(exclude={"choices"})
+                for oai_choice in chat_completion.choices:
+                    role = oai_choice.message.role
+                    content_blocks = []
+                    if (hasattr(message := oai_choice.message, "refusal") and (refusal := message.refusal)):
+                        raise ValueError(refusal)
+                    if hasattr(message, "parsed"):
+                        if (parsed := message.parsed):
+                            content_blocks.append(ContentBlock(parsed=parsed)) #XXX: Origin tracing
+                            if logger: logger(parsed.model_dump_json())
+                    else:
+                        if (content := message.content):
+                            content_blocks.append(
+                                ContentBlock(
+                                    text=_lstr(content=content,origin_trace=origin_id)))
+                            if logger: logger(content)
+                        if (tool_calls := message.tool_calls):
+                            for tool_call in tool_calls:
+                                matching_tool = ell_call.get_tool_by_name(tool_call.function.name)
+                                assert matching_tool, "Model called tool not found in provided toolset."
+                                content_blocks.append(
+                                    ContentBlock(
+                                        tool_call=ToolCall(
+                                            tool=matching_tool,
+                                            tool_call_id=_lstr(
+                                                tool_call.id, origin_trace= origin_id),
+                                            params=json.loads(tool_call.function.arguments),
+                                        )
+                                    )
+                                )
+                                if logger: logger(repr(tool_call))
+                    messages.append(Message(role=role, content=content_blocks))
+            return messages, metadata
+
+
+    # xx: singleton needed
+    openai_provider = OpenAIProvider()
+    register_provider(openai_provider, openai.Client)
+except ImportError:
+    pass
+====================================================================
+-> Chunk: providers\anthropic.py::1
+
+
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+
+from ell.types._lstr import _lstr
+from ell.types.message import LMP
+from ell.configurator import register_provider
+from ell.util.serialization import serialize_image
+import base64
+from io import BytesIO
+import json
+import requests
+from PIL import Image as PILImage
+
+try:
+    import anthropic
+    from anthropic import Anthropic
+    from anthropic.types import Message as AnthropicMessage, MessageParam, RawMessageStreamEvent
+    from anthropic.types.message_create_params import MessageCreateParamsStreaming
+    from anthropic._streaming import Stream
+
+    class AnthropicProvider(Provider):
+        dangerous_disable_validation = True
+
+        def provider_call_function(self, client : Anthropic, api_call_params : Optional[Dict[str, Any]] = None) -> Callable[..., Any]:
+            return client.messages.create
+
+        def translate_to_provider(self, ell_call : EllCallParams):
+            final_call_params = cast(MessageCreateParamsStreaming, ell_call.api_params.copy())
+            # XXX: Helper, but should be depreicated due to ssot
+            assert final_call_params.get("max_tokens") is not None, f"max_tokens is required for anthropic calls, pass it to the @ell.simple/complex decorator, e.g. @ell.simple(..., max_tokens=your_max_tokens) or pass it to the model directly as a parameter when calling your LMP: your_lmp(..., api_params=({{'max_tokens': your_max_tokens}}))."
+
+            dirty_msgs = [
+                MessageParam(
+                    role=cast(Literal["user", "assistant"], message.role), 
+                    content=[_content_block_to_anthropic_format(c) for c in message.content]) for message in ell_call.messages]
+            role_correct_msgs   : List[MessageParam] = []
+            for msg in dirty_msgs:
+                if (not len(role_correct_msgs) or role_correct_msgs[-1]['role'] != msg['role']):
+                    role_correct_msgs.append(msg)
+                else: cast(List, role_correct_msgs[-1]['content']).extend(msg['content'])
+
+            system_message = None
+            if role_correct_msgs and role_correct_msgs[0]["role"] == "system":
+                system_message = role_correct_msgs.pop(0)
+
+            if system_message:
+                final_call_params["system"] = system_message["content"][0]["text"]
+
+
+            final_call_params['stream'] = True
+            final_call_params["model"] = ell_call.model
+            final_call_params["messages"] = role_correct_msgs
+
+            if ell_call.tools:
+                final_call_params["tools"] = [
+                    #XXX: Cleaner with LMP's as a class.
+                    dict(
+                        name=tool.__name__,
+                        description=tool.__doc__,
+                        input_schema=tool.__ell_params_model__.model_json_schema(),
+                    )
+                    for tool in ell_call.tools
+                ]
+
+            # print(final_call_params)
+            return final_call_params
+
+        def translate_from_provider(
+            self,
+            provider_response : Union[Stream[RawMessageStreamEvent], AnthropicMessage],
+            ell_call: EllCallParams,
+            provider_call_params: Dict[str, Any],
+            origin_id: Optional[str] = None,
+            logger: Optional[Callable[..., None]] = None,
+        ) -> Tuple[List[Message], Metadata]:
+
+            usage = {}
+            tracked_results = []
+            metadata = {}
+
+            #XXX: Support n > 0
+
+            if provider_call_params.get("stream", False):
+                content = []
+                current_blocks: Dict[int, Dict[str, Any]] = {}
+                message_metadata = {}
+
+                with cast(Stream[RawMessageStreamEvent], provider_response) as stream:
+                    for chunk in stream:
+                        if chunk.type == "message_start":
+                            message_metadata = chunk.message.model_dump()
+                            message_metadata.pop("content", None)  # Remove content as we'll build it separately
+
+                        elif chunk.type == "content_block_start":
+                            block = chunk.content_block.model_dump()
+                            current_blocks[chunk.index] = block
+                            if block["type"] == "tool_use":
+                                if logger: logger(f" <tool_use: {block['name']}(")
+                                block["input"] = "" # force it to be a string, XXX: can implement partially parsed json later.
+                        elif chunk.type == "content_block_delta":
+                            if chunk.index in current_blocks:
+                                block = current_blocks[chunk.index]
+                                if (delta := chunk.delta).type == "text_delta":
+                                    block["text"] += delta.text
+                                    if logger: logger(delta.text)
+                                if delta.type == "input_json_delta":
+                                    block["input"] += delta.partial_json
+                                    if logger: logger(delta.partial_json)
+
+                        elif chunk.type == "content_block_stop":
+                            if chunk.index in current_blocks:
+                                block = current_blocks.pop(chunk.index)
+                                if block["type"] == "text":
+                                    content.append(ContentBlock(text=_lstr(block["text"],origin_trace=origin_id)))
+                                elif block["type"] == "tool_use":
+                                    try:
+                                        matching_tool = ell_call.get_tool_by_name(block["name"])
+                                        if matching_tool:
+                                            content.append(
+                                                ContentBlock(
+                                                    tool_call=ToolCall(
+                                                        tool=matching_tool,
+                                                        tool_call_id=_lstr(
+                                                            block['id'],origin_trace=origin_id
+                                                        ),
+                                                        params=json.loads(block['input']) if block['input'] else {},
+                                                    )
+                                                )
+                                            )
+                                    except json.JSONDecodeError:
+                                        if logger: logger(f" - FAILED TO PARSE JSON")
+                                        pass
+                                    if logger: logger(f")>")
+
+                        elif chunk.type == "message_delta":
+                            message_metadata.update(chunk.delta.model_dump())
+                            if chunk.usage:
+                                usage.update(chunk.usage.model_dump())
+
+                        elif chunk.type == "message_stop":
+                            tracked_results.append(Message(role="assistant", content=content))
+
+                        # print(chunk)
+                metadata = message_metadata
+
+            # process metadata for ell
+            # XXX: Unify an ell metadata format for ell studio.
+            usage["prompt_tokens"] = usage.get("input_tokens", 0)
+            usage["completion_tokens"] = usage.get("output_tokens", 0)
+            usage["total_tokens"] = usage['prompt_tokens'] + usage['completion_tokens']
+
+            metadata["usage"] = usage
+            return tracked_results, metadata
+
+    # XXX: Make a singleton.
+    anthropic_provider = AnthropicProvider()
+    register_provider(anthropic_provider, anthropic.Anthropic)
+    register_provider(anthropic_provider, anthropic.AnthropicBedrock)
+    register_provider(anthropic_provider, anthropic.AnthropicVertex)
+
+except ImportError:
+    pass
+====================================================================
+-> Chunk: providers\bedrock.py::1
+
+
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+from ell.types._lstr import _lstr
+import json
+from ell.configurator import config, register_provider
+from ell.types.message import LMP
+from ell.util.serialization import serialize_image
+from io import BytesIO
+import requests
+from PIL import Image as PILImage
+====================================================================
+-> Chunk: providers\anthropic.py::1
+
+
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+
+from ell.types._lstr import _lstr
+from ell.types.message import LMP
+from ell.configurator import register_provider
+from ell.util.serialization import serialize_image
+import base64
+from io import BytesIO
+import json
+import requests
+from PIL import Image as PILImage
+
+try:
+    import anthropic
+    from anthropic import Anthropic
+    from anthropic.types import Message as AnthropicMessage, MessageParam, RawMessageStreamEvent
+    from anthropic.types.message_create_params import MessageCreateParamsStreaming
+    from anthropic._streaming import Stream
+
+    class AnthropicProvider(Provider):
+        dangerous_disable_validation = True
+
+        def provider_call_function(self, client : Anthropic, api_call_params : Optional[Dict[str, Any]] = None) -> Callable[..., Any]:
+            return client.messages.create
+
+        def translate_to_provider(self, ell_call : EllCallParams):
+            final_call_params = cast(MessageCreateParamsStreaming, ell_call.api_params.copy())
+            # XXX: Helper, but should be depreicated due to ssot
+            assert final_call_params.get("max_tokens") is not None, f"max_tokens is required for anthropic calls, pass it to the @ell.simple/complex decorator, e.g. @ell.simple(..., max_tokens=your_max_tokens) or pass it to the model directly as a parameter when calling your LMP: your_lmp(..., api_params=({{'max_tokens': your_max_tokens}}))."
+
+            dirty_msgs = [
+                MessageParam(
+                    role=cast(Literal["user", "assistant"], message.role), 
+                    content=[_content_block_to_anthropic_format(c) for c in message.content]) for message in ell_call.messages]
+            role_correct_msgs   : List[MessageParam] = []
+            for msg in dirty_msgs:
+                if (not len(role_correct_msgs) or role_correct_msgs[-1]['role'] != msg['role']):
+                    role_correct_msgs.append(msg)
+                else: cast(List, role_correct_msgs[-1]['content']).extend(msg['content'])
+
+            system_message = None
+            if role_correct_msgs and role_correct_msgs[0]["role"] == "system":
+                system_message = role_correct_msgs.pop(0)
+
+            if system_message:
+                final_call_params["system"] = system_message["content"][0]["text"]
+
+
+            final_call_params['stream'] = True
+            final_call_params["model"] = ell_call.model
+            final_call_params["messages"] = role_correct_msgs
+
+            if ell_call.tools:
+                final_call_params["tools"] = [
+                    #XXX: Cleaner with LMP's as a class.
+                    dict(
+                        name=tool.__name__,
+                        description=tool.__doc__,
+                        input_schema=tool.__ell_params_model__.model_json_schema(),
+                    )
+                    for tool in ell_call.tools
+                ]
+
+            # print(final_call_params)
+            return final_call_params
+
+        def translate_from_provider(
+            self,
+            provider_response : Union[Stream[RawMessageStreamEvent], AnthropicMessage],
+            ell_call: EllCallParams,
+            provider_call_params: Dict[str, Any],
+            origin_id: Optional[str] = None,
+            logger: Optional[Callable[..., None]] = None,
+        ) -> Tuple[List[Message], Metadata]:
+
+            usage = {}
+            tracked_results = []
+            metadata = {}
+
+            #XXX: Support n > 0
+
+            if provider_call_params.get("stream", False):
+                content = []
+                current_blocks: Dict[int, Dict[str, Any]] = {}
+                message_metadata = {}
+
+                with cast(Stream[RawMessageStreamEvent], provider_response) as stream:
+                    for chunk in stream:
+                        if chunk.type == "message_start":
+                            message_metadata = chunk.message.model_dump()
+                            message_metadata.pop("content", None)  # Remove content as we'll build it separately
+
+                        elif chunk.type == "content_block_start":
+                            block = chunk.content_block.model_dump()
+                            current_blocks[chunk.index] = block
+                            if block["type"] == "tool_use":
+                                if logger: logger(f" <tool_use: {block['name']}(")
+                                block["input"] = "" # force it to be a string, XXX: can implement partially parsed json later.
+                        elif chunk.type == "content_block_delta":
+                            if chunk.index in current_blocks:
+                                block = current_blocks[chunk.index]
+                                if (delta := chunk.delta).type == "text_delta":
+                                    block["text"] += delta.text
+                                    if logger: logger(delta.text)
+                                if delta.type == "input_json_delta":
+                                    block["input"] += delta.partial_json
+                                    if logger: logger(delta.partial_json)
+
+                        elif chunk.type == "content_block_stop":
+                            if chunk.index in current_blocks:
+                                block = current_blocks.pop(chunk.index)
+                                if block["type"] == "text":
+                                    content.append(ContentBlock(text=_lstr(block["text"],origin_trace=origin_id)))
+                                elif block["type"] == "tool_use":
+                                    try:
+                                        matching_tool = ell_call.get_tool_by_name(block["name"])
+                                        if matching_tool:
+                                            content.append(
+                                                ContentBlock(
+                                                    tool_call=ToolCall(
+                                                        tool=matching_tool,
+                                                        tool_call_id=_lstr(
+                                                            block['id'],origin_trace=origin_id
+                                                        ),
+                                                        params=json.loads(block['input']) if block['input'] else {},
+                                                    )
+                                                )
+                                            )
+                                    except json.JSONDecodeError:
+                                        if logger: logger(f" - FAILED TO PARSE JSON")
+                                        pass
+                                    if logger: logger(f")>")
+
+                        elif chunk.type == "message_delta":
+                            message_metadata.update(chunk.delta.model_dump())
+                            if chunk.usage:
+                                usage.update(chunk.usage.model_dump())
+
+                        elif chunk.type == "message_stop":
+                            tracked_results.append(Message(role="assistant", content=content))
+
+                        # print(chunk)
+                metadata = message_metadata
+
+            # process metadata for ell
+            # XXX: Unify an ell metadata format for ell studio.
+            usage["prompt_tokens"] = usage.get("input_tokens", 0)
+            usage["completion_tokens"] = usage.get("output_tokens", 0)
+            usage["total_tokens"] = usage['prompt_tokens'] + usage['completion_tokens']
+
+            metadata["usage"] = usage
+            return tracked_results, metadata
+
+    # XXX: Make a singleton.
+    anthropic_provider = AnthropicProvider()
+    register_provider(anthropic_provider, anthropic.Anthropic)
+    register_provider(anthropic_provider, anthropic.AnthropicBedrock)
+    register_provider(anthropic_provider, anthropic.AnthropicVertex)
+
+except ImportError:
+    pass
+====================================================================
+-> Chunk: providers\bedrock.py::1
+
+
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+from ell.types._lstr import _lstr
+import json
+from ell.configurator import config, register_provider
+from ell.types.message import LMP
+from ell.util.serialization import serialize_image
+from io import BytesIO
+import requests
+from PIL import Image as PILImage
+====================================================================
+-> Chunk: providers\anthropic.py::1
+
+
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+
+from ell.types._lstr import _lstr
+from ell.types.message import LMP
+from ell.configurator import register_provider
+from ell.util.serialization import serialize_image
+import base64
+from io import BytesIO
+import json
+import requests
+from PIL import Image as PILImage
+
+try:
+    import anthropic
+    from anthropic import Anthropic
+    from anthropic.types import Message as AnthropicMessage, MessageParam, RawMessageStreamEvent
+    from anthropic.types.message_create_params import MessageCreateParamsStreaming
+    from anthropic._streaming import Stream
+
+    class AnthropicProvider(Provider):
+        dangerous_disable_validation = True
+
+        def provider_call_function(self, client : Anthropic, api_call_params : Optional[Dict[str, Any]] = None) -> Callable[..., Any]:
+            return client.messages.create
+
+        def translate_to_provider(self, ell_call : EllCallParams):
+            final_call_params = cast(MessageCreateParamsStreaming, ell_call.api_params.copy())
+            # XXX: Helper, but should be depreicated due to ssot
+            assert final_call_params.get("max_tokens") is not None, f"max_tokens is required for anthropic calls, pass it to the @ell.simple/complex decorator, e.g. @ell.simple(..., max_tokens=your_max_tokens) or pass it to the model directly as a parameter when calling your LMP: your_lmp(..., api_params=({{'max_tokens': your_max_tokens}}))."
+
+            dirty_msgs = [
+                MessageParam(
+                    role=cast(Literal["user", "assistant"], message.role), 
+                    content=[_content_block_to_anthropic_format(c) for c in message.content]) for message in ell_call.messages]
+            role_correct_msgs   : List[MessageParam] = []
+            for msg in dirty_msgs:
+                if (not len(role_correct_msgs) or role_correct_msgs[-1]['role'] != msg['role']):
+                    role_correct_msgs.append(msg)
+                else: cast(List, role_correct_msgs[-1]['content']).extend(msg['content'])
+
+            system_message = None
+            if role_correct_msgs and role_correct_msgs[0]["role"] == "system":
+                system_message = role_correct_msgs.pop(0)
+
+            if system_message:
+                final_call_params["system"] = system_message["content"][0]["text"]
+
+
+            final_call_params['stream'] = True
+            final_call_params["model"] = ell_call.model
+            final_call_params["messages"] = role_correct_msgs
+
+            if ell_call.tools:
+                final_call_params["tools"] = [
+                    #XXX: Cleaner with LMP's as a class.
+                    dict(
+                        name=tool.__name__,
+                        description=tool.__doc__,
+                        input_schema=tool.__ell_params_model__.model_json_schema(),
+                    )
+                    for tool in ell_call.tools
+                ]
+
+            # print(final_call_params)
+            return final_call_params
+
+        def translate_from_provider(
+            self,
+            provider_response : Union[Stream[RawMessageStreamEvent], AnthropicMessage],
+            ell_call: EllCallParams,
+            provider_call_params: Dict[str, Any],
+            origin_id: Optional[str] = None,
+            logger: Optional[Callable[..., None]] = None,
+        ) -> Tuple[List[Message], Metadata]:
+
+            usage = {}
+            tracked_results = []
+            metadata = {}
+
+            #XXX: Support n > 0
+
+            if provider_call_params.get("stream", False):
+                content = []
+                current_blocks: Dict[int, Dict[str, Any]] = {}
+                message_metadata = {}
+
+                with cast(Stream[RawMessageStreamEvent], provider_response) as stream:
+                    for chunk in stream:
+                        if chunk.type == "message_start":
+                            message_metadata = chunk.message.model_dump()
+                            message_metadata.pop("content", None)  # Remove content as we'll build it separately
+
+                        elif chunk.type == "content_block_start":
+                            block = chunk.content_block.model_dump()
+                            current_blocks[chunk.index] = block
+                            if block["type"] == "tool_use":
+                                if logger: logger(f" <tool_use: {block['name']}(")
+                                block["input"] = "" # force it to be a string, XXX: can implement partially parsed json later.
+                        elif chunk.type == "content_block_delta":
+                            if chunk.index in current_blocks:
+                                block = current_blocks[chunk.index]
+                                if (delta := chunk.delta).type == "text_delta":
+                                    block["text"] += delta.text
+                                    if logger: logger(delta.text)
+                                if delta.type == "input_json_delta":
+                                    block["input"] += delta.partial_json
+                                    if logger: logger(delta.partial_json)
+
+                        elif chunk.type == "content_block_stop":
+                            if chunk.index in current_blocks:
+                                block = current_blocks.pop(chunk.index)
+                                if block["type"] == "text":
+                                    content.append(ContentBlock(text=_lstr(block["text"],origin_trace=origin_id)))
+                                elif block["type"] == "tool_use":
+                                    try:
+                                        matching_tool = ell_call.get_tool_by_name(block["name"])
+                                        if matching_tool:
+                                            content.append(
+                                                ContentBlock(
+                                                    tool_call=ToolCall(
+                                                        tool=matching_tool,
+                                                        tool_call_id=_lstr(
+                                                            block['id'],origin_trace=origin_id
+                                                        ),
+                                                        params=json.loads(block['input']) if block['input'] else {},
+                                                    )
+                                                )
+                                            )
+                                    except json.JSONDecodeError:
+                                        if logger: logger(f" - FAILED TO PARSE JSON")
+                                        pass
+                                    if logger: logger(f")>")
+
+                        elif chunk.type == "message_delta":
+                            message_metadata.update(chunk.delta.model_dump())
+                            if chunk.usage:
+                                usage.update(chunk.usage.model_dump())
+
+                        elif chunk.type == "message_stop":
+                            tracked_results.append(Message(role="assistant", content=content))
+
+                        # print(chunk)
+                metadata = message_metadata
+
+            # process metadata for ell
+            # XXX: Unify an ell metadata format for ell studio.
+            usage["prompt_tokens"] = usage.get("input_tokens", 0)
+            usage["completion_tokens"] = usage.get("output_tokens", 0)
+            usage["total_tokens"] = usage['prompt_tokens'] + usage['completion_tokens']
+
+            metadata["usage"] = usage
+            return tracked_results, metadata
+
+    # XXX: Make a singleton.
+    anthropic_provider = AnthropicProvider()
+    register_provider(anthropic_provider, anthropic.Anthropic)
+    register_provider(anthropic_provider, anthropic.AnthropicBedrock)
+    register_provider(anthropic_provider, anthropic.AnthropicVertex)
+
+except ImportError:
+    pass
+====================================================================
+-> Chunk: providers\bedrock.py::1
+
+
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+from ell.provider import  EllCallParams, Metadata, Provider
+from ell.types import Message, ContentBlock, ToolCall, ImageContent
+from ell.types._lstr import _lstr
+import json
+from ell.configurator import config, register_provider
+from ell.types.message import LMP
+from ell.util.serialization import serialize_image
+from io import BytesIO
+import requests
+from PIL import Image as PILImage
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.333333333333333
+Cluster name: OpenAI Registration and Configuration
+OpenAI Registration and Configuration:
+
+-> Chunk: models\__init__.py::1
+
+
+"""
+Attempts to registeres model names with their respective API client bindings. This allows for the creation of a unified interface for interacting with different LLM providers.
+
+For example, to register an OpenAI model:
+@ell.simple(model='gpt-4o-mini') -> @ell.simple(model='gpt-4o-mini', client=openai.OpenAI())
+
+"""
+
+import ell.models.openai
+import ell.models.anthropic
+import ell.models.ollama
+import ell.models.groq
+import ell.models.bedrock
+====================================================================
+-> Chunk: models\anthropic.py::1
+
+
+from ell.configurator import config
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+try:
+    import anthropic
+
+    def register(client: anthropic.Anthropic):
+        """
+        Register Anthropic models with the provided client.
+
+        This function takes an Anthropic client and registers various Anthropic models
+        with the global configuration. It allows the system to use these models
+        for different AI tasks.
+
+        Args:
+            client (anthropic.Anthropic): An instance of the Anthropic client to be used
+                                          for model registration.
+
+        Note:
+            The function doesn't return anything but updates the global
+            configuration with the registered models.
+        """
+        model_data = [
+            ('claude-3-opus-20240229', 'anthropic'),
+            ('claude-3-sonnet-20240229', 'anthropic'),
+            ('claude-3-haiku-20240307', 'anthropic'),
+            ('claude-3-5-sonnet-20240620', 'anthropic'),
+        ]
+        for model_id, owned_by in model_data:
+            config.register_model(model_id, client)
+
+    try:
+        default_client = anthropic.Anthropic()
+        register(default_client)
+    except Exception as e:
+        # logger.warning(f"Failed to create default Anthropic client: {e}")
+        pass
+
+
+except ImportError:
+    pass
+====================================================================
+-> Chunk: models\bedrock.py::1
+
+
+from typing import Any
+from ell.configurator import config
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def register(client: Any):
+    """
+    Register Bedrock models with the provided client.
+
+    This function takes an boto3 client and registers various Bedrock models
+    with the global configuration. It allows the system to use these models
+    for different AI tasks.
+
+    Args:
+        client (boto3.client): An instance of the bedrock client to be used
+                                        for model registration.
+
+    Note:
+        The function doesn't return anything but updates the global
+        configuration with the registered models.
+    """
+    model_data = [
+        ('anthropic.claude-3-opus-20240229-v1:0', 'bedrock'),
+        ('anthropic.claude-3-sonnet-20240229-v1:0', 'bedrock'),
+        ('anthropic.claude-3-haiku-20240307-v1:0', 'bedrock'),
+        ('anthropic.claude-3-5-sonnet-20240620-v1:0', 'bedrock'),
+
+        ('mistral.mistral-7b-instruct-v0:2', 'bedrock'),
+        ('mistral.mixtral-8x7b-instruct-v0:1', 'bedrock'),
+        ('mistral.mistral-large-2402-v1:0', 'bedrock'),
+        ('mistral.mistral-small-2402-v1:0', 'bedrock'),
+
+
+        ('ai21.jamba-instruct-v1:0','bedrock'),
+        ('ai21.j2-ultra-v1', 'bedrock'),
+        ('ai21.j2-mid-v1', 'bedrock'),
+
+        ('amazon.titan-embed-text-v1', 'bedrock'),
+        ('amazon.titan-text-lite-v1', 'bedrock'),
+        ('amazon.titan-text-express-v1', 'bedrock'),
+        ('amazon.titan-image-generator-v2:0', 'bedrock'),
+        ('amazon.titan-image-generator-v1', 'bedrock'),
+
+        ('cohere.command-r-plus-v1:0', 'bedrock'),
+        ('cohere.command-r-v1:0', 'bedrock'),
+        ('cohere.embed-english-v3', 'bedrock'),
+        ('cohere.embed-multilingual-v3', 'bedrock'),
+        ('cohere.command-text-v14', 'bedrock'),
+
+        ('meta.llama3-8b-instruct-v1:0', 'bedrock'),
+        ('meta.llama3-70b-instruct-v1:0', 'bedrock'),
+        ('meta.llama2-13b-chat-v1', 'bedrock'),
+        ('meta.llama2-70b-chat-v1', 'bedrock'),
+        ('meta.llama2-13b-v1', 'bedrock'),
+
+    ]
+
+    for model_id, owned_by in model_data:
+        config.register_model(name=model_id, default_client=client, supports_streaming=True)
+
+default_client = None
+try:
+
+    import boto3
+    default_client = boto3.client('bedrock-runtime')
+except Exception as e:
+    pass
+
+register(default_client)
+====================================================================
+-> Chunk: models\groq.py::1
+
+
+from typing import Optional
+from ell.configurator import config
+
+try:
+    from groq import Groq
+    def register(client: Optional[Groq] = None, **client_kwargs):
+        if client is None:
+            client = Groq(**client_kwargs)
+        for model in client.models.list().data:
+            config.register_model(model.id, default_client=client, supports_streaming=True)
+except ImportError:
+    pass
+====================================================================
+-> Chunk: models\ollama.py::1
+
+
+from ell.configurator import config
+import openai
+import requests
+import logging
+
+#XXX: May be deprecated soon because of the new provider framework.
+logger = logging.getLogger(__name__)
+client = None
+
+def register(base_url):
+    """
+    Registers Ollama models with the provided base URL.
+
+    This function sets up the Ollama client with the given base URL and
+    fetches available models from the Ollama API. It then registers these
+    models with the global configuration, allowing them to be used within
+    the ell framework.
+
+    Args:
+        base_url (str): The base URL of the Ollama API endpoint.
+
+    Note:
+        This function updates the global client and configuration.
+        It logs any errors encountered during the process.
+    """
+    global client
+    client = openai.Client(base_url=base_url)
+
+    try:
+        response = requests.get(f"{base_url}/../api/tags")
+        response.raise_for_status()
+        models = response.json().get("models", [])
+
+        for model in models:
+            config.register_model(model["name"], client)
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch models from {base_url}: {e}")
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+====================================================================
+-> Chunk: models\openai.py::1
+
+
+"""
+This module handles the registration of OpenAI models within the ell framework.
+
+It provides functionality to register various OpenAI models with a given OpenAI client,
+making them available for use throughout the system. The module also sets up a default
+client behavior for unregistered models.
+
+Key features:
+1. Registration of specific OpenAI models with their respective types (system, openai, openai-internal).
+2. Utilization of a default OpenAI client for any unregistered models,
+
+The default client behavior ensures that even if a specific model is not explicitly
+registered, the system can still attempt to use it with the default OpenAI client.
+This fallback mechanism provides flexibility in model usage while maintaining a
+structured approach to model registration.
+
+Note: The actual model availability may depend on your OpenAI account's access and the
+current offerings from OpenAI.
+
+Additionally, due to the registration of default mdoels, the OpenAI client may be used for
+anthropic, cohere, groq, etc. models if their clients are not registered or fail
+to register due to an error (lack of API keys, rate limits, etc.)
+"""
+
+from ell.configurator import config
+import openai
+
+import logging
+import colorama
+
+logger = logging.getLogger(__name__)
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.333333333333333
+Cluster name: Message Text Handling
+Message Text Handling:
+
+-> Chunk: types\message.py::8
+
+
+def to_content_blocks(
+    content: Optional[Union[AnyContent, List[AnyContent]]] = None,
+    **content_block_kwargs
+) -> List[ContentBlock]:
+    """
+    Coerce a variety of input types into a list of ContentBlock objects.
+
+    Args:
+    content: The content to be coerced. Can be a single item or a list of items.
+             Supported types include str, ContentBlock, ToolCall, ToolResult, BaseModel, Image, np.ndarray, and PILImage.Image.
+    **content_block_kwargs: Additional keyword arguments to pass to ContentBlock creation if content is None.
+
+    Returns:
+    List[ContentBlock]: A list of ContentBlock objects created from the input content.
+
+    Examples:
+    >>> coerce_content_list("Hello")
+    [ContentBlock(text="Hello")]
+
+    >>> coerce_content_list([ContentBlock(text="Hello"), "World"])
+    [ContentBlock(text="Hello"), ContentBlock(text="World")]
+
+    >>> from PIL import Image as PILImage
+    >>> pil_image = PILImage.new('RGB', (100, 100))
+    >>> coerce_content_list(pil_image)
+    [ContentBlock(image=Image(image=<PIL.Image.Image object>))]
+
+    >>> coerce_content_list(Image(url="https://example.com/image.jpg"))
+    [ContentBlock(image=Image(url="https://example.com/image.jpg"))]
+
+    >>> coerce_content_list(None, text="Default text")
+    [ContentBlock(text="Default text")]
+    """
+    if content is None:
+        return [ContentBlock(**content_block_kwargs)]
+
+    if not isinstance(content, list):
+        content = [content]
+
+    return [ContentBlock.model_validate(ContentBlock.coerce(c)) for c in content]
+====================================================================
+-> Chunk: types\message.py::9
+
+
+class Message(BaseModel):
+    role: str
+    content: List[ContentBlock]
+
+
+    def __init__(self, role: str, content: Union[AnyContent, List[AnyContent], None] = None, **content_block_kwargs):
+        content_blocks = to_content_blocks(content, **content_block_kwargs)
+
+        super().__init__(role=role, content=content_blocks)
+
+    # XXX: This choice of naming is unfortunate, but it is what it is.
+    @property
+    def text(self) -> str:
+        """Returns all text content, replacing non-text content with their representations.
+
+        Example:
+            >>> message = Message(role="user", content=["Hello", PILImage.new('RGB', (100, 100)), "World"])
+            >>> message.text
+            'Hello\\n<PilImage>\\nWorld'
+        """
+        return _content_to_text(self.content)
+====================================================================
+-> Chunk: types\message.py::10
+
+
+class Message(BaseModel):
+
+    @property
+    def images(self) -> List[ImageContent]:
+        """Returns a list of all image content.
+
+        Example:
+            >>> from PIL import Image as PILImage
+            >>> image1 = Image(url="https://example.com/image.jpg")
+            >>> image2 = Image(image=PILImage.new('RGB', (200, 200)))
+            >>> message = Message(role="user", content=["Text", image1, "More text", image2])
+            >>> len(message.images)
+            2
+            >>> isinstance(message.images[0], Image)
+            True
+            >>> message.images[0].url
+            'https://example.com/image.jpg'
+            >>> isinstance(message.images[1].image, PILImage.Image)
+            True
+        """
+        return [c.image for c in self.content if c.image]
+====================================================================
+-> Chunk: types\message.py::12
+
+
+class Message(BaseModel):
+
+    @property
+    def text_only(self) -> str:
+        """Returns only the text content, ignoring non-text content.
+
+        Example:
+            >>> message = Message(role="user", content=["Hello", PILImage.new('RGB', (100, 100)), "World"])
+            >>> message.text_only
+            'Hello\\nWorld'
+        """
+        return _content_to_text_only(self.content)
+
+    @cached_property
+    def tool_calls(self) -> List[ToolCall]:
+        """Returns a list of all tool calls.
+
+        Example:
+            >>> tool_call = ToolCall(tool=lambda x: x, params=BaseModel())
+            >>> message = Message(role="user", content=["Text", tool_call])
+            >>> len(message.tool_calls)
+            1
+        """
+        return [c.tool_call for c in self.content if c.tool_call is not None]
+
+    @property
+    def tool_results(self) -> List[ToolResult]:
+        """Returns a list of all tool results.
+
+        Example:
+            >>> tool_result = ToolResult(tool_call_id="123", result=[ContentBlock(text="Result")])
+            >>> message = Message(role="user", content=["Text", tool_result])
+            >>> len(message.tool_results)
+            1
+        """
+        return [c.tool_result for c in self.content if c.tool_result is not None]
+====================================================================
+-> Chunk: types\message.py::13
+
+
+class Message(BaseModel):
+
+    @property
+    def parsed(self) -> Union[BaseModel, List[BaseModel]]:
+        """Returns a list of all parsed content.
+
+        Example:
+            >>> class CustomModel(BaseModel):
+            ...     value: int
+            >>> parsed_content = CustomModel(value=42)
+            >>> message = Message(role="user", content=["Text", ContentBlock(parsed=parsed_content)])
+            >>> len(message.parsed)
+            1
+        """
+        parsed_content = [c.parsed for c in self.content if c.parsed is not None]
+        return parsed_content[0] if len(parsed_content) == 1 else parsed_content
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.333333333333333
+Cluster name: SQL Store and Invocation Management
+SQL Store and Invocation Management:
+
+-> Chunk: stores\sql.py::7
+
+
+class SQLStore(ell.store.Store):
+
+    def get_invocations(self, session: Session, lmp_filters: Dict[str, Any], skip: int = 0, limit: int = 10, filters: Optional[Dict[str, Any]] = None, hierarchical: bool = False) -> List[Dict[str, Any]]:
+
+        query = select(Invocation).join(SerializedLMP)
+
+        # Apply LMP filters
+        for key, value in lmp_filters.items():
+            query = query.where(getattr(SerializedLMP, key) == value)
+
+        # Apply invocation filters
+        if filters:
+            for key, value in filters.items():
+                query = query.where(getattr(Invocation, key) == value)
+
+        # Sort from newest to oldest
+        query = query.order_by(Invocation.created_at.desc()).offset(skip).limit(limit)
+
+        invocations = session.exec(query).all()
+        return invocations
+====================================================================
+-> Chunk: stores\sql.py::9
+
+
+class SQLStore(ell.store.Store):
+
+    def get_invocations_aggregate(self, session: Session, lmp_filters: Dict[str, Any] = None, filters: Dict[str, Any] = None, days: int = 30) -> Dict[str, Any]:
+        # Calculate the start date for the graph data
+        start_date = datetime.utcnow() - timedelta(days=days)
+
+        # Base subquery
+        base_subquery = (
+            select(Invocation.created_at, Invocation.latency_ms, Invocation.prompt_tokens, Invocation.completion_tokens, Invocation.lmp_id)
+            .join(SerializedLMP, Invocation.lmp_id == SerializedLMP.lmp_id)
+            .filter(Invocation.created_at >= start_date)
+        )
+
+        # Apply filters
+        if lmp_filters:
+            base_subquery = base_subquery.filter(and_(*[getattr(SerializedLMP, k) == v for k, v in lmp_filters.items()]))
+        if filters:
+            base_subquery = base_subquery.filter(and_(*[getattr(Invocation, k) == v for k, v in filters.items()]))
+
+
+        data = session.exec(base_subquery).all()
+
+        # Calculate aggregate metrics
+        total_invocations = len(data)
+        total_tokens = sum(row.prompt_tokens + row.completion_tokens for row in data)
+        avg_latency = sum(row.latency_ms for row in data) / total_invocations if total_invocations > 0 else 0
+        unique_lmps = len(set(row.lmp_id for row in data))
+
+        # Prepare graph data
+        graph_data = []
+        for row in data:
+            graph_data.append({
+                "date": row.created_at,
+                "avg_latency": row.latency_ms,
+                "tokens": row.prompt_tokens + row.completion_tokens,
+                "count": 1
+            })
+
+        return {
+            "total_invocations": total_invocations,
+            "total_tokens": total_tokens,
+            "avg_latency": avg_latency,
+            "unique_lmps": unique_lmps,
+            "graph_data": graph_data
+        }
+====================================================================
+-> Chunk: stores\sql.py::11
+
+
+class SQLBlobStore(ell.store.BlobStore):
+
+    def _get_blob_path(self, id: str, depth: int = 2) -> str:
+        assert "-" in id, "Blob id must have a single - in it to split on."
+        _type, _id = id.split("-")
+        increment = 2
+        dirs = [_type] + [_id[i:i+increment] for i in range(0, depth*increment, increment)]
+        file_name = _id[depth*increment:]
+        return os.path.join(self.db_dir, *dirs, file_name)
+
+class PostgresStore(SQLStore):
+    def __init__(self, db_uri: str):
+        super().__init__(db_uri)
+====================================================================
+-> Chunk: studio\server.py::5
+
+
+def create_app(config:Config):
+    # ... other code
+
+
+    @app.get("/api/traces")
+    def get_consumption_graph(
+        session: Session = Depends(get_session)
+    ):
+        traces = serializer.get_traces(session)
+        return traces
+
+
+
+    @app.get("/api/blob/{blob_id}", response_class=Response)
+    def get_blob(
+        blob_id: str,
+        session: Session = Depends(get_session)
+    ):
+        if serializer.blob_store is None:
+            raise HTTPException(status_code=400, detail="Blob storage is not configured")
+        try:
+            blob_data = serializer.blob_store.retrieve_blob(blob_id)
+            return Response(content=blob_data.decode('utf-8'), media_type="application/json")
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Blob not found")
+        except Exception as e:
+            logger.error(f"Error retrieving blob: {str(e)}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+    # ... other code
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.333333333333333
+Cluster name: Serialized Large Model Programs and Relationships
+Serialized Large Model Programs and Relationships:
+
+-> Chunk: types\studio.py::2
+
+
+class SerializedLMPUses(SQLModel, table=True):
+    """
+    Represents the many-to-many relationship between SerializedLMPs.
+
+    This class is used to track which LMPs use or are used by other LMPs.
+    """
+
+    lmp_user_id: Optional[str] = Field(default=None, foreign_key="serializedlmp.lmp_id", primary_key=True, index=True)  # ID of the LMP that is being used
+    lmp_using_id: Optional[str] = Field(default=None, foreign_key="serializedlmp.lmp_id", primary_key=True, index=True)  # ID of the LMP that is using the other LMP
+
+====================================================================
+-> Chunk: types\studio.py::4
+
+
+class SerializedLMPBase(SQLModel):
+    lmp_id: Optional[str] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    source: str
+    dependencies: str
+    created_at: datetime = UTCTimestampField(index=True, nullable=False)
+
+    lmp_type: LMPType
+    api_params: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_column=Column(JSON))
+    initial_free_vars: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_column=Column(JSON))
+    initial_global_vars: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_column=Column(JSON))
+    num_invocations: Optional[int] = Field(default=0)
+    commit_message: Optional[str] = Field(default=None)
+    version_number: Optional[int] = Field(default=None)
+====================================================================
+-> Chunk: types\studio.py::5
+
+
+class SerializedLMP(SerializedLMPBase, table=True):
+    invocations: List["Invocation"] = Relationship(back_populates="lmp")
+    used_by: Optional[List["SerializedLMP"]] = Relationship(
+        back_populates="uses",
+        link_model=SerializedLMPUses,
+        sa_relationship_kwargs=dict(
+            primaryjoin="SerializedLMP.lmp_id==SerializedLMPUses.lmp_user_id",
+            secondaryjoin="SerializedLMP.lmp_id==SerializedLMPUses.lmp_using_id",
+        ),
+    )
+    uses: List["SerializedLMP"] = Relationship(
+        back_populates="used_by",
+        link_model=SerializedLMPUses,
+        sa_relationship_kwargs=dict(
+            primaryjoin="SerializedLMP.lmp_id==SerializedLMPUses.lmp_using_id",
+            secondaryjoin="SerializedLMP.lmp_id==SerializedLMPUses.lmp_user_id",
+        ),
+    )
+
+    class Config:
+        table_name = "serializedlmp"
+        unique_together = [("version_number", "name")]
+====================================================================
+-> Chunk: types\studio.py::6
+
+
+class InvocationTrace(SQLModel, table=True):
+    invocation_consumer_id: str = Field(foreign_key="invocation.id", primary_key=True, index=True)
+    invocation_consuming_id: str = Field(foreign_key="invocation.id", primary_key=True, index=True)
+
+# Should be subtyped for differnet kidns of LMPS.
+# XXX: Move all ofh te binary data out to a different table.
+# XXX: Need a flag that says dont store images.
+# XXX: Deprecate the args columns
+class InvocationBase(SQLModel):
+    id: Optional[str] = Field(default=None, primary_key=True)
+    lmp_id: str = Field(foreign_key="serializedlmp.lmp_id", index=True)
+    latency_ms: float
+    prompt_tokens: Optional[int] = Field(default=None)
+    completion_tokens: Optional[int] = Field(default=None)
+    state_cache_key: Optional[str] = Field(default=None)
+    created_at: datetime = UTCTimestampField(default=func.now(), nullable=False)
+    used_by_id: Optional[str] = Field(default=None, foreign_key="invocation.id", index=True)
+    # global_vars and free_vars removed from here
+
+====================================================================
+-> Chunk: types\studio.py::8
+
+
+class InvocationContentsBase(SQLModel):
+
+    @cached_property
+    def should_externalize(self) -> bool:
+        import json
+
+        json_fields = [
+            self.params,
+            self.results,
+            self.invocation_api_params,
+            self.global_vars,
+            self.free_vars
+        ]
+
+        total_size = sum(
+            len(json.dumps(field, default=(lambda x: json.dumps(x.model_dump(), default=str, ensure_ascii=False)
+                                           if isinstance(x, BaseModel) else str(x)), ensure_ascii=False).encode('utf-8'))
+            for field in json_fields if field is not None
+        )
+        # print("total_size", total_size)
+
+        return total_size > 102400  # Precisely 100kb in bytes
+
+class InvocationContents(InvocationContentsBase, table=True):
+    invocation: "Invocation" = Relationship(back_populates="contents")
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.0
+Cluster name: Real-time API Connection and Messaging
+Real-time API Connection and Messaging:
+
+-> Chunk: openai_realtime\api.py::1
+
+
+import asyncio
+import json
+import websockets
+from .event_handler import RealtimeEventHandler
+from .utils import RealtimeUtils
+
+class RealtimeAPI(RealtimeEventHandler):
+    def __init__(self, url=None, api_key=None, dangerously_allow_api_key_in_browser=False, debug=False):
+        super().__init__()
+        self.default_url = 'wss://api.openai.com/v1/realtime'
+        self.url = url or self.default_url
+        self.api_key = api_key
+        self.debug = debug
+        self.ws = None
+
+    def is_connected(self):
+        return self.ws is not None and self.ws.open
+
+    def log(self, *args):
+        if self.debug:
+            print(*args)
+        return True
+====================================================================
+-> Chunk: openai_realtime\api.py::2
+
+
+class RealtimeAPI(RealtimeEventHandler):
+
+    async def connect(self, model='gpt-4o-realtime-preview-2024-10-01'):
+        if self.is_connected():
+            raise Exception("Already connected")
+
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'OpenAI-Beta': 'realtime=v1'
+        }
+
+        self.ws = await websockets.connect(f"{self.url}?model={model}", extra_headers=headers)
+
+        self.log(f"Connected to {self.url}")
+
+        asyncio.create_task(self._message_handler())
+
+        return True
+====================================================================
+-> Chunk: openai_realtime\api.py::3
+
+
+class RealtimeAPI(RealtimeEventHandler):
+
+    async def _message_handler(self):
+        try:
+            async for message in self.ws:
+                data = json.loads(message)
+                self.receive(data['type'], data)
+        except websockets.exceptions.ConnectionClosed:
+            self.disconnect()
+            self.dispatch('close', {'error': True})
+
+    def disconnect(self):
+        if self.ws:
+            asyncio.create_task(self.ws.close())
+            self.ws = None
+        return True
+
+    def receive(self, event_name, event):
+        self.log("received:", event_name, event)
+        self.dispatch(f"server.{event_name}", event)
+        self.dispatch("server.*", event)
+        return True
+====================================================================
+-> Chunk: openai_realtime\api.py::4
+
+
+class RealtimeAPI(RealtimeEventHandler):
+
+    def send(self, event_name, data=None):
+        if not self.is_connected():
+            raise Exception("RealtimeAPI is not connected")
+
+        data = data or {}
+        if not isinstance(data, dict):
+            raise ValueError("data must be a dictionary")
+
+        event = {
+            "event_id": RealtimeUtils.generate_id("evt_"),
+            "type": event_name,
+            **data
+        }
+
+        self.dispatch(f"client.{event_name}", event)
+        self.dispatch("client.*", event)
+        self.log("sent:", event_name, event)
+
+        asyncio.create_task(self.ws.send(json.dumps(event, ensure_ascii=False)))
+        return True
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 4.0
+Cluster name: Real-time Client Implementation
+Real-time Client Implementation:
+
+-> Chunk: openai_realtime\client.py::4
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def add_tool(self, definition, handler):
+        if not definition.get('name'):
+            raise ValueError("Missing tool name in definition")
+        name = definition['name']
+        if name in self.tools:
+            raise ValueError(f"Tool '{name}' already added. Please use .remove_tool('{name}') before trying to add again.")
+        if not callable(handler):
+            raise ValueError(f"Tool '{name}' handler must be a function")
+        self.tools[name] = {'definition': definition, 'handler': handler}
+        self.update_session()
+        return self.tools[name]
+====================================================================
+-> Chunk: openai_realtime\client.py::5
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def remove_tool(self, name):
+        if name not in self.tools:
+            raise ValueError(f"Tool '{name}' does not exist, cannot be removed.")
+        del self.tools[name]
+        return True
+
+    def delete_item(self, id):
+        self.realtime.send('conversation.item.delete', {'item_id': id})
+        return True
+
+    def update_session(self, **kwargs):
+        self.session_config.update(kwargs)
+        use_tools = [
+            {**tool.get('definition', {}), 'type': 'function'}
+            for tool in self.tools.values()
+        ]
+        session = {**self.session_config, 'tools': use_tools}
+        if self.realtime.is_connected():
+            self.realtime.send('session.update', {'session': session})
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::6
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def send_user_message_content(self, content=None):
+        content = content or []
+        for c in content:
+            if c['type'] == 'input_audio':
+                if isinstance(c['audio'], (np.ndarray, bytes)):
+                    c['audio'] = RealtimeUtils.array_buffer_to_base64(c['audio'])
+        if content:
+            self.realtime.send('conversation.item.create', {
+                'item': {
+                    'type': 'message',
+                    'role': 'user',
+                    'content': content
+                }
+            })
+        self.create_response()
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::7
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def append_input_audio(self, array_buffer):
+        if len(array_buffer) > 0:
+            self.realtime.send('input_audio_buffer.append', {
+                'audio': RealtimeUtils.array_buffer_to_base64(array_buffer)
+            })
+            self.input_audio_buffer = RealtimeUtils.merge_int16_arrays(
+                self.input_audio_buffer,
+                array_buffer
+            )
+        return True
+
+    def create_response(self):
+        if self.get_turn_detection_type() is None and len(self.input_audio_buffer) > 0:
+            self.realtime.send('input_audio_buffer.commit')
+            self.conversation.queue_input_audio(self.input_audio_buffer)
+            self.input_audio_buffer = np.array([], dtype=np.int16)
+        self.realtime.send('response.create')
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::8
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def cancel_response(self, id=None, sample_count=0):
+        if not id:
+            self.realtime.send('response.cancel')
+            return {'item': None}
+        item = self.conversation.get_item(id)
+        if not item:
+            raise ValueError(f"Could not find item '{id}'")
+        if item['type'] != 'message' or item['role'] != 'assistant':
+            raise ValueError("Can only cancel response messages with type 'message' and role 'assistant'")
+        self.realtime.send('response.cancel')
+        audio_index = next((i for i, c in enumerate(item['content']) if c['type'] == 'audio'), -1)
+        if audio_index == -1:
+            raise ValueError("Could not find audio on item to cancel")
+        self.realtime.send('conversation.item.truncate', {
+            'item_id': id,
+            'content_index': audio_index,
+            'audio_end_ms': int((sample_count / self.conversation.default_frequency) * 1000)
+        })
+        return {'item': item}
+====================================================================
+-> Chunk: openai_realtime\client.py::9
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    async def wait_for_next_item(self):
+        event = await self.wait_for_next('conversation.item.appended')
+        return {'item': event['item']}
+
+    async def wait_for_next_completed_item(self):
+        event = await self.wait_for_next('conversation.item.completed')
+        return {'item': event['item']}
+
+    async def _call_tool(self, tool):
+        try:
+            json_arguments = json.loads(tool['arguments'])
+            tool_config = self.tools.get(tool['name'])
+            if not tool_config:
+                raise ValueError(f"Tool '{tool['name']}' has not been added")
+            result = await tool_config['handler'](json_arguments)
+            self.realtime.send('conversation.item.create', {
+                'item': {
+                    'type': 'function_call_output',
+                    'call_id': tool['call_id'],
+                    'output': json.dumps(result, ensure_ascii=False)
+                }
+            })
+        except Exception as e:
+            self.realtime.send('conversation.item.create', {
+                'item': {
+                    'type': 'function_call_output',
+                    'call_id': tool['call_id'],
+                    'output': json.dumps({'error': str(e)}, ensure_ascii=False)
+                }
+            })
+        self.create_response()
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.6666666666666665
+Cluster name: Serialization and Formatting Utility
+Serialization and Formatting Utility:
+
+-> Chunk: util\closure.py::1
+
+
+"""
+This should do the following.
+# prompt_consts.py
+import math
+def test():
+    return math.sin(10)
+
+# lol3.py
+import prompt_consts
+
+X = 7
+def xD():
+    print(X)
+    return prompt_consts.test()
+
+###
+Our goal is to use AST & dill to get a full lexical closured source of xD, with the exception of modules that are stored in site-packages. For example.
+
+lexical_extration(xD) returns
+#closure.py
+import math
+def test():
+    return math.sin(10)
+
+X = 7 
+def xD():
+    print(X)
+    return test()
+
+"""
+import collections
+import ast
+import hashlib
+import itertools
+from typing import Any, Dict, Iterable, Optional, Set, Tuple, Callable
+import dill
+import inspect
+import types
+from dill.source import getsource
+import re
+from collections import deque
+import black
+
+from ell.util.serialization import is_immutable_variable
+from ell.util.should_import import should_import
+
+DELIM = "$$$$$$$$$$$$$$$$$$$$$$$$$"
+FORBIDDEN_NAMES = ["ell", "lstr"]
+====================================================================
+-> Chunk: util\closure.py::17
+
+
+def is_function_called(func_name, source_code):
+    """
+    Check if a function is called in the given source code.
+
+    Parameters:
+    func_name (str): The name of the function to check.
+    source_code (str): The source code to check.
+
+    Returns:
+    bool: True if the function is called, False otherwise.
+    """
+    # Parse the source code into an AST
+    tree = ast.parse(source_code)
+
+    # Walk through all the nodes in the AST
+    for node in ast.walk(tree):
+        # If the node is a function call
+        if isinstance(node, ast.Call):
+            # If the function being called is the function we're looking for
+            if isinstance(node.func, ast.Name) and node.func.id == func_name:
+                return True
+
+    # If we've gone through all the nodes and haven't found a call to the function, it's not called
+    return False
+
+#!/usr/bin/env python
+#
+from dill.detect import nestedglobals
+import inspect
+====================================================================
+-> Chunk: util\closure_util.py::1
+
+
+import ast
+import importlib
+import os
+import black
+from dill.detect import nestedglobals
+
+import inspect
+
+import inspect
+
+#!/usr/bin/env python
+#
+def globalvars(func, recurse=True, builtin=False):
+    """get objects defined in global scope that are referred to by func
+
+    return a dict of {name:object}"""
+    while hasattr(func, "__ell_func__"):
+        func = func.__ell_func__
+    if inspect.ismethod(func): func = func.__func__
+    while hasattr(func, "__ell_func__"):
+        func = func.__ell_func__
+    if inspect.isfunction(func):
+        globs = vars(inspect.getmodule(sum)).copy() if builtin else {}
+        # get references from within closure
+        orig_func, func = func, set()
+        for obj in orig_func.__closure__ or {}:
+            try:
+                cell_contents = obj.cell_contents
+            except ValueError: # cell is empty
+                pass
+            else:
+                _vars = globalvars(cell_contents, recurse, builtin) or {}
+                func.update(_vars) #XXX: (above) be wary of infinte recursion?
+                globs.update(_vars)
+        # get globals
+        globs.update(orig_func.__globals__ or {})
+        # get names of references
+        if not recurse:
+            func.update(orig_func.__code__.co_names)
+        else:
+            func.update(nestedglobals(orig_func.__code__))
+            # find globals for all entries of func
+            for key in func.copy(): #XXX: unnecessary...?
+                nested_func = globs.get(key)
+                if nested_func is orig_func:
+                   #func.remove(key) if key in func else None
+                    continue  #XXX: globalvars(func, False)?
+                func.update(globalvars(nested_func, True, builtin))
+    elif inspect.iscode(func):
+        globs = vars(inspect.getmodule(sum)).copy() if builtin else {}
+       #globs.update(globals())
+        if not recurse:
+            func = func.co_names # get names
+        else:
+            orig_func = func.co_name # to stop infinite recursion
+            func = set(nestedglobals(func))
+            # find globals for all entries of func
+            for key in func.copy(): #XXX: unnecessary...?
+                if key is orig_func:
+                   #func.remove(key) if key in func else None
+                    continue  #XXX: globalvars(func, False)?
+                nested_func = globs.get(key)
+                func.update(globalvars(nested_func, True, builtin))
+    else:
+        return {}
+    #NOTE: if name not in __globals__, then we skip it...
+    return dict((name,globs[name]) for name in func if name in globs)
+====================================================================
+-> Chunk: util\closure_util.py::4
+
+
+def should_import(module_name : str):
+    """
+    This function checks if a module should be imported based on its origin.
+    It returns False if the module is in the local directory or if the module's spec is None.
+    Otherwise, it returns True.
+
+    Returns:
+    bool: True if the module should be imported, False otherwise.
+    """
+
+    # Define the local directory
+    DIRECTORY_TO_WATCH = os.environ.get("DIRECTORY_TO_WATCH", os.getcwd())
+
+    # Get the module's spec
+    spec = importlib.util.find_spec(module_name)
+
+    if module_name.startswith("ell"):
+        return True
+
+    # Return False if the spec is None or if the spec's origin starts with the local directory
+    if spec is None or (spec.origin is not None and spec.origin.startswith(DIRECTORY_TO_WATCH)):
+        return False
+
+    # Otherwise, return True
+    return True
+
+
+def format_source(source: str) -> str:
+    """Format the source code using Black."""
+    try:
+        return black.format_str(source, mode=black.Mode())
+    except:
+        # If Black formatting fails, return the original source
+        return source
+====================================================================
+-> Chunk: util\serialization.py::1
+
+
+# Global converter
+import base64
+import hashlib
+from io import BytesIO
+import json
+import cattrs
+import numpy as np
+from pydantic import BaseModel
+import PIL
+from ell.types._lstr import _lstr
+
+
+pydantic_ltype_aware_cattr = cattrs.Converter()
+
+def serialize_image(img):
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+# Register hooks for complex types
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    np.ndarray,
+    lambda arr: {
+        "content": serialize_image(PIL.Image.fromarray(arr)),
+        "__limage": True
+    } if arr.ndim == 3 else (
+        {
+            "content": base64.b64encode(arr.tobytes()).decode(),
+            "dtype": str(arr.dtype),
+            "shape": arr.shape,
+            "__lndarray": True
+        }
+    )
+)
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    set,
+    lambda s: list(sorted(s))
+)
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    frozenset,
+    lambda s: list(sorted(s))
+)
+
+
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    PIL.Image.Image,
+    lambda obj: {
+        "content": serialize_image(obj),
+        "__limage": True
+    }
+)
+
+def unstructure_lstr(obj):
+    return dict(content=str(obj), **obj.__dict__, __lstr=True)
+
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    _lstr,
+    unstructure_lstr
+)
+
+pydantic_ltype_aware_cattr.register_unstructure_hook(
+    BaseModel,
+    lambda obj: obj.model_dump(exclude_none=True, exclude_unset=True)
+)
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.6666666666666665
+Cluster name: Configuration and Logging
+Configuration and Logging:
+
+-> Chunk: studio\server.py::1
+
+
+from typing import Optional, Dict, Any
+
+from sqlmodel import Session
+from ell.stores.sql import PostgresStore, SQLiteStore
+from ell import __version__
+from fastapi import FastAPI, Query, HTTPException, Depends, Response, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+import json
+from ell.studio.config import Config
+from ell.studio.connection_manager import ConnectionManager
+from ell.studio.datamodels import InvocationPublicWithConsumes, SerializedLMPWithUses
+
+from ell.types import SerializedLMP
+from datetime import datetime, timedelta
+from sqlmodel import select
+
+
+logger = logging.getLogger(__name__)
+
+
+from ell.studio.datamodels import InvocationsAggregate
+
+
+def get_serializer(config: Config):
+    if config.pg_connection_string:
+        return PostgresStore(config.pg_connection_string)
+    elif config.storage_dir:
+        return SQLiteStore(config.storage_dir)
+    else:
+        raise ValueError("No storage configuration found")
+====================================================================
+-> Chunk: studio\server.py::2
+
+
+def create_app(config:Config):
+    serializer = get_serializer(config)
+
+    def get_session():
+        with Session(serializer.engine) as session:
+            yield session
+
+    app = FastAPI(title="ell Studio", version=__version__)
+
+    # Enable CORS for all origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    manager = ConnectionManager()
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        await manager.connect(websocket)
+        try:
+            while True:
+                data = await websocket.receive_text()
+                # Handle incoming WebSocket messages if needed
+        except WebSocketDisconnect:
+            manager.disconnect(websocket)
+
+
+    @app.get("/api/latest/lmps", response_model=list[SerializedLMPWithUses])
+    def get_latest_lmps(
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+        session: Session = Depends(get_session)
+    ):
+        lmps = serializer.get_latest_lmps(
+            session,
+            skip=skip, limit=limit,
+            )
+        return lmps
+
+    # TOOD: Create a get endpoint to efficient get on the index with /api/lmp/<lmp_id>
+    @app.get("/api/lmp/{lmp_id}")
+    def get_lmp_by_id(lmp_id: str, session: Session = Depends(get_session)):
+        lmp = serializer.get_lmps(session, lmp_id=lmp_id)[0]
+        return lmp
+    # ... other code
+====================================================================
+-> Chunk: studio\server.py::4
+
+
+def create_app(config:Config):
+    # ... other code
+
+    @app.get("/api/invocations", response_model=list[InvocationPublicWithConsumes])
+    def get_invocations(
+        id: Optional[str] = Query(None),
+        hierarchical: Optional[bool] = Query(False),
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+        lmp_name: Optional[str] = Query(None),
+        lmp_id: Optional[str] = Query(None),
+        session: Session = Depends(get_session)
+    ):
+        lmp_filters = {}
+        if lmp_name:
+            lmp_filters["name"] = lmp_name
+        if lmp_id:
+            lmp_filters["lmp_id"] = lmp_id
+
+        invocation_filters = {}
+        if id:
+            invocation_filters["id"] = id
+
+        invocations = serializer.get_invocations(
+            session,
+            lmp_filters=lmp_filters,
+            filters=invocation_filters,
+            skip=skip,
+            limit=limit,
+            hierarchical=hierarchical
+        )
+        return invocations
+    # ... other code
+====================================================================
+-> Chunk: studio\server.py::6
+
+
+def create_app(config:Config):
+    # ... other code
+
+    @app.get("/api/lmp-history")
+    def get_lmp_history(
+        days: int = Query(365, ge=1, le=3650),  # Default to 1 year, max 10 years
+        session: Session = Depends(get_session)
+    ):
+        # Calculate the start date
+        start_date = datetime.utcnow() - timedelta(days=days)
+
+        # Query to get all LMP creation times within the date range
+        query = (
+            select(SerializedLMP.created_at)
+            .where(SerializedLMP.created_at >= start_date)
+            .order_by(SerializedLMP.created_at)
+        )
+
+        results = session.exec(query).all()
+
+        # Convert results to a list of dictionaries
+        history = [{"date": str(row), "count": 1} for row in results]
+
+        return history
+    # ... other code
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.6666666666666665
+Cluster name: Configuration Management
+Configuration Management:
+
+-> Chunk: ell\configurator.py::1
+
+
+from functools import lru_cache, wraps
+from typing import Dict, Any, Optional, Tuple, Union, Type
+import openai
+import logging
+from contextlib import contextmanager
+import threading
+from pydantic import BaseModel, ConfigDict, Field
+from ell.store import Store
+from ell.provider import Provider
+from dataclasses import dataclass, field
+
+_config_logger = logging.getLogger(__name__)
+
+@dataclass(frozen=True)
+class _Model:
+    name: str
+    default_client: Optional[Union[openai.Client, Any]] = None
+    #XXX: Deprecation in 0.1.0
+    #XXX: We will depreciate this when streaming is implemented. 
+    # Currently we stream by default for the verbose renderer,
+    # but in the future we will not support streaming by default 
+    # and stream=True must be passed which will then make API providers the
+    # single source of truth for whether or not a model supports an api parameter.
+    # This makes our implementation extremely light, only requiring us to provide
+    # a list of model names in registration.
+    supports_streaming : Optional[bool] = field(default=None)
+====================================================================
+-> Chunk: ell\configurator.py::2
+
+
+class Config(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    registry: Dict[str, _Model] = Field(default_factory=dict, description="A dictionary mapping model names to their configurations.")
+    verbose: bool = Field(default=False, description="If True, enables verbose logging.")
+    wrapped_logging: bool = Field(default=True, description="If True, enables wrapped logging for better readability.")
+    override_wrapped_logging_width: Optional[int] = Field(default=None, description="If set, overrides the default width for wrapped logging.")
+    store: Optional[Store] = Field(default=None, description="An optional Store instance for persistence.")
+    autocommit: bool = Field(default=False, description="If True, enables automatic committing of changes to the store.")
+    lazy_versioning: bool = Field(default=True, description="If True, enables lazy versioning for improved performance.")
+    default_api_params: Dict[str, Any] = Field(default_factory=dict, description="Default parameters for language models.")
+    default_client: Optional[openai.Client] = Field(default=None, description="The default OpenAI client used when a specific model client is not found.")
+    autocommit_model: str = Field(default="gpt-4o-mini", description="When set, changes the default autocommit model from GPT 4o mini.")
+    providers: Dict[Type, Provider] = Field(default_factory=dict, description="A dictionary mapping client types to provider classes.")
+    def __init__(self, **data):
+        super().__init__(**data)
+        self._lock = threading.Lock()
+        self._local = threading.local()
+====================================================================
+-> Chunk: ell\configurator.py::3
+
+
+class Config(BaseModel):
+
+
+    def register_model(
+        self, 
+        name: str,
+        default_client: Optional[Union[openai.Client, Any]] = None,
+        supports_streaming: Optional[bool] = None
+    ) -> None:
+        """
+        Register a model with its configuration.
+        """
+        with self._lock:
+            # XXX: Will be deprecated in 0.1.0
+            self.registry[name] = _Model(
+                name=name,
+                default_client=default_client,
+                supports_streaming=supports_streaming
+            )
+====================================================================
+-> Chunk: ell\configurator.py::4
+
+
+class Config(BaseModel):
+
+
+
+    @contextmanager
+    def model_registry_override(self, overrides: Dict[str, _Model]):
+        """
+        Temporarily override the model registry with new model configurations.
+
+        :param overrides: A dictionary of model names to ModelConfig instances to override.
+        :type overrides: Dict[str, ModelConfig]
+        """
+        if not hasattr(self._local, 'stack'):
+            self._local.stack = []
+
+        with self._lock:
+            current_registry = self._local.stack[-1] if self._local.stack else self.registry
+            new_registry = current_registry.copy()
+            new_registry.update(overrides)
+
+        self._local.stack.append(new_registry)
+        try:
+            yield
+        finally:
+            self._local.stack.pop()
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.6666666666666665
+Cluster name: LM String Operations and Utilities
+LM String Operations and Utilities:
+
+-> Chunk: types\_lstr.py::1
+
+
+"""
+LM string that supports logits and keeps track of it'sorigin_trace even after mutation.
+"""
+
+import numpy as np
+from typing import (
+    Optional,
+    Set,
+    SupportsIndex,
+    Union,
+    FrozenSet,
+    Iterable,
+    List,
+    Tuple,
+    Any,
+    Callable,
+)
+from typing_extensions import override
+from pydantic import BaseModel, GetCoreSchemaHandler
+from pydantic_core import CoreSchema
+
+from pydantic_core import CoreSchema, core_schema
+
+
+class _lstr(str):
+    """
+     A string class that supports logits and keeps track of itsorigin_trace even after mutation.
+     This class is designed to be used in prompt engineering libraries where it is essential to associate
+     logits with generated text and track the origin of the text.
+
+     The `lstr` class inherits from the built-in `str` class and adds two additional attributes: `logits` and `origin_trace`.
+     The `origin_trace` attribute is a frozen set of strings that represents theorigin_trace(s) of the string.
+
+     The class provides various methods for manipulating the string, such as concatenation, slicing, splitting, and joining.
+     These methods ensure that the logits andorigin_trace(s) are updated correctly based on the operation performed.
+
+     The `lstr` class is particularly useful in LLM libraries for tracing the flow of prompts through various language model calls.
+     By tracking theorigin_trace of each string, it is possible to visualize how outputs from one language model program influence
+     the inputs of another, allowing for a detailed analysis of interactions between different large language models. This capability
+     is crucial for understanding the propagation of prompts in complex LLM workflows and for building visual graphs that depict these interactions.
+
+     It is important to note that any modification to the string (such as concatenation or replacement) will invalidate the associated logits.
+     This is because the logits are specifically tied to the original string content, and any change would require a new computation of logits.
+     The logic behind this is detailed elsewhere in this file.
+
+     Example usage:
+     ```
+     # Create an lstr instance with logits and anorigin_trace
+     logits = np.array([1.0, 2.0, 3.0])
+    origin_trace = "4e9b7ec9"
+     lstr_instance = lstr("Hello", logits,origin_trace)
+
+     # Concatenate two lstr instances
+     lstr_instance2 = lstr("World", None, "7f4d2c3a")
+     concatenated_lstr = lstr_instance + lstr_instance2
+
+     # Get the logits andorigin_trace of the concatenated lstr
+     print(concatenated_lstr.logits)  # Output: None
+     print(concatenated_lstr.origin_trace)  # Output: frozenset({'4e9b7ec9', '7f4d2c3a'})
+
+     # Split the concatenated lstr into two parts
+     parts = concatenated_lstr.split()
+     print(parts)  # Output: [lstr('Hello', None, frozenset({'4e9b7ec9', '7f4d2c3a'})), lstr('World', None, frozenset({'4e9b7ec9', '7f4d2c3a'}))]
+     ```
+     Attributes:
+        origin_trace (FrozenSet[str]): A frozen set of strings representing theorigin_trace(s) of the string.
+
+     Methods:
+         __new__: Create a new instance of lstr.
+         __repr__: Return a string representation of the lstr instance.
+         __add__: Concatenate this lstr instance with another string or lstr instance.
+         __mod__: Perform a modulo operation between this lstr instance and another string, lstr, or a tuple of strings and lstrs.
+         __mul__: Perform a multiplication operation between this lstr instance and an integer or another lstr.
+         __rmul__: Perform a right multiplication operation between an integer or another lstr and this lstr instance.
+         __getitem__: Get a slice or index of this lstr instance.
+         __getattr__: Get an attribute from this lstr instance.
+         join: Join a sequence of strings or lstr instances into a single lstr instance.
+         split: Split this lstr instance into a list of lstr instances based on a separator.
+         rsplit: Split this lstr instance into a list of lstr instances based on a separator, starting from the right.
+         splitlines: Split this lstr instance into a list of lstr instances based on line breaks.
+         partition: Partition this lstr instance into three lstr instances based on a separator.
+         rpartition: Partition this lstr instance into three lstr instances based on a separator, starting from the right.
+    """
+====================================================================
+-> Chunk: types\_lstr.py::2
+
+
+class _lstr(str):
+
+    def __new__(
+        cls,
+        content: str,
+        logits: Optional[np.ndarray] = None,
+        origin_trace: Optional[Union[str, FrozenSet[str]]] = None,
+    ):
+        """
+         Create a new instance of lstr. The `logits` should be a numpy array and `origin_trace` should be a frozen set of strings or a single string.
+
+         Args:
+         content (str): The string content of the lstr.
+         logits (np.ndarray, optional): The logits associated with this string. Defaults to None.
+        origin_trace (Union[str, FrozenSet[str]], optional): Theorigin_trace(s) of this string. Defaults to None.
+        """
+        instance = super(_lstr, cls).__new__(cls, content)
+        # instance._logits = logits
+        if isinstance(origin_trace, str):
+            instance.__origin_trace__ = frozenset({origin_trace})
+        else:
+            instance.__origin_trace__ = (
+                frozenset(origin_trace) if origin_trace is not None else frozenset()
+            )
+        return instance
+
+    # _logits: Optional[np.ndarray]
+    __origin_trace__: FrozenSet[str]
+====================================================================
+-> Chunk: types\_lstr.py::3
+
+
+class _lstr(str):
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        def validate_lstr(value):
+            if isinstance(value, dict) and value.get("__lstr", False):
+                content = value["content"]
+                origin_trace = value["__origin_trace__"].split(",")
+                return cls(content, origin_trace=origin_trace)
+            elif isinstance(value, str):
+                return cls(value)
+            elif isinstance(value, cls):
+                return value
+            else:
+                raise ValueError(f"Invalid value for lstr: {value}")
+
+        return core_schema.json_or_python_schema(
+            json_schema=core_schema.typed_dict_schema(
+                {
+                    "content": core_schema.typed_dict_field(core_schema.str_schema()),
+                    "__origin_trace__": core_schema.typed_dict_field(
+                        core_schema.str_schema()
+                    ),
+                    "__lstr": core_schema.typed_dict_field(core_schema.bool_schema()),
+                }
+            ),
+            python_schema=core_schema.union_schema(
+                [
+                    core_schema.is_instance_schema(cls),
+                    core_schema.no_info_plain_validator_function(validate_lstr),
+                ]
+            ),
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda instance: {
+                    "content": str(instance),
+                    "__origin_trace__": (instance.__origin_trace__),
+                    "__lstr": True,
+                }
+            ),
+        )
+====================================================================
+-> Chunk: types\_lstr.py::4
+
+
+class _lstr(str):
+
+    @property
+    def origin_trace(self) -> FrozenSet[str]:
+        """
+        Get theorigin_trace(s) of this lstr instance.
+
+        Returns:
+            FrozenSet[str]: A frozen set of strings representing theorigin_trace(s) of this lstr instance.
+        """
+        return self.__origin_trace__
+
+    ########################
+    ## Overriding methods ##
+    ########################
+    def __repr__(self) -> str:
+        """
+        Return a string representation of this lstr instance.
+
+        Returns:
+            str: A string representation of this lstr instance, including its content, logits, andorigin_trace(s).
+        """
+        return super().__repr__()
+====================================================================
+-> Chunk: types\_lstr.py::5
+
+
+class _lstr(str):
+
+    def __add__(self, other: Union[str, "_lstr"]) -> "_lstr":
+        """
+        Concatenate this lstr instance with another string or lstr instance.
+
+        Args:
+            other (Union[str, "lstr"]): The string or lstr instance to concatenate with this instance.
+
+        Returns:
+            lstr: A new lstr instance containing the concatenated content, with theorigin_trace(s) updated accordingly.
+        """
+        new_content = super(_lstr, self).__add__(other)
+        self_origin = self.__origin_trace__
+
+        if isinstance(other, _lstr):
+            new_origin = self_origin
+            new_origin = new_origin.union(other.__origin_trace__)
+        else:
+            new_origin = self_origin
+
+        return _lstr(new_content, None, frozenset(new_origin))
+====================================================================
+-> Chunk: types\_lstr.py::6
+
+
+class _lstr(str):
+
+    def __mod__(
+        self, other: Union[str, "_lstr", Tuple[Union[str, "_lstr"], ...]]
+    ) -> "_lstr":
+        """
+        Perform a modulo operation between this lstr instance and another string, lstr, or a tuple of strings and lstrs,
+        tracing the operation by logging the operands and the result.
+
+        Args:
+            other (Union[str, "lstr", Tuple[Union[str, "lstr"], ...]]): The right operand in the modulo operation.
+
+        Returns:
+            lstr: A new lstr instance containing the result of the modulo operation, with theorigin_trace(s) updated accordingly.
+        """
+        # If 'other' is a tuple, we need to handle each element
+        if isinstance(other, tuple):
+            result_content = super(_lstr, self).__mod__(tuple(str(o) for o in other))
+            new__origin_trace__s = set(self.__origin_trace__)
+            for item in other:
+                if isinstance(item, _lstr):
+                    new__origin_trace__s.update(item.__origin_trace__)
+            new__origin_trace__ = frozenset(new__origin_trace__s)
+        else:
+            result_content = super(_lstr, self).__mod__(other)
+            if isinstance(other, _lstr):
+                new__origin_trace__ = self.__origin_trace__.union(
+                    other.__origin_trace__
+                )
+            else:
+                new__origin_trace__ = self.__origin_trace__
+
+        return _lstr(result_content, None, new__origin_trace__)
+====================================================================
+-> Chunk: types\_lstr.py::7
+
+
+class _lstr(str):
+
+    def __mul__(self, other: SupportsIndex) -> "_lstr":
+        """
+        Perform a multiplication operation between this lstr instance and an integer or another lstr,
+        tracing the operation by logging the operands and the result.
+
+        Args:
+            other (Union[SupportsIndex, "lstr"]): The right operand in the multiplication operation.
+
+        Returns:
+            lstr: A new lstr instance containing the result of the multiplication operation, with theorigin_trace(s) updated accordingly.
+        """
+        if isinstance(other, SupportsIndex):
+            result_content = super(_lstr, self).__mul__(other)
+            new__origin_trace__ = self.__origin_trace__
+        else:
+            return NotImplemented
+
+        return _lstr(result_content, None, new__origin_trace__)
+====================================================================
+-> Chunk: types\_lstr.py::8
+
+
+class _lstr(str):
+
+    def __rmul__(self, other: SupportsIndex) -> "_lstr":
+        """
+        Perform a right multiplication operation between an integer or another lstr and this lstr instance,
+        tracing the operation by logging the operands and the result.
+
+        Args:
+            other (Union[SupportsIndex, "lstr"]): The left operand in the multiplication operation.
+
+        Returns:
+            lstr: A new lstr instance containing the result of the multiplication operation, with theorigin_trace(s) updated accordingly.
+        """
+        return self.__mul__(other)  # Multiplication is commutative in this context
+
+====================================================================
+-> Chunk: types\_lstr.py::9
+
+
+class _lstr(str):
+
+    def __getitem__(self, key: Union[SupportsIndex, slice]) -> "_lstr":
+        """
+        Get a slice or index of this lstr instance.
+
+        Args:
+            key (Union[SupportsIndex, slice]): The index or slice to retrieve.
+
+        Returns:
+            lstr: A new lstr instance containing the sliced or indexed content, with theorigin_trace(s) preserved.
+        """
+        result = super(_lstr, self).__getitem__(key)
+        # This is a matter of opinon. I believe that when you Index into a language model output, you or divorcing the lodges of the indexed result from their contacts which produce them. Therefore, it is only reasonable to directly index into the lodges without changing the original context, and so any mutation on the string should invalidate the logits.
+        # try:
+        #     logit_subset = self._logits[key] if self._logits else None
+        # except:
+        #   logit_subset = None
+        logit_subset = None
+        return _lstr(result, logit_subset, self.__origin_trace__)
+====================================================================
+-> Chunk: types\_lstr.py::10
+
+
+class _lstr(str):
+
+    def __getattribute__(self, name: str) -> Union[Callable, Any]:
+        """
+        Get an attribute from this lstr instance.
+
+        Args:
+            name (str): The name of the attribute to retrieve.
+
+        Returns:
+            Union[Callable, Any]: The requested attribute, which may be a method or a value.
+        """
+        # Get the attribute from the superclass (str)
+        # First, try to get the attribute from the current class instance
+
+        # Get the attribute using the superclass method
+        attr = super().__getattribute__(name)
+
+        # Check if the attribute is a callable and not defined in lstr class itself
+
+        if name == "__class__":
+            return type(self)
+
+        if callable(attr) and name not in _lstr.__dict__:
+            def wrapped(*args: Any, **kwargs: Any) -> Any:
+                result = attr(*args, **kwargs)
+                # If the result is a string, return an lstr instance
+                if isinstance(result, str):
+                    origin_traces = self.__origin_trace__
+                    for arg in args:
+                        if isinstance(arg, _lstr):
+                            origin_traces = origin_traces.union(arg.__origin_trace__)
+                    for key, value in kwargs.items():
+                        if isinstance(value, _lstr):
+                            origin_traces = origin_traces.union(value.__origin_trace__)
+                    return _lstr(result, None, origin_traces)
+
+                return result
+
+            return wrapped
+
+        return attr
+====================================================================
+-> Chunk: types\_lstr.py::11
+
+
+class _lstr(str):
+
+    @override
+    def join(self, iterable: Iterable[Union[str, "_lstr"]]) -> "_lstr":
+        """
+        Join a sequence of strings or lstr instances into a single lstr instance.
+
+        Args:
+            iterable (Iterable[Union[str, "lstr"]]): The sequence of strings or lstr instances to join.
+
+        Returns:
+            lstr: A new lstr instance containing the joined content, with theorigin_trace(s) updated accordingly.
+        """
+        new__origin_trace__ = self.__origin_trace__
+        parts = []
+        for item in iterable:
+            if isinstance(item, _lstr):
+                new__origin_trace__ = new__origin_trace__.union(item.__origin_trace__)
+            parts.append(item)
+        new_content = super(_lstr, self).join(parts)
+
+        return _lstr(new_content, None, new__origin_trace__)
+====================================================================
+-> Chunk: types\_lstr.py::12
+
+
+class _lstr(str):
+
+    @override
+    def split(
+        self, sep: Optional[Union[str, "_lstr"]] = None, maxsplit: SupportsIndex = -1
+    ) -> List["_lstr"]:
+        """
+        Split this lstr instance into a list of lstr instances based on a separator.
+
+        Args:
+            sep (Optional[Union[str, "lstr"]], optional): The separator to split on. Defaults to None.
+            maxsplit (SupportsIndex, optional): The maximum number of splits to perform. Defaults to -1.
+
+        Returns:
+            List["lstr"]: A list of lstr instances containing the split content, with theorigin_trace(s) preserved.
+        """
+        return self._split_helper(super(_lstr, self).split, sep, maxsplit)
+====================================================================
+-> Chunk: types\_lstr.py::13
+
+
+class _lstr(str):
+
+    @override
+    def rsplit(
+        self, sep: Optional[Union[str, "_lstr"]] = None, maxsplit: SupportsIndex = -1
+    ) -> List["_lstr"]:
+        """
+        Split this lstr instance into a list of lstr instances based on a separator, starting from the right.
+
+        Args:
+            sep (Optional[Union[str, "lstr"]], optional): The separator to split on. Defaults to None.
+            maxsplit (SupportsIndex, optional): The maximum number of splits to perform. Defaults to -1.
+
+        Returns:
+            List["lstr"]: A list of lstr instances containing the split content, with theorigin_trace(s) preserved.
+        """
+        return self._split_helper(super(_lstr, self).rsplit, sep, maxsplit)
+====================================================================
+-> Chunk: types\_lstr.py::14
+
+
+class _lstr(str):
+
+    @override
+    def splitlines(self, keepends: bool = False) -> List["_lstr"]:
+        """
+        Split this lstr instance into a list of lstr instances based on line breaks.
+
+        Args:
+            keepends (bool, optional): Whether to include the line breaks in the resulting lstr instances. Defaults to False.
+
+        Returns:
+            List["lstr"]: A list of lstr instances containing the split content, with theorigin_trace(s) preserved.
+        """
+        return [
+            _lstr(p, None, self.__origin_trace__)
+            for p in super(_lstr, self).splitlines(keepends=keepends)
+        ]
+====================================================================
+-> Chunk: types\_lstr.py::15
+
+
+class _lstr(str):
+
+    @override
+    def partition(self, sep: Union[str, "_lstr"]) -> Tuple["_lstr", "_lstr", "_lstr"]:
+        """
+        Partition this lstr instance into three lstr instances based on a separator.
+
+        Args:
+            sep (Union[str, "lstr"]): The separator to partition on.
+
+        Returns:
+            Tuple["lstr", "lstr", "lstr"]: A tuple of three lstr instances containing the content before the separator, the separator itself, and the content after the separator, with theorigin_trace(s) updated accordingly.
+        """
+        return self._partition_helper(super(_lstr, self).partition, sep)
+====================================================================
+-> Chunk: types\_lstr.py::16
+
+
+class _lstr(str):
+
+    @override
+    def rpartition(self, sep: Union[str, "_lstr"]) -> Tuple["_lstr", "_lstr", "_lstr"]:
+        """
+        Partition this lstr instance into three lstr instances based on a separator, starting from the right.
+
+        Args:
+            sep (Union[str, "lstr"]): The separator to partition on.
+
+        Returns:
+            Tuple["lstr", "lstr", "lstr"]: A tuple of three lstr instances containing the content before the separator, the separator itself, and the content after the separator, with theorigin_trace(s) updated accordingly.
+        """
+        return self._partition_helper(super(_lstr, self).rpartition, sep)
+====================================================================
+-> Chunk: types\_lstr.py::17
+
+
+class _lstr(str):
+
+    def _partition_helper(
+        self, method, sep: Union[str, "_lstr"]
+    ) -> Tuple["_lstr", "_lstr", "_lstr"]:
+        """
+        Helper method for partitioning this lstr instance based on a separator.
+
+        Args:
+            method (Callable): The partitioning method to use (either partition or rpartition).
+            sep (Union[str, "lstr"]): The separator to partition on.
+
+        Returns:
+            Tuple["lstr", "lstr", "lstr"]: A tuple of three lstr instances containing the content before the separator, the separator itself, and the content after the separator, with theorigin_trace(s) updated accordingly.
+        """
+        part1, part2, part3 = method(sep)
+        new__origin_trace__ = (
+            self.__origin_trace__ | sep.__origin_trace__
+            if isinstance(sep, _lstr)
+            else self.__origin_trace__
+        )
+        return (
+            _lstr(part1, None, new__origin_trace__),
+            _lstr(part2, None, new__origin_trace__),
+            _lstr(part3, None, new__origin_trace__),
+        )
+====================================================================
+-> Chunk: types\_lstr.py::18
+
+
+class _lstr(str):
+
+    def _split_helper(
+        self,
+        method,
+        sep: Optional[Union[str, "_lstr"]] = None,
+        maxsplit: SupportsIndex = -1,
+    ) -> List["_lstr"]:
+        """
+        Helper method for splitting this lstr instance based on a separator.
+
+        Args:
+            method (Callable): The splitting method to use (either split or rsplit).
+            sep (Optional[Union[str, "lstr"]], optional): The separator to split on. Defaults to None.
+            maxsplit (SupportsIndex, optional): The maximum number of splits to perform. Defaults to -1.
+
+        Returns:
+            List["lstr"]: A list of lstr instances containing the split content, with theorigin_trace(s) preserved.
+        """
+        origin_traces = (
+            self.__origin_trace__ | sep.__origin_trace__
+            if isinstance(sep, _lstr)
+            else self.__origin_trace__
+        )
+        parts = method(sep, maxsplit)
+        return [_lstr(part, None, origin_traces) for part in parts]
+====================================================================
+-> Chunk: types\_lstr.py::19
+
+
+if __name__ == "__main__":
+    import timeit
+    import random
+    import string
+
+    def generate_random_string(length):
+        return "".join(random.choices(string.ascii_letters + string.digits, k=length))
+
+    def test_concatenation():
+        s1 = generate_random_string(1000)
+        s2 = generate_random_string(1000)
+
+        lstr_time = timeit.timeit(lambda: _lstr(s1) + _lstr(s2), number=10000)
+        str_time = timeit.timeit(lambda: s1 + s2, number=10000)
+
+        print(f"Concatenation: lstr: {lstr_time:.6f}s, str: {str_time:.6f}s")
+
+    def test_slicing():
+        s = generate_random_string(10000)
+        ls = _lstr(s)
+
+        lstr_time = timeit.timeit(lambda: ls[1000:2000], number=10000)
+        str_time = timeit.timeit(lambda: s[1000:2000], number=10000)
+
+        print(f"Slicing: lstr: {lstr_time:.6f}s, str: {str_time:.6f}s")
+
+    def test_splitting():
+        s = generate_random_string(10000)
+        ls = _lstr(s)
+
+        lstr_time = timeit.timeit(lambda: ls.split(), number=1000)
+        str_time = timeit.timeit(lambda: s.split(), number=1000)
+
+        print(f"Splitting: lstr: {lstr_time:.6f}s, str: {str_time:.6f}s")
+
+    def test_joining():
+        words = [generate_random_string(10) for _ in range(1000)]
+        lwords = [_lstr(word) for word in words]
+
+        lstr_time = timeit.timeit(lambda: _lstr(" ").join(lwords), number=1000)
+        str_time = timeit.timeit(lambda: " ".join(words), number=1000)
+
+        print(f"Joining: lstr: {lstr_time:.6f}s, str: {str_time:.6f}s")
+
+    print("Running performance tests...")
+    test_concatenation()
+    test_slicing()
+    test_splitting()
+    test_joining()
+
+    import cProfile
+    import pstats
+    from io import StringIO
+
+    def test_add():
+        s1 = generate_random_string(1000)
+        s2 = generate_random_string(1000)
+        ls1 = _lstr(s1, None, "origin1")
+        ls2 = _lstr(s2, None, "origin2")
+
+        for _ in range(100000):
+            result = ls1 + ls2
+
+    print("\nProfiling __add__ method:")
+    profiler = cProfile.Profile()
+    profiler.enable()
+    test_add()
+    profiler.disable()
+
+    s = StringIO()
+    ps = pstats.Stats(profiler, stream=s).sort_stats("cumulative")
+    ps.print_stats(20)  # Print top 20 lines
+    print(s.getvalue())
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.6666666666666665
+Cluster name: Message Handling and Tool Calls
+Message Handling and Tool Calls:
+
+-> Chunk: types\message.py::1
+
+
+# todo: implement tracing for structured outs. this a v2 feature.
+import json
+from ell.types._lstr import _lstr
+from functools import cached_property
+import numpy as np
+import base64
+from io import BytesIO
+from PIL import Image as PILImage
+
+from pydantic import BaseModel, ConfigDict, model_validator, field_serializer
+from sqlmodel import Field
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from ell.util.serialization import serialize_image
+_lstr_generic = Union[_lstr, str]
+InvocableTool = Callable[..., Union["ToolResult", _lstr_generic, List["ContentBlock"], ]]
+
+# AnyContent represents any type that can be passed to Message.
+AnyContent = Union["ContentBlock", str, "ToolCall", "ToolResult", "ImageContent", np.ndarray, PILImage.Image, BaseModel]
+====================================================================
+-> Chunk: types\message.py::2
+
+
+class ToolResult(BaseModel):
+    tool_call_id: _lstr_generic
+    result: List["ContentBlock"]
+
+    @property
+    def text(self) -> str:
+        return _content_to_text(self.result)
+
+    @property
+    def text_only(self) -> str:
+        return _content_to_text_only(self.result)
+
+    # # XXX: Possibly deprecate
+    # def readable_repr(self) -> str:
+    #     return f"ToolResult(tool_call_id={self.tool_call_id}, result={_content_to_text(self.result)})"
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(tool_call_id={self.tool_call_id}, result={_content_to_text(self.result)})"
+====================================================================
+-> Chunk: types\message.py::3
+
+
+class ToolCall(BaseModel):
+    tool : InvocableTool
+    tool_call_id : Optional[_lstr_generic] = Field(default=None)
+    params : BaseModel
+
+    def __init__(self, tool, params : Union[BaseModel, Dict[str, Any]],  tool_call_id=None):
+        if not isinstance(params, BaseModel):
+            params = tool.__ell_params_model__(**params) #convenience.
+        super().__init__(tool=tool, tool_call_id=tool_call_id, params=params)
+
+    def __call__(self, **kwargs):
+        assert not kwargs, "Unexpected arguments provided. Calling a tool uses the params provided in the ToolCall."
+
+        # XXX: TODO: MOVE TRACKING CODE TO _TRACK AND OUT OF HERE AND API.
+        return self.tool(**self.params.model_dump())
+
+    # XXX: Deprecate in 0.1.0
+    def call_and_collect_as_message_block(self):
+        raise DeprecationWarning("call_and_collect_as_message_block is deprecated. Use collect_as_content_block instead.")
+
+    def call_and_collect_as_content_block(self):
+        res = self.tool(**self.params.model_dump(), _tool_call_id=self.tool_call_id)
+        return ContentBlock(tool_result=res)
+
+    def call_and_collect_as_message(self):
+        return Message(role="user", content=[self.call_and_collect_as_message_block()])
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tool.__name__}({self.params}), tool_call_id='{self.tool_call_id}')"
+====================================================================
+-> Chunk: types\message.py::4
+
+
+class ImageContent(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    image: Optional[PILImage.Image] = Field(default=None)
+    url: Optional[str] = Field(default=None)
+    detail: Optional[str] = Field(default=None)
+
+    @model_validator(mode='after')
+    def check_image_or_url(self):
+        if self.image is not None and self.url is not None:
+            raise ValueError("Both 'image' and 'url' cannot be set simultaneously.")
+        if self.image is None and self.url is None:
+            raise ValueError("Either 'image' or 'url' must be set.")
+        return self
+====================================================================
+-> Chunk: types\message.py::5
+
+
+class ImageContent(BaseModel):
+
+    @classmethod
+    def coerce(cls, value: Union[str, np.ndarray, PILImage.Image, "ImageContent"]):
+        if isinstance(value, cls):
+            return value
+
+        if isinstance(value, str):
+            if value.startswith('http://') or value.startswith('https://'):
+                return cls(url=value)
+            try:
+                img_data = base64.b64decode(value)
+                img = PILImage.open(BytesIO(img_data))
+                if img.mode not in ('L', 'RGB', 'RGBA'):
+                    return cls(image=img.convert('RGB'))
+            except:
+                raise ValueError("Invalid base64 string or URL for image")
+
+        if isinstance(value, np.ndarray):
+            if value.ndim == 3 and value.shape[2] in (3, 4):
+                mode = 'RGB' if value.shape[2] == 3 else 'RGBA'
+                return cls(image=PILImage.fromarray(value, mode=mode))
+            else:
+                raise ValueError(f"Invalid numpy array shape for image: {value.shape}. Expected 3D array with 3 or 4 channels.")
+
+        if isinstance(value, PILImage.Image):
+            if value.mode not in ('L', 'RGB', 'RGBA'):
+                value = value.convert('RGB')
+            return cls(image=value)
+
+        raise ValueError(f"Invalid image type: {type(value)}")
+
+    @field_serializer('image')
+    def serialize_image(self, image: Optional[PILImage.Image], _info):
+        if image is None:
+            return None
+        return serialize_image(image)
+====================================================================
+-> Chunk: types\message.py::11
+
+
+class Message(BaseModel):
+
+    @property
+    def audios(self) -> List[Union[np.ndarray, List[float]]]:
+        """Returns a list of all audio content.
+
+        Example:
+            >>> audio1 = np.array([0.1, 0.2, 0.3])
+            >>> audio2 = np.array([0.4, 0.5, 0.6])
+            >>> message = Message(role="user", content=["Text", audio1, "More text", audio2])
+            >>> len(message.audios)
+            2
+        """
+        return [c.audio for c in self.content if c.audio]
+====================================================================
+-> Chunk: types\message.py::14
+
+
+class Message(BaseModel):
+
+    def call_tools_and_collect_as_message(self, parallel=False, max_workers=None):
+        if parallel:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(c.tool_call.call_and_collect_as_content_block) for c in self.content if c.tool_call]
+                content = [future.result() for future in as_completed(futures)]
+        else:
+            content = [c.tool_call.call_and_collect_as_content_block() for c in self.content if c.tool_call]
+        return Message(role="user", content=content)
+====================================================================
+-> Chunk: types\message.py::15
+
+
+# HELPERS 
+def system(content: Union[AnyContent, List[AnyContent]]) -> Message:
+    """
+    Create a system message with the given content.
+
+    Args:
+    content (str): The content of the system message.
+
+    Returns:
+    Message: A Message object with role set to 'system' and the provided content.
+    """
+    return Message(role="system", content=content)
+
+
+def user(content: Union[AnyContent, List[AnyContent]]) -> Message:
+    """
+    Create a user message with the given content.
+
+    Args:
+    content (str): The content of the user message.
+
+    Returns:
+    Message: A Message object with role set to 'user' and the provided content.
+    """
+    return Message(role="user", content=content)
+
+
+def assistant(content: Union[AnyContent, List[AnyContent]]) -> Message:
+    """
+    Create an assistant message with the given content.
+
+    Args:
+    content (str): The content of the assistant message.
+
+    Returns:
+    Message: A Message object with role set to 'assistant' and the provided content.
+    """
+    return Message(role="assistant", content=content)
+
+#XXX: Make a mixi for these properties.
+def _content_to_text_only(content: List[ContentBlock]) -> str:
+    return _lstr("\n").join(
+            available_text
+            for c in content
+            if (available_text := (c.tool_result.text_only if c.tool_result else c.text))
+        )
+
+# Do we include the .text of a tool result? or its repr as in the current implementaiton?
+# What is the user using .text for? I just want to see the result of the tools. text_only should get us the text of the tool results; the tool_call_id is irrelevant.
+def _content_to_text(content: List[ContentBlock]) -> str:
+    return _lstr("\n").join(
+            available_text
+            for c in content
+            if (available_text :=  c.text or repr(c.content))
+        )
+
+
+# want to enable a use case where the user can actually return a standrd oai chat format
+# This is a placehodler will likely come back later for this
+LMPParams = Dict[str, Any]
+# Well this is disappointing, I wanted to effectively type hint by doign that data sync meta, but eh, at elast we can still reference role or content this way. Probably wil lcan the dict sync meta. TypedDict is the ticket ell oh ell.
+MessageOrDict = Union[Message, Dict[str, str]]
+# Can support iamge prompts later.
+Chat = List[
+    Message
+]  # [{"role": "system", "content": "prompt"}, {"role": "user", "content": "message"}]
+MultiTurnLMP = Callable[..., Chat]
+OneTurn = Callable[..., _lstr_generic]
+# This is the specific LMP that must accept history as an argument and can take any additional arguments
+ChatLMP = Callable[[Chat, Any], Chat]
+LMP = Union[OneTurn, MultiTurnLMP, ChatLMP]
+InvocableLM = Callable[..., _lstr_generic]
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.3333333333333335
+Cluster name: Message Handling in Real-time
+Message Handling in Real-time:
+
+-> Chunk: openai_realtime\conversation.py::4
+
+
+class RealtimeConversation:
+
+    def _process_conversation_item_input_audio_transcription_completed(self, event):
+        item_id, content_index, transcript = event['item_id'], event['content_index'], event['transcript']
+        item = self.item_lookup.get(item_id)
+        formatted_transcript = transcript or ' '
+
+        if not item:
+            self.queued_transcript_items[item_id] = {'transcript': formatted_transcript}
+            return {'item': None, 'delta': None}
+
+        item['content'][content_index]['transcript'] = transcript
+        item['formatted']['transcript'] = formatted_transcript
+        return {'item': item, 'delta': {'transcript': transcript}}
+
+    def _process_input_audio_buffer_speech_started(self, event):
+        item_id, audio_start_ms = event['item_id'], event['audio_start_ms']
+        self.queued_speech_items[item_id] = {'audio_start_ms': audio_start_ms}
+        return {'item': None, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::5
+
+
+class RealtimeConversation:
+
+    def _process_input_audio_buffer_speech_stopped(self, event, input_audio_buffer):
+        item_id, audio_end_ms = event['item_id'], event['audio_end_ms']
+        speech = self.queued_speech_items[item_id]
+        speech['audio_end_ms'] = audio_end_ms
+        if input_audio_buffer is not None:
+            start_index = int((speech['audio_start_ms'] * self.default_frequency) / 1000)
+            end_index = int((speech['audio_end_ms'] * self.default_frequency) / 1000)
+            speech['audio'] = input_audio_buffer[start_index:end_index]
+        return {'item': None, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::6
+
+
+class RealtimeConversation:
+
+    def _process_response_created(self, event):
+        response = event['response']
+        if response['id'] not in self.response_lookup:
+            self.response_lookup[response['id']] = response
+            self.responses.append(response)
+        return {'item': None, 'delta': None}
+
+    def _process_response_output_item_added(self, event):
+        response_id, item = event['response_id'], event['item']
+        response = self.response_lookup.get(response_id)
+        if not response:
+            raise ValueError(f"response.output_item.added: Response '{response_id}' not found")
+        response['output'].append(item['id'])
+        return {'item': None, 'delta': None}
+
+    def _process_response_output_item_done(self, event):
+        item = event['item']
+        if not item:
+            raise ValueError("response.output_item.done: Missing 'item'")
+        found_item = self.item_lookup.get(item['id'])
+        if not found_item:
+            raise ValueError(f"response.output_item.done: Item '{item['id']}' not found")
+        found_item['status'] = item['status']
+        return {'item': found_item, 'delta': None}
+
+    def _process_response_content_part_added(self, event):
+        item_id, part = event['item_id'], event['part']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.content_part.added: Item '{item_id}' not found")
+        item['content'].append(part)
+        return {'item': item, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::7
+
+
+class RealtimeConversation:
+
+    def _process_response_audio_transcript_delta(self, event):
+        item_id, content_index, delta = event['item_id'], event['content_index'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.audio_transcript.delta: Item '{item_id}' not found")
+        item['content'][content_index]['transcript'] += delta
+        item['formatted']['transcript'] += delta
+        return {'item': item, 'delta': {'transcript': delta}}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::8
+
+
+class RealtimeConversation:
+
+    def _process_response_audio_delta(self, event):
+        item_id, content_index, delta = event['item_id'], event['content_index'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.audio.delta: Item '{item_id}' not found")
+        array_buffer = RealtimeUtils.base64_to_array_buffer(delta)
+        append_values = np.frombuffer(array_buffer, dtype=np.int16)
+        item['formatted']['audio'] = np.concatenate([item['formatted']['audio'], append_values])
+        return {'item': item, 'delta': {'audio': append_values}}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::9
+
+
+class RealtimeConversation:
+
+    def _process_response_text_delta(self, event):
+        item_id, content_index, delta = event['item_id'], event['content_index'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.text.delta: Item '{item_id}' not found")
+        item['content'][content_index]['text'] += delta
+        item['formatted']['text'] += delta
+        return {'item': item, 'delta': {'text': delta}}
+
+    def _process_response_function_call_arguments_delta(self, event):
+        item_id, delta = event['item_id'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.function_call_arguments.delta: Item '{item_id}' not found")
+        item['arguments'] += delta
+        item['formatted']['tool']['arguments'] += delta
+        return {'item': item, 'delta': {'arguments': delta}}
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.3333333333333335
+Cluster name: Logging
+Logging:
+
+-> Chunk: util\verbosity.py::3
+
+
+@lru_cache(maxsize=128)
+def compute_color(invoking_lmp: LMP) -> str:
+    """Compute and cache a consistent color for a given LMP."""
+    name_hash = hashlib.md5(invoking_lmp.__name__.encode()).hexdigest()
+    color_index = int(name_hash, 16) % len(ELL_COLORS)
+    return list(ELL_COLORS.values())[color_index]
+
+def format_arg(arg: Any, max_length: int = 8) -> str:
+    """Format an argument for display with customizable max length."""
+    str_arg = str(arg)
+    return f"{Fore.MAGENTA}{str_arg[:max_length]}..{Style.RESET_ALL}" if len(str_arg) > max_length else f"{Fore.MAGENTA}{str_arg}{Style.RESET_ALL}"
+
+def format_kwarg(key: str, value: Any, max_length: int = 8) -> str:
+    """Format a keyword argument for display with customizable max length."""
+    return f"{Style.DIM}{key}{Style.RESET_ALL}={Fore.MAGENTA}{str(value)[:max_length]}..{Style.RESET_ALL}"
+
+def get_terminal_width() -> int:
+    """Get the terminal width, defaulting to 80 if it can't be determined."""
+    try:
+        return shutil.get_terminal_size((80, 20)).columns
+    except Exception:
+        logger.warning("Unable to determine terminal size. Defaulting to 80 columns.")
+        return 80
+====================================================================
+-> Chunk: util\verbosity.py::4
+
+
+def wrap_text_with_prefix(message, width: int, prefix: str, subsequent_prefix: str, text_color: str) -> List[str]:
+    """Wrap text while preserving the prefix and color for each line."""
+    result = []
+    for i, content in enumerate(message.content):
+        wrapped_lines = []
+        if content.image and content.image.image:
+            wrapped_lines = plot_ascii(content.image.image, min(80, width - len(prefix)))
+        else:
+            if content.tool_result:
+                contnets_to_wrap = [ContentBlock(text=f"ToolResult(tool_call_id={content.tool_result.tool_call_id}):"), *content.tool_result.result]
+            else:
+                contnets_to_wrap = [content]
+
+            wrapped_lines = []
+            for c in contnets_to_wrap:
+                if c.image and c.image.image:
+                    block_wrapped_lines = plot_ascii(c.image.image, min(80, width - len(prefix)))
+                else:
+                    text = _content_to_text([c])
+                    paragraphs = text.split('\n')
+                    wrapped_paragraphs = [textwrap.wrap(p, width=width - len(prefix)) for p in paragraphs]
+                    block_wrapped_lines = [line for paragraph in wrapped_paragraphs for line in paragraph]
+                wrapped_lines.extend(block_wrapped_lines)
+        if i == 0:
+            if wrapped_lines:
+                result.append(f"{prefix}{text_color}{wrapped_lines[0]}{RESET}")
+            else:
+                result.append(f"{prefix}{text_color}{RESET}")
+        else:
+            result.append(f"{subsequent_prefix}{text_color}{wrapped_lines[0]}{RESET}")
+        result.extend([f"{subsequent_prefix}{text_color}{line}{RESET}" for line in wrapped_lines[1:]])
+    return result
+====================================================================
+-> Chunk: util\verbosity.py::5
+
+
+def print_wrapped_messages(messages: List[Message], max_role_length: int, color: str, wrap_width: Optional[int] = None):
+    """Print wrapped messages with proper indentation, customizable wrap width, and consistent ASCII piping."""
+    terminal_width = get_terminal_width()
+    prefix = f"{PIPE_COLOR}│   "
+    role_prefix = ' ' * (max_role_length + 2)
+    subsequent_prefix = f"{PIPE_COLOR}│   {role_prefix}"
+    wrapping_width = wrap_width or (terminal_width - len(prefix))
+
+    for i, message in enumerate(messages):
+        role = message.role
+        m = message.content[0]
+
+
+        role_color = SYSTEM_COLOR if role == "system" else USER_COLOR if role == "user" else ASSISTANT_COLOR
+
+        role_line = f"{prefix}{role_color}{role.rjust(max_role_length)}: {RESET}"
+        wrapped_lines = wrap_text_with_prefix(message, wrapping_width - len(role_prefix), '', subsequent_prefix, role_color)
+
+        print(f"{role_line}{wrapped_lines[0]}")
+        for line in wrapped_lines[1:]:
+            print(line)
+
+        if i < len(messages) - 1:
+            print(f"{PIPE_COLOR}│{RESET}")
+====================================================================
+-> Chunk: util\verbosity.py::6
+
+
+def model_usage_logger_pre(
+    invoking_lmp: LMP,
+    lmp_args: Tuple,
+    lmp_kwargs: Dict,
+    lmp_hash: str,
+    messages: List[Message],
+    arg_max_length: int = 8
+):
+    """Log model usage before execution with customizable argument display length and ASCII box."""
+    color =  compute_color(invoking_lmp)
+    formatted_args = [format_arg(arg, arg_max_length) for arg in lmp_args]
+    formatted_kwargs = [format_kwarg(key, lmp_kwargs[key], arg_max_length) for key in lmp_kwargs]
+    formatted_params = ', '.join(formatted_args + formatted_kwargs)
+
+    check_version_and_log()
+
+    terminal_width = get_terminal_width()
+
+    logger.info(f"Invoking LMP: {invoking_lmp.__name__} (hash: {lmp_hash[:8]})")
+
+    print(f"{PIPE_COLOR}╔{'═' * (terminal_width - 2)}╗{RESET}")
+    print(f"{PIPE_COLOR}║ {color}{BOLD}{UNDERLINE}{invoking_lmp.__name__}{RESET}{color}({formatted_params}){RESET}")
+    print(f"{PIPE_COLOR}╠{'═' * (terminal_width - 2)}╣{RESET}")
+    print(f"{PIPE_COLOR}║ {BOLD}Prompt:{RESET}")
+    print(f"{PIPE_COLOR}╟{'─' * (terminal_width - 2)}╢{RESET}")
+
+    max_role_length = max(len("assistant"), max(len(message.role) for message in messages))
+    print_wrapped_messages(messages, max_role_length, color)
+====================================================================
+-> Chunk: util\verbosity.py::7
+
+
+def model_usage_logger_post_start(color: str = "", n: int = 1):
+    """Log the start of model output with ASCII box."""
+    terminal_width = get_terminal_width()
+    print(f"{PIPE_COLOR}╟{'─' * (terminal_width - 2)}╢{RESET}")
+    print(f"{PIPE_COLOR}║ {BOLD}Output{f'[0 of {n}]' if n > 1 else ''}:{RESET}")
+    print(f"{PIPE_COLOR}╟{'─' * (terminal_width - 2)}╢{RESET}")
+    print(f"{PIPE_COLOR}│   {ASSISTANT_COLOR}assistant: {RESET}", end='')
+    sys.stdout.flush()
+
+from contextlib import contextmanager
+====================================================================
+-> Chunk: util\verbosity.py::8
+
+
+@contextmanager
+def model_usage_logger_post_intermediate( n: int = 1):
+    """Context manager to log intermediate model output without wrapping, only indenting if necessary."""
+    terminal_width = get_terminal_width()
+    prefix = f"{PIPE_COLOR}│   "
+    subsequent_prefix = f"{PIPE_COLOR}│   {' ' * (len('assistant: '))}"
+    chars_printed = len(subsequent_prefix)
+
+    def log_stream_chunk(stream_chunk: str , is_refusal: bool = False):
+        nonlocal chars_printed
+        if stream_chunk:
+            lines = stream_chunk.split('\n')
+            for i, line in enumerate(lines):
+                if chars_printed + len(line) > terminal_width - 6:
+                    print()
+                    if i == 0:
+                        print(subsequent_prefix, end='')
+                        chars_printed = len(prefix)
+                    else:
+                        print(subsequent_prefix, end='')
+                        chars_printed = len(subsequent_prefix)
+                    print(line.lstrip(), end='')
+                else:
+                    print(line, end='')
+                chars_printed += len(line)
+
+                if i < len(lines) - 1:
+                    print()
+                    print(subsequent_prefix, end='')
+                    chars_printed = len(subsequent_prefix)  # Reset for new line
+            sys.stdout.flush()
+
+    try:
+        yield log_stream_chunk
+    finally:
+        pass
+====================================================================
+-> Chunk: util\verbosity.py::9
+
+
+def model_usage_logger_post_end():
+    """Log the end of model output with ASCII box closure."""
+    terminal_width = get_terminal_width()
+    print(f"\n{PIPE_COLOR}╚{'═' * (terminal_width - 2)}╝{RESET}")
+
+def set_log_level(level: str):
+    """Set the logging level."""
+    numeric_level = getattr(logging, level.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError(f'Invalid log level: {level}')
+    logger.setLevel(numeric_level)
+====================================================================
+-> Chunk: openai_realtime\api.py::1
+
+
+import asyncio
+import json
+import websockets
+from .event_handler import RealtimeEventHandler
+from .utils import RealtimeUtils
+
+class RealtimeAPI(RealtimeEventHandler):
+    def __init__(self, url=None, api_key=None, dangerously_allow_api_key_in_browser=False, debug=False):
+        super().__init__()
+        self.default_url = 'wss://api.openai.com/v1/realtime'
+        self.url = url or self.default_url
+        self.api_key = api_key
+        self.debug = debug
+        self.ws = None
+
+    def is_connected(self):
+        return self.ws is not None and self.ws.open
+
+    def log(self, *args):
+        if self.debug:
+            print(*args)
+        return True
+====================================================================
+-> Chunk: openai_realtime\api.py::4
+
+
+class RealtimeAPI(RealtimeEventHandler):
+
+    def send(self, event_name, data=None):
+        if not self.is_connected():
+            raise Exception("RealtimeAPI is not connected")
+
+        data = data or {}
+        if not isinstance(data, dict):
+            raise ValueError("data must be a dictionary")
+
+        event = {
+            "event_id": RealtimeUtils.generate_id("evt_"),
+            "type": event_name,
+            **data
+        }
+
+        self.dispatch(f"client.{event_name}", event)
+        self.dispatch("client.*", event)
+        self.log("sent:", event_name, event)
+
+        asyncio.create_task(self.ws.send(json.dumps(event, ensure_ascii=False)))
+        return True
+====================================================================
+
+
+###### Cluster Eval ######
+Score: 3.3333333333333335
+Cluster name: Utility and Helper Functions
+Utility and Helper Functions:
+
+-> Chunk: util\__init__.py::1
+
+
+from .closure import lexically_closured_source
+====================================================================
+-> Chunk: util\_warnings.py::1
+
+
+from typing import Any, Optional
+from colorama import Fore, Style
+
+from ell.configurator import config
+import logging
+logger = logging.getLogger(__name__)
+
+
+def _no_api_key_warning(model, client_to_use : Optional[Any], name = None,  long=False, error=False):
+    color = Fore.RED if error else Fore.LIGHTYELLOW_EX
+    prefix = "ERROR" if error else "WARNING"
+    # openai default
+    client_to_use_name = client_to_use.__class__.__name__ if (client_to_use) else "OpenAI"
+    client_to_use_module = client_to_use.__class__.__module__ if (client_to_use) else "openai"
+    lmp_name = f"used by LMP `{name}` " if name else ""
+    return f"""{color}{prefix}: No API key found for model `{model}` {lmp_name}using client `{client_to_use_name}`""" + (f""".
+
+To fix this:
+* Set your API key in the appropriate environment variable for your chosen provider
+* Or, specify a client explicitly in the decorator:
+    ```
+    import ell
+    from {client_to_use_module} import {client_to_use_name}
+                                
+    @ell.simple(model="{model}", client={client_to_use_name}(api_key=your_api_key))
+    def your_lmp_name(...):
+        ...
+    ```
+* Or explicitly specify the client when calling the LMP:
+
+    ```
+    your_lmp_name(..., client={client_to_use_name}(api_key=your_api_key))
+    ```
+""" if long else " at time of definition. Can be okay if custom client specified later! https://docs.ell.so/core_concepts/models_and_api_clients.html ") + f"{Style.RESET_ALL}"
+====================================================================
+-> Chunk: util\_warnings.py::2
+
+
+def _warnings(model, fn, default_client_from_decorator):
+
+        if not default_client_from_decorator:
+            # Check to see if the model is registered and warn the user we're gonna defualt to OpenAI.
+
+            if model not in config.registry:
+                logger.warning(f"""{Fore.LIGHTYELLOW_EX}WARNING: Model `{model}` is used by LMP `{fn.__name__}` but no client could be found that supports `{model}`. Defaulting to use the OpenAI client `{config.default_client}` for `{model}`. This is likely because you've spelled the model name incorrectly or are using a newer model from a provider added after this ell version was released. 
+                            
+* If this is a mistake either specify a client explicitly in the decorator:
+```python
+import ell
+ell.simple(model, client=my_client)
+def {fn.__name__}(...):
+    ...
+```
+or explicitly specify the client when the calling the LMP:
+
+```python
+ell.simple(model, client=my_client)(...)
+```
+{Style.RESET_ALL}""")
+            elif (client_to_use := config.registry[model].default_client) is None or not client_to_use.api_key:
+                logger.warning(_no_api_key_warning(model, fn.__name__, client_to_use, long=False))
+
+
+def _autocommit_warning():
+    if (config.get_client_for("gpt-4o-mini")[0] is None):
+        logger.warning(f"{Fore.LIGHTYELLOW_EX}WARNING: Autocommit is enabled but no OpenAI client found for autocommit model 'gpt-4o-mini' (set your OpenAI API key). Commit messages will not be written.{Style.RESET_ALL}")
+        return True
+    return False
+====================================================================
+-> Chunk: util\closure.py::2
+
+
+def lexical_closure(
+    func: Any,
+    already_closed: Set[int] = None,
+    initial_call: bool = False,
+    recursion_stack: list = None,
+    forced_dependencies: Optional[Dict[str, Any]] = None
+) -> Tuple[str, Tuple[str, str], Set[str]]:
+    """
+    Generate a lexical closure for a given function or callable.
+
+    Args:
+        func: The function or callable to process.
+        already_closed: Set of already processed function hashes.
+        initial_call: Whether this is the initial call to the function.
+        recursion_stack: Stack to keep track of the recursion path.
+
+    Returns:
+        A tuple containing:
+        - The full source code of the closure
+        - A tuple of (function source, dependencies source)
+        - A set of function hashes that this closure uses
+    """
+    already_closed = already_closed or set()
+    uses = set()
+    forced_dependencies = forced_dependencies or {}
+    recursion_stack = recursion_stack or []
+
+    if hash(func) in already_closed:
+        return "", ("", ""), set()
+
+    recursion_stack.append(getattr(func, '__qualname__', str(func)))
+
+    outer_ell_func = func
+    while hasattr(func, "__ell_func__"):
+        func = func.__ell_func__
+
+    source = getsource(func, lstrip=True)
+    already_closed.add(hash(func))
+
+    globals_and_frees = _get_globals_and_frees(func)
+    dependencies, imports, modules = _process_dependencies(func, globals_and_frees, already_closed, recursion_stack, uses)
+    for k,v in forced_dependencies.items():
+        # Todo: dictionary not necessary
+        _process_signature_dependency(v, dependencies, already_closed, recursion_stack, uses, k)
+
+    cur_src = _build_initial_source(imports, dependencies, source)
+
+    module_src = _process_modules(modules, cur_src, already_closed, recursion_stack, uses)
+
+    dirty_src = _build_final_source(imports, module_src, dependencies, source)
+    dirty_src_without_func = _build_final_source(imports, module_src, dependencies, "")
+
+    CLOSURE_SOURCE[hash(func)] = dirty_src
+
+    dsrc = _clean_src(dirty_src_without_func)
+
+    # Format the sorce and dsrc soruce using Black
+    source = _format_source(source)
+    dsrc = _format_source(dsrc)
+
+    fn_hash = _generate_function_hash(source, dsrc, func.__qualname__)
+
+    _update_ell_func(outer_ell_func, source, dsrc, globals_and_frees['globals'], globals_and_frees['frees'], fn_hash, uses)
+
+    return (dirty_src, (source, dsrc), ({outer_ell_func} if not initial_call and hasattr(outer_ell_func, "__ell_func__") else uses))
+====================================================================
+-> Chunk: util\closure.py::3
+
+
+def _format_source(source: str) -> str:
+    """Format the source code using Black."""
+    try:
+        return black.format_str(source, mode=black.Mode())
+    except:
+        # If Black formatting fails, return the original source
+        return source
+
+def _get_globals_and_frees(func: Callable) -> Dict[str, Dict]:
+    """Get global and free variables for a function."""
+    globals_dict = collections.OrderedDict(globalvars(func))
+    frees_dict = collections.OrderedDict(dill.detect.freevars(func))
+
+    if isinstance(func, type):
+        for name, method in collections.OrderedDict(func.__dict__).items():
+            if isinstance(method, (types.FunctionType, types.MethodType)):
+                globals_dict.update(collections.OrderedDict(dill.detect.globalvars(method)))
+                frees_dict.update(collections.OrderedDict(dill.detect.freevars(method)))
+
+    return {'globals': globals_dict, 'frees': frees_dict}
+====================================================================
+-> Chunk: util\closure.py::4
+
+
+def _process_dependencies(func, globals_and_frees, already_closed, recursion_stack, uses):
+    """Process function dependencies."""
+    dependencies = []
+    modules = deque()
+    imports = []
+
+    if isinstance(func, (types.FunctionType, types.MethodType)):
+        _process_default_kwargs(func, dependencies, already_closed, recursion_stack, uses)
+
+    for var_name, var_value in itertools.chain(globals_and_frees['globals'].items(), globals_and_frees['frees'].items()):
+        _process_variable(var_name, var_value, dependencies, modules, imports, already_closed, recursion_stack, uses)
+
+    return dependencies, imports, modules
+====================================================================
+-> Chunk: util\closure.py::5
+
+
+def _process_default_kwargs(func, dependencies, already_closed, recursion_stack, uses):
+    """Process default keyword arguments and annotations of a function."""
+    ps = inspect.signature(func).parameters
+    for name, param in ps.items():
+        if param.default is not inspect.Parameter.empty:
+            _process_signature_dependency(param.default, dependencies, already_closed, recursion_stack, uses, name)
+        if param.annotation is not inspect.Parameter.empty:
+            _process_signature_dependency(param.annotation, dependencies, already_closed, recursion_stack, uses, f"{name}_annotation")
+    if func.__annotations__.get('return') is not None:
+        _process_signature_dependency(func.__annotations__['return'], dependencies, already_closed, recursion_stack, uses, "return_annotation")
+    # XXX: In order to properly analyze this we should walk the AST rather than inspexting the signature; e.g. Field is FieldInfo not Field.
+    # I don't care about the actual default at time of execution just the symbols required to statically reproduce the prompt.
+
+====================================================================
+-> Chunk: util\closure.py::6
+
+
+def _process_signature_dependency(val, dependencies, already_closed, recursion_stack, uses, name: Optional[str] = None):
+    # Todo: Build general cattr like utility for unstructuring python objects with hooks that keep track of state variables.
+    # Todo: break up closure into types and functions.
+    # XXX: This is not exhaustive, we should determine should import on all dependencies
+
+    if name not in FORBIDDEN_NAMES:
+        try:
+            dep = None
+            _uses = None
+            if isinstance(val, (types.FunctionType, types.MethodType)):
+                dep, _, _uses = lexical_closure(val, already_closed=already_closed, recursion_stack=recursion_stack.copy())
+            elif isinstance(val, (list, tuple, set)):
+                for item in val:
+                    _process_signature_dependency(item, dependencies, already_closed, recursion_stack, uses)
+            else:
+                val_class = val if isinstance(val, type) else val.__class__
+                try:
+                    is_builtin = (val_class.__module__ == "builtins" or val_class.__module__ == "__builtins__")
+                except:
+                    is_builtin = False
+
+                if not is_builtin:
+                    if should_import(val_class.__module__):
+                        dependencies.append(dill.source.getimport(val_class, alias=val_class.__name__))
+                    else:
+                        dep, _, _uses = lexical_closure(val_class, already_closed=already_closed, recursion_stack=recursion_stack.copy())
+
+            if dep: dependencies.append(dep)
+            if _uses: uses.update(_uses)
+        except Exception as e:
+            _raise_error(f"Failed to capture the lexical closure of parameter or annotation {name}", e, recursion_stack)
+====================================================================
+-> Chunk: util\closure.py::7
+
+
+def _process_variable(var_name, var_value, dependencies, modules, imports, already_closed, recursion_stack , uses):
+    """Process a single variable."""
+    try:
+        name = inspect.getmodule(var_value).__name__
+        if should_import(name):
+            imports.append(dill.source.getimport(var_value, alias=var_name))
+            return
+    except:
+        pass
+
+    if isinstance(var_value, (types.FunctionType, type, types.MethodType)):
+        _process_callable(var_name, var_value, dependencies, already_closed, recursion_stack, uses)
+    elif isinstance(var_value, types.ModuleType):
+        _process_module(var_name, var_value, modules, imports, uses)
+    elif isinstance(var_value, types.BuiltinFunctionType):
+        imports.append(dill.source.getimport(var_value, alias=var_name))
+    else:
+        _process_other_variable(var_name, var_value, dependencies, uses)
+====================================================================
+-> Chunk: util\closure.py::8
+
+
+def _process_callable(var_name, var_value, dependencies, already_closed, recursion_stack, uses):
+    """Process a callable (function, method, or class)."""
+    try:
+        module_is_ell = 'ell' in inspect.getmodule(var_value).__name__
+    except:
+        module_is_ell = False
+
+    if var_name not in FORBIDDEN_NAMES and not module_is_ell:
+        try:
+            dep, _, _uses = lexical_closure(var_value, already_closed=already_closed, recursion_stack=recursion_stack.copy())
+            dependencies.append(dep)
+            uses.update(_uses)
+        except Exception as e:
+            _raise_error(f"Failed to capture the lexical closure of global or free variable {var_name}", e, recursion_stack)
+====================================================================
+-> Chunk: util\closure.py::9
+
+
+def _process_module(var_name, var_value, modules, imports, uses):
+    """Process a module."""
+    if should_import(var_value.__name__):
+        imports.append(dill.source.getimport(var_value, alias=var_name))
+    else:
+        modules.append((var_name, var_value))
+
+def _process_other_variable(var_name, var_value, dependencies, uses):
+    """Process variables that are not callables or modules."""
+    if isinstance(var_value, str) and '\n' in var_value:
+        dependencies.append(f"{var_name} = '''{var_value}'''")
+    elif is_immutable_variable(var_value):
+        dependencies.append(f"#<BV>\n{var_name} = {repr(var_value)}\n#</BV>")
+    else:
+        dependencies.append(f"#<BmV>\n{var_name} = <{type(var_value).__name__} object>\n#</BmV>")
+====================================================================
+-> Chunk: util\closure.py::10
+
+
+def _build_initial_source(imports, dependencies, source):
+    """Build the initial source code."""
+    return f"{DELIM}\n" + f"\n{DELIM}\n".join(imports + dependencies + [source]) + f"\n{DELIM}\n"
+
+def _process_modules(modules, cur_src, already_closed, recursion_stack, uses):
+    """Process module dependencies."""
+    reverse_module_src = deque()
+    while modules:
+        mname, mval = modules.popleft()
+        mdeps = []
+        attrs_to_extract = get_referenced_names(cur_src.replace(DELIM, ""), mname)
+        for attr in attrs_to_extract:
+            _process_module_attribute(mname, mval, attr, mdeps, modules, already_closed, recursion_stack, uses)
+
+        mdeps.insert(0, f"# Extracted from module: {mname}")
+        reverse_module_src.appendleft("\n".join(mdeps))
+
+        cur_src = _dereference_module_names(cur_src, mname, attrs_to_extract)
+
+    return list(reverse_module_src)
+====================================================================
+-> Chunk: util\closure.py::11
+
+
+def _process_module_attribute(mname, mval, attr, mdeps, modules, already_closed, recursion_stack, uses):
+    """Process a single attribute of a module."""
+    val = getattr(mval, attr)
+    if isinstance(val, (types.FunctionType, type, types.MethodType)):
+        try:
+            dep, _, dep_uses = lexical_closure(val, already_closed=already_closed, recursion_stack=recursion_stack.copy())
+            mdeps.append(dep)
+            uses.update(dep_uses)
+        except Exception as e:
+            _raise_error(f"Failed to capture the lexical closure of {mname}.{attr}", e, recursion_stack)
+    elif isinstance(val, types.ModuleType):
+        modules.append((attr, val))
+    else:
+        mdeps.append(f"{attr} = {repr(val)}")
+====================================================================
+-> Chunk: util\closure.py::12
+
+
+def _dereference_module_names(cur_src, mname, attrs_to_extract):
+    """Dereference module names in the source code."""
+    for attr in attrs_to_extract:
+        cur_src = cur_src.replace(f"{mname}.{attr}", attr)
+    return cur_src
+
+def _build_final_source(imports, module_src, dependencies, source):
+    """Build the final source code."""
+    seperated_dependencies = sorted(imports) + sorted(module_src) + sorted(dependencies) + ([source] if source else [])
+    seperated_dependencies = list(dict.fromkeys(seperated_dependencies))
+    return DELIM + "\n" + f"\n{DELIM}\n".join(seperated_dependencies) + "\n" + DELIM + "\n"
+
+def _generate_function_hash(source, dsrc, qualname):
+    """Generate a hash for the function."""
+    return "lmp-" + hashlib.md5("\n".join((source, dsrc, qualname)).encode()).hexdigest()
+====================================================================
+-> Chunk: util\closure.py::13
+
+
+def _update_ell_func(outer_ell_func, source, dsrc, globals_dict, frees_dict, fn_hash, uses):
+    """Update the ell function attributes."""
+    formatted_source = _format_source(source)
+    formatted_dsrc = _format_source(dsrc)
+
+    if hasattr(outer_ell_func, "__ell_func__"):
+
+        outer_ell_func.__ell_closure__ = (formatted_source, formatted_dsrc, globals_dict, frees_dict)
+        outer_ell_func.__ell_hash__ = fn_hash
+        outer_ell_func.__ell_uses__ = uses
+
+def _raise_error(message, exception, recursion_stack):
+    """Raise an error with detailed information."""
+    error_msg = f"{message}. Error: {str(exception)}\n"
+    error_msg += f"Recursion stack: {' -> '.join(recursion_stack)}"
+    # print(error_msg)
+    raise Exception(error_msg)
+====================================================================
+-> Chunk: util\closure.py::14
+
+
+def get_referenced_names(code: str, module_name: str):
+    """
+    This function takes a block of code and a module name as input. It parses the code into an Abstract Syntax Tree (AST)
+    and walks through the tree to find all instances where an attribute of the module is referenced in the code.
+
+    Parameters:
+    code (str): The block of code to be parsed.
+    module_name (str): The name of the module to look for in the code.
+
+    Returns:
+    list: A list of all attributes of the module that are referenced in the code.
+    """
+    # Remove content between #<BV> and #</BV> tags
+    code = re.sub(r'#<BV>\n.*?\n#</BV>', '', code, flags=re.DOTALL)
+
+    # Remove content between #<BmV> and #</BmV> tags
+    code = re.sub(r'#<BmV>\n.*?\n#</BmV>', '', code, flags=re.DOTALL)
+
+    tree = ast.parse(code)
+    referenced_names = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.value, ast.Name) and node.value.id == module_name:
+                referenced_names.append(node.attr)
+
+    return referenced_names
+
+CLOSURE_SOURCE: Dict[str, str] = {}
+====================================================================
+-> Chunk: util\closure.py::15
+
+
+def lexically_closured_source(func, forced_dependencies: Optional[Dict[str, Any]] = None):
+    """
+    Generate a lexically closured source for a given function.
+
+    This function takes a callable object (function, method, or class) and generates
+    a lexically closured source code. It captures all the dependencies, including
+    global variables, free variables, and nested functions, to create a self-contained
+    version of the function that can be executed independently.
+
+    Args:
+        func (Callable): The function or callable object to process.
+        forced_dependencies (Optional[Dict[str, Any]]): A dictionary of additional
+            dependencies to include in the closure. Keys are variable names, and
+            values are the corresponding objects.
+
+    Returns:
+        Tuple[str, Set[Any]]: A tuple containing two elements:
+            1. The lexically closured source code as a string.
+            2. A set of function objects that this closure uses.
+
+    Raises:
+        ValueError: If the input is not a callable object.
+
+    Example:
+        def outer(x):
+            y = 10
+            def inner():
+                return x + y
+            return inner
+
+        closured_source, uses = lexically_closured_source(outer)
+        print(closured_source)
+        # Output will include the source for both outer and inner functions,
+        # along with any necessary imports and variable definitions.
+
+    Note:
+        This function relies on the `lexical_closure` function to perform the
+        actual closure generation. It also uses the `__ell_closure__` attribute
+        of the function, which is expected to be set by the `lexical_closure` function.
+    """
+    if not callable(func):
+        raise ValueError("Input must be a callable object (function, method, or class).")
+    _, fnclosure, uses = lexical_closure(func, initial_call=True, recursion_stack=[], forced_dependencies=forced_dependencies)
+    return func.__ell_closure__, uses
+====================================================================
+-> Chunk: util\closure.py::16
+
+
+import ast
+
+def _clean_src(dirty_src):
+    # Now remove all duplicates and preserve order
+    split_by_setion = filter(lambda x: len(x.strip()) > 0, dirty_src.split(DELIM))
+
+    # Now we need to remove all the duplicates
+    split_by_setion = list(dict.fromkeys(split_by_setion))
+
+    # Now we need to concat all together
+    all_imports = []
+    final_src = "\n".join(split_by_setion)
+    out_final_src = final_src[:]
+    for line in final_src.split("\n"):
+        if line.startswith("import") or line.startswith("from"):
+            all_imports.append(line)
+            out_final_src = out_final_src.replace(line, "")
+
+    all_imports = "\n".join(sorted(all_imports))
+    final_src = all_imports + "\n" + out_final_src
+
+    # now replace all "\n\n\n" or longer with "\n\n"
+    final_src = re.sub(r"\n{3,}", "\n\n", final_src)
+
+    return final_src
+====================================================================
+-> Chunk: util\closure.py::18
+
+
+def globalvars(func, recurse=True, builtin=False):
+    """get objects defined in global scope that are referred to by func
+
+    return a dict of {name:object}"""
+    while hasattr(func, "__ell_func__"):
+        func = func.__ell_func__
+    if inspect.ismethod(func): func = func.__func__
+    while hasattr(func, "__ell_func__"):
+        func = func.__ell_func__
+    if inspect.isfunction(func):
+        globs = vars(inspect.getmodule(sum)).copy() if builtin else {}
+        # get references from within closure
+        orig_func, func = func, set()
+        for obj in orig_func.__closure__ or {}:
+            try:
+                cell_contents = obj.cell_contents
+            except ValueError: # cell is empty
+                pass
+            else:
+                _vars = globalvars(cell_contents, recurse, builtin) or {}
+                func.update(_vars) #XXX: (above) be wary of infinte recursion?
+                globs.update(_vars)
+        # get globals
+        globs.update(orig_func.__globals__ or {})
+        # get names of references
+        if not recurse:
+            func.update(orig_func.__code__.co_names)
+        else:
+            func.update(nestedglobals(orig_func.__code__))
+            # find globals for all entries of func
+            for key in func.copy(): #XXX: unnecessary...?
+                nested_func = globs.get(key)
+                if nested_func is orig_func:
+                   #func.remove(key) if key in func else None
+                    continue  #XXX: globalvars(func, False)?
+                func.update(globalvars(nested_func, True, builtin))
+    elif inspect.iscode(func):
+        globs = vars(inspect.getmodule(sum)).copy() if builtin else {}
+       #globs.update(globals())
+        if not recurse:
+            func = func.co_names # get names
+        else:
+            orig_func = func.co_name # to stop infinite recursion
+            func = set(nestedglobals(func))
+            # find globals for all entries of func
+            for key in func.copy(): #XXX: unnecessary...?
+                if key is orig_func:
+                   #func.remove(key) if key in func else None
+                    continue  #XXX: globalvars(func, False)?
+                nested_func = globs.get(key)
+                func.update(globalvars(nested_func, True, builtin))
+    # elif inspect.isclass(func):
+    # XXX: We need to get lexical closures of all the methods and attributes of the class.\
+    # In the future we should exhaustively walk the AST here.
+    else:
+        return {}
+    #NOTE: if name not in __globals__, then we skip it...
+    return dict((name,globs[name]) for name in func if name in globs)
+====================================================================
+-> Chunk: util\closure_util.py::2
+
+
+def is_function_called(func_name, source_code):
+    """
+    Check if a function is called in the given source code.
+
+    Parameters:
+    func_name (str): The name of the function to check.
+    source_code (str): The source code to check.
+
+    Returns:
+    bool: True if the function is called, False otherwise.
+    """
+    # Parse the source code into an AST
+    tree = ast.parse(source_code)
+
+    # Walk through all the nodes in the AST
+    for node in ast.walk(tree):
+        # If the node is a function call
+        if isinstance(node, ast.Call):
+            # If the function being called is the function we're looking for
+            if isinstance(node.func, ast.Name) and node.func.id == func_name:
+                return True
+
+    # If we've gone through all the nodes and haven't found a call to the function, it's not called
+    return False
+====================================================================
+-> Chunk: util\closure_util.py::3
+
+
+def get_referenced_names(code: str, module_name: str):
+    """
+    This function takes a block of code and a module name as input. It parses the code into an Abstract Syntax Tree (AST)
+    and walks through the tree to find all instances where an attribute of the module is referenced in the code.
+
+    Parameters:
+    code (str): The block of code to be parsed.
+    module_name (str): The name of the module to look for in the code.
+
+    Returns:
+    list: A list of all attributes of the module that are referenced in the code.
+    """
+    tree = ast.parse(code)
+    referenced_names = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            if isinstance(node.value, ast.Name) and node.value.id == module_name:
+                referenced_names.append(node.attr)
+
+    return referenced_names
+====================================================================
+-> Chunk: util\differ.py::1
+
+
+from ell.configurator import config
+from ell.lmp.simple import simple
+import difflib
+
+# Todo: update this for single change stuff so that it doesn't summarize small chage but says it specifically.
+@simple(config.autocommit_model, temperature=0.2, exempt_from_tracking=True, max_tokens=500)
+def write_commit_message_for_diff(old : str, new : str) -> str:
+    """You are an expert programmer whose goal is to write commit messages based on diffs.
+You will be given two version of source code and their unified diff.
+You will be expected to write a commit message that describes the changes between the two versions.
+
+Follow these guidelines:
+1. Your commit message should be at most one sentence and highly specific to the changes made. Don't just discuss the functions changed but how they were specifically changed.
+2. Your commit message cannot be more than 10 words so use sentence fragments and be concise.
+3. The @ell.simple decorator turns a function into a call to a language model program: the function's docstring is the system prompt and the string returned is the user prompt. 
+4. It is extremely important that if the system prompt or user prompt changes, your commit message must say what specifically changed, rather than vaguely saying they were updated or changed.
+5. It is extremely important that you never refer to a @ell.simple docstring as a docstring: it is a system prompt. 
+6. Do NOT say why a change was done, say what specifically changed.
+7. Consider all changes ot the program including the globals and free variables
+
+Example response:
+'''
+Update model temperature and refine system prompt wording:
+* Changed temperature from 0.5 to 0.7.
+* Updated "with specificity, brevity, and good grammar" to "clearly and concisely" in system prompt.
+* The `questions` param was assigned type List[Question]
+'''
+Response format:
+<Short commit message summarizing all the changes with specificity>:
+* <Bulleted list of each specific change>.
+"""
+    clean_program_of_all_bv_tags = lambda program : program.replace("#<BV>", "").replace("#</BV>", "").replace("#<BmV>", "").replace("#</BmV>", "")
+    old_clean = clean_program_of_all_bv_tags(old)
+    new_clean = clean_program_of_all_bv_tags(new)
+
+    diff = "\n".join(difflib.unified_diff(old_clean.splitlines(), new_clean.splitlines(), lineterm=''))
+
+    return f"""Write a commit message succinctly and specifically describing the changes between these two versions of a program.
+Old version:
+```
+{old_clean}
+```
+
+New version:
+```
+{new_clean}
+```
+
+Unified diff:
+{diff}
+"""
+====================================================================
+-> Chunk: util\differ.py::2
+
+
+if __name__ == "__main__":
+
+    from ell.configurator import config
+    config.verbose = True
+
+    test_version_1 = '''import ell
+import numpy as np
+
+@ell.simple(model="gpt-4o-mini")
+def come_up_with_a_premise_for_a_joke_about(topic : str):
+    """You are an incredibly funny comedian. Come up with a premise for a joke about topic"""
+    return f"come up with a premise for a joke about {topic}"
+
+def get_random_length():
+    return int(np.random.beta(2, 5) * 300)
+
+@ell.simple(model="gpt-4o-mini")
+def joke(topic : str):
+    """You are a funny comedian. You respond in scripts for a standup comedy skit."""
+    return f"Act out a full joke. Make your script {get_random_length()} words long. Here's the premise: {come_up_with_a_premise_for_a_joke_about(topic)}"'''
+
+    test_version_2 = '''import ell
+import numpy as np
+
+@ell.simple(model="gpt-4o-mini")
+def come_up_with_a_premise_for_a_joke_about(topic : str):
+    """You are an incredibly funny comedian. Come up with a premise for a joke about topic"""
+    return f"come up with a premise for a joke about {topic}"
+
+def get_random_length():
+    return int(np.random.beta(2, 5) * 300)
+
+@ell.simple(model="gpt-4o-mini")
+def joke(topic : str):
+    """You are a funny comedian. You respond in scripts for skits."""
+    return f"Act out a full joke. Make your script {get_random_length()} words long. Here's the premise: {come_up_with_a_premise_for_a_joke_about(topic)}"'''
+
+    (write_commit_message_for_diff(test_version_1, test_version_2))
+====================================================================
+-> Chunk: util\plot_ascii.py::2
+
+
+# For packaging .
+def render_and_save_char_bitmaps(
+    font_path: str = "Courier New.ttf",
+    font_size: int = 10,
+    output_path: str = "char_bitmaps.npy"
+) -> None:
+    num_chars = len(ASCII_CHARS)
+    char_bitmaps = {}
+    max_char_width, max_char_height = 0, 0
+
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        logging.error(f"Font file '{font_path}' not found. Please provide a valid path.")
+        sys.exit(1)
+
+    for char in ASCII_CHARS:
+        char_image = Image.new('L', (font_size, font_size), color=255)
+        draw = ImageDraw.Draw(char_image)
+        bbox = font.getbbox(char)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        draw.text(((font_size - w) / 2, (font_size - h) / 2), char, fill=0, font=font)
+        bitmap = np.array(char_image) / 255  # Normalize to 0-1
+        char_bitmaps[char] = bitmap
+        max_char_width = max(max_char_width, bitmap.shape[1])
+        max_char_height = max(max_char_height, bitmap.shape[0])
+
+    # Save the character bitmaps and max dimensions
+    data = {
+        'char_bitmaps': char_bitmaps,
+        'max_char_width': max_char_width,
+        'max_char_height': max_char_height
+    }
+    np.save(output_path, data)
+    logging.info(f"Character bitmaps saved to '{output_path}'.")
+====================================================================
+-> Chunk: util\serialization.py::5
+
+
+def is_immutable_variable(value):
+    """
+    Check if a value is immutable.
+
+    This function determines whether the given value is of an immutable type in Python.
+    Immutable types are objects whose state cannot be modified after they are created.
+
+    Args:
+        value: Any Python object to check for immutability.
+
+    Returns:
+        bool: True if the value is immutable, False otherwise.
+
+    Note:
+        - This function checks for common immutable types in Python.
+        - Custom classes are considered mutable unless they explicitly implement
+          immutability (which this function doesn't check for).
+        - For some types like tuple, immutability is shallow (i.e., the tuple itself
+          is immutable, but its contents might not be).
+    """
+    immutable_types = (
+        int, float, complex, str, bytes,
+        tuple, frozenset, type(None),
+        bool,  # booleans are immutable
+        range,  # range objects are immutable
+        slice,  # slice objects are immutable
+    )
+
+    if isinstance(value, immutable_types):
+        return True
+
+    # Check for immutable instances of mutable types
+    if isinstance(value, (tuple, frozenset)):
+        return all(is_immutable_variable(item) for item in value)
+
+    return False
+====================================================================
+-> Chunk: util\verbosity.py::1
+
+
+import sys
+import hashlib
+import shutil
+import textwrap
+from typing import Dict, Tuple, List, Any, Optional
+from colorama import Fore, Style, init
+from ell.types import Message
+from ell.configurator import config
+import logging
+from functools import lru_cache
+import threading
+from ell.types.message import LMP, ContentBlock, _content_to_text
+import requests
+
+from ell.util.plot_ascii import plot_ascii
+
+# Initialize colorama
+init(autoreset=True)
+
+# Define colors and styles
+ELL_COLORS = {k: v for k, v in vars(Fore).items() if k not in ['RESET', 'BLACK', 'LIGHTBLACK_EX']}
+BOLD = Style.BRIGHT
+UNDERLINE = '\033[4m'
+RESET = Style.RESET_ALL
+SYSTEM_COLOR = Fore.CYAN
+USER_COLOR = Fore.GREEN
+ASSISTANT_COLOR = Fore.YELLOW
+PIPE_COLOR = Fore.BLUE
+
+# Set up logging
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+has_logged_version_statement = False
+
+_version_check_lock = threading.Lock()
+_has_logged_version_statement = False
+====================================================================
+-> Chunk: util\verbosity.py::2
+
+
+def check_version_and_log():
+    global _has_logged_version_statement
+    if _version_check_lock.acquire(blocking=False):
+        try:
+            if not _has_logged_version_statement:
+
+                import ell
+
+                try:
+                    response = requests.get("https://version.ell.so/ell-ai/pypi", timeout=0.15)
+                    if response.status_code == 200:
+                        latest_version = response.text.strip()
+                        if latest_version != ell.__version__:
+                            print(f"{Fore.YELLOW}╔═════════════════════════════════════════════════════════════════╗")
+                            print(f"{Fore.YELLOW}║ {Fore.GREEN}A new version of ELL is available: {Fore.CYAN}{latest_version:<29}{Fore.YELLOW}║")
+                            print(f"{Fore.YELLOW}║ {Fore.GREEN}You can update by running:{Fore.YELLOW}                                      ║")
+                            print(f"{Fore.YELLOW}║ {Fore.CYAN}pip install --upgrade ell-ai{Fore.YELLOW}                                    ║")
+                            print(f"{Fore.YELLOW}╚═════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+                except requests.RequestException:
+                    pass  # Silently handle any network-related errors
+                _has_logged_version_statement = True
+        finally:
+            _version_check_lock.release()
+====================================================================
+
+
+Total coherence score: 3.980392156862745

@@ -1,0 +1,797 @@
+_____ full_code _____
+
+###### Cluster Eval ######
+Score: 4.333333333333333
+Cluster name: Real-time API and Client
+Real-time API and Client:
+
+-> Chunk: openai_realtime\__init__.py::1
+
+
+from .client import RealtimeClient
+from .api import RealtimeAPI
+from .conversation import RealtimeConversation
+from .event_handler import RealtimeEventHandler
+from .utils import RealtimeUtils
+
+__all__ = [
+    "RealtimeClient",
+    "RealtimeAPI",
+    "RealtimeConversation",
+    "RealtimeEventHandler",
+    "RealtimeUtils"
+]
+====================================================================
+-> Chunk: openai_realtime\api.py::1
+
+
+import asyncio
+import json
+import websockets
+from .event_handler import RealtimeEventHandler
+from .utils import RealtimeUtils
+
+class RealtimeAPI(RealtimeEventHandler):
+    def __init__(self, url=None, api_key=None, dangerously_allow_api_key_in_browser=False, debug=False):
+        super().__init__()
+        self.default_url = 'wss://api.openai.com/v1/realtime'
+        self.url = url or self.default_url
+        self.api_key = api_key
+        self.debug = debug
+        self.ws = None
+
+    def is_connected(self):
+        return self.ws is not None and self.ws.open
+
+    def log(self, *args):
+        if self.debug:
+            print(*args)
+        return True
+====================================================================
+-> Chunk: openai_realtime\api.py::2
+
+
+class RealtimeAPI(RealtimeEventHandler):
+
+    async def connect(self, model='gpt-4o-realtime-preview-2024-10-01'):
+        if self.is_connected():
+            raise Exception("Already connected")
+
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'OpenAI-Beta': 'realtime=v1'
+        }
+
+        self.ws = await websockets.connect(f"{self.url}?model={model}", extra_headers=headers)
+
+        self.log(f"Connected to {self.url}")
+
+        asyncio.create_task(self._message_handler())
+
+        return True
+====================================================================
+-> Chunk: openai_realtime\api.py::3
+
+
+class RealtimeAPI(RealtimeEventHandler):
+
+    async def _message_handler(self):
+        try:
+            async for message in self.ws:
+                data = json.loads(message)
+                self.receive(data['type'], data)
+        except websockets.exceptions.ConnectionClosed:
+            self.disconnect()
+            self.dispatch('close', {'error': True})
+
+    def disconnect(self):
+        if self.ws:
+            asyncio.create_task(self.ws.close())
+            self.ws = None
+        return True
+
+    def receive(self, event_name, event):
+        self.log("received:", event_name, event)
+        self.dispatch(f"server.{event_name}", event)
+        self.dispatch("server.*", event)
+        return True
+====================================================================
+-> Chunk: openai_realtime\api.py::4
+
+
+class RealtimeAPI(RealtimeEventHandler):
+
+    def send(self, event_name, data=None):
+        if not self.is_connected():
+            raise Exception("RealtimeAPI is not connected")
+
+        data = data or {}
+        if not isinstance(data, dict):
+            raise ValueError("data must be a dictionary")
+
+        event = {
+            "event_id": RealtimeUtils.generate_id("evt_"),
+            "type": event_name,
+            **data
+        }
+
+        self.dispatch(f"client.{event_name}", event)
+        self.dispatch("client.*", event)
+        self.log("sent:", event_name, event)
+
+        asyncio.create_task(self.ws.send(json.dumps(event, ensure_ascii=False)))
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::1
+
+
+import asyncio
+import numpy as np
+from .event_handler import RealtimeEventHandler
+from .api import RealtimeAPI
+from .conversation import RealtimeConversation
+from .utils import RealtimeUtils
+import json
+
+class RealtimeClient(RealtimeEventHandler):
+    def __init__(self, url=None, api_key=None, instructions='', dangerously_allow_api_key_in_browser=False, debug=False):
+        super().__init__()
+        self.default_session_config = {
+            'modalities': ['text', 'audio'],
+            'instructions': instructions,
+            'voice': 'alloy',
+            'input_audio_format': 'pcm16',
+            'output_audio_format': 'pcm16',
+            'input_audio_transcription': None,
+            'turn_detection': None,
+            'tools': [],
+            'tool_choice': 'auto',
+            'temperature': 0.8,
+            'max_response_output_tokens': 4096,
+        }
+        self.session_config = {}
+        self.transcription_models = [{'model': 'whisper-1'}]
+        self.default_server_vad_config = {
+            'type': 'server_vad',
+            'threshold': 0.5,
+            'prefix_padding_ms': 300,
+            'silence_duration_ms': 200,
+        }
+        self.realtime = RealtimeAPI(url, api_key, dangerously_allow_api_key_in_browser, debug)
+        self.conversation = RealtimeConversation()
+        self._reset_config()
+        self._add_api_event_handlers()
+
+    def _reset_config(self):
+        self.session_created = False
+        self.tools = {}
+        self.session_config = self.default_session_config.copy()
+        self.input_audio_buffer = np.array([], dtype=np.int16)
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::2
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def _add_api_event_handlers(self):
+        self.realtime.on('client.*', lambda event: self.dispatch('realtime.event', {
+            'time': RealtimeUtils.generate_id('time_'),
+            'source': 'client',
+            'event': event
+        }))
+        self.realtime.on('server.*', lambda event: self.dispatch('realtime.event', {
+            'time': RealtimeUtils.generate_id('time_'),
+            'source': 'server',
+            'event': event
+        }))
+        self.realtime.on('server.session.created', lambda _: setattr(self, 'session_created', True))
+
+        def handle_conversation_event(event, *args):
+            result = self.conversation.process_event(event, *args)
+            if result['item']:
+                self.dispatch('conversation.updated', result)
+            return result
+
+        self.realtime.on('server.response.created', handle_conversation_event)
+        self.realtime.on('server.response.output_item.added', handle_conversation_event)
+        self.realtime.on('server.response.content_part.added', handle_conversation_event)
+        self.realtime.on('server.input_audio_buffer.speech_started', lambda event: (
+            handle_conversation_event(event),
+            self.dispatch('conversation.interrupted', event)
+        ))
+        self.realtime.on('server.input_audio_buffer.speech_stopped', lambda event: 
+            handle_conversation_event(event, self.input_audio_buffer)
+        )
+        self.realtime.on('server.conversation.item.created', lambda event: (
+            handle_conversation_event(event),
+            self.dispatch('conversation.item.appended', {'item': event['item']})
+        ))
+        self.realtime.on('server.conversation.item.truncated', handle_conversation_event)
+        self.realtime.on('server.conversation.item.deleted', handle_conversation_event)
+        self.realtime.on('server.conversation.item.input_audio_transcription.completed', handle_conversation_event)
+        self.realtime.on('server.response.audio_transcript.delta', handle_conversation_event)
+        self.realtime.on('server.response.audio.delta', handle_conversation_event)
+        self.realtime.on('server.response.text.delta', handle_conversation_event)
+        self.realtime.on('server.response.function_call_arguments.delta', handle_conversation_event)
+        def handle_output_item_done( event):
+            handle_conversation_event(event)
+            item = event.get('item', {})
+
+            if item.get('status') == 'completed':
+                self.dispatch('conversation.item.completed', {'item': item})
+
+            formatted = item.get('formatted', {})
+            tool = formatted.get('tool') if isinstance(formatted, dict) else None
+
+            if tool:
+                asyncio.create_task(self._call_tool(tool))
+        self.realtime.on('server.response.output_item.done', handle_output_item_done)
+====================================================================
+-> Chunk: openai_realtime\client.py::3
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+
+
+    def is_connected(self):
+        return self.realtime.is_connected() and self.session_created
+
+    def reset(self):
+        self.disconnect()
+        self.clear_event_handlers()
+        self.realtime.clear_event_handlers()
+        self._reset_config()
+        self._add_api_event_handlers()
+        return True
+
+    async def connect(self):
+        if self.is_connected():
+            raise Exception("Already connected, use .disconnect() first")
+        await self.realtime.connect()
+        self.update_session()
+        return True
+
+    async def wait_for_session_created(self):
+        if not self.realtime.is_connected():
+            raise Exception("Not connected, use .connect() first")
+        while not self.session_created:
+            await asyncio.sleep(0.001)
+        return True
+
+    def disconnect(self):
+        self.session_created = False
+        self.conversation.clear()
+        if self.realtime.is_connected():
+            self.realtime.disconnect()
+
+    def get_turn_detection_type(self):
+        turn_detection = self.session_config.get('turn_detection')
+        if isinstance(turn_detection, dict):
+            return turn_detection.get('type')
+        return None
+====================================================================
+-> Chunk: openai_realtime\client.py::4
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def add_tool(self, definition, handler):
+        if not definition.get('name'):
+            raise ValueError("Missing tool name in definition")
+        name = definition['name']
+        if name in self.tools:
+            raise ValueError(f"Tool '{name}' already added. Please use .remove_tool('{name}') before trying to add again.")
+        if not callable(handler):
+            raise ValueError(f"Tool '{name}' handler must be a function")
+        self.tools[name] = {'definition': definition, 'handler': handler}
+        self.update_session()
+        return self.tools[name]
+====================================================================
+-> Chunk: openai_realtime\client.py::5
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def remove_tool(self, name):
+        if name not in self.tools:
+            raise ValueError(f"Tool '{name}' does not exist, cannot be removed.")
+        del self.tools[name]
+        return True
+
+    def delete_item(self, id):
+        self.realtime.send('conversation.item.delete', {'item_id': id})
+        return True
+
+    def update_session(self, **kwargs):
+        self.session_config.update(kwargs)
+        use_tools = [
+            {**tool.get('definition', {}), 'type': 'function'}
+            for tool in self.tools.values()
+        ]
+        session = {**self.session_config, 'tools': use_tools}
+        if self.realtime.is_connected():
+            self.realtime.send('session.update', {'session': session})
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::6
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def send_user_message_content(self, content=None):
+        content = content or []
+        for c in content:
+            if c['type'] == 'input_audio':
+                if isinstance(c['audio'], (np.ndarray, bytes)):
+                    c['audio'] = RealtimeUtils.array_buffer_to_base64(c['audio'])
+        if content:
+            self.realtime.send('conversation.item.create', {
+                'item': {
+                    'type': 'message',
+                    'role': 'user',
+                    'content': content
+                }
+            })
+        self.create_response()
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::7
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def append_input_audio(self, array_buffer):
+        if len(array_buffer) > 0:
+            self.realtime.send('input_audio_buffer.append', {
+                'audio': RealtimeUtils.array_buffer_to_base64(array_buffer)
+            })
+            self.input_audio_buffer = RealtimeUtils.merge_int16_arrays(
+                self.input_audio_buffer,
+                array_buffer
+            )
+        return True
+
+    def create_response(self):
+        if self.get_turn_detection_type() is None and len(self.input_audio_buffer) > 0:
+            self.realtime.send('input_audio_buffer.commit')
+            self.conversation.queue_input_audio(self.input_audio_buffer)
+            self.input_audio_buffer = np.array([], dtype=np.int16)
+        self.realtime.send('response.create')
+        return True
+====================================================================
+-> Chunk: openai_realtime\client.py::8
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    def cancel_response(self, id=None, sample_count=0):
+        if not id:
+            self.realtime.send('response.cancel')
+            return {'item': None}
+        item = self.conversation.get_item(id)
+        if not item:
+            raise ValueError(f"Could not find item '{id}'")
+        if item['type'] != 'message' or item['role'] != 'assistant':
+            raise ValueError("Can only cancel response messages with type 'message' and role 'assistant'")
+        self.realtime.send('response.cancel')
+        audio_index = next((i for i, c in enumerate(item['content']) if c['type'] == 'audio'), -1)
+        if audio_index == -1:
+            raise ValueError("Could not find audio on item to cancel")
+        self.realtime.send('conversation.item.truncate', {
+            'item_id': id,
+            'content_index': audio_index,
+            'audio_end_ms': int((sample_count / self.conversation.default_frequency) * 1000)
+        })
+        return {'item': item}
+====================================================================
+-> Chunk: openai_realtime\client.py::9
+
+
+class RealtimeClient(RealtimeEventHandler):
+
+    async def wait_for_next_item(self):
+        event = await self.wait_for_next('conversation.item.appended')
+        return {'item': event['item']}
+
+    async def wait_for_next_completed_item(self):
+        event = await self.wait_for_next('conversation.item.completed')
+        return {'item': event['item']}
+
+    async def _call_tool(self, tool):
+        try:
+            json_arguments = json.loads(tool['arguments'])
+            tool_config = self.tools.get(tool['name'])
+            if not tool_config:
+                raise ValueError(f"Tool '{tool['name']}' has not been added")
+            result = await tool_config['handler'](json_arguments)
+            self.realtime.send('conversation.item.create', {
+                'item': {
+                    'type': 'function_call_output',
+                    'call_id': tool['call_id'],
+                    'output': json.dumps(result, ensure_ascii=False)
+                }
+            })
+        except Exception as e:
+            self.realtime.send('conversation.item.create', {
+                'item': {
+                    'type': 'function_call_output',
+                    'call_id': tool['call_id'],
+                    'output': json.dumps({'error': str(e)}, ensure_ascii=False)
+                }
+            })
+        self.create_response()
+====================================================================
+-> Chunk: openai_realtime\conversation.py::1
+
+
+import numpy as np
+import json
+from .utils import RealtimeUtils
+import copy
+
+class RealtimeConversation:
+    def __init__(self):
+        self.default_frequency = 24000  # 24,000 Hz
+        self.clear()
+
+    def clear(self):
+        self.item_lookup = {}
+        self.items = []
+        self.response_lookup = {}
+        self.responses = []
+        self.queued_speech_items = {}
+        self.queued_transcript_items = {}
+        self.queued_input_audio = None
+        return True
+
+    def queue_input_audio(self, input_audio):
+        self.queued_input_audio = input_audio
+        return input_audio
+
+    def process_event(self, event, *args):
+        if 'event_id' not in event:
+            raise ValueError("Missing 'event_id' on event")
+        if 'type' not in event:
+            raise ValueError("Missing 'type' on event")
+
+        event_processor = getattr(self, f"_process_{event['type'].replace('.', '_')}", None)
+        if not event_processor:
+            raise ValueError(f"Missing conversation event processor for '{event['type']}'")
+
+        return event_processor(event, *args)
+
+    def get_item(self, id):
+        return self.item_lookup.get(id)
+
+    def get_items(self):
+        return self.items.copy()
+====================================================================
+-> Chunk: openai_realtime\conversation.py::2
+
+
+class RealtimeConversation:
+
+    def _process_conversation_item_created(self, event):
+        item = event['item']
+        new_item = copy.deepcopy(item)
+        if new_item['id'] not in self.item_lookup:
+            self.item_lookup[new_item['id']] = new_item
+            self.items.append(new_item)
+
+        new_item['formatted'] = {
+            'audio': np.array([], dtype=np.int16),
+            'text': '',
+            'transcript': ''
+        }
+
+        if new_item['type'] == 'message':
+            if new_item['role'] == 'user':
+                new_item['status'] = 'completed'
+                if self.queued_input_audio is not None:
+                    new_item['formatted']['audio'] = self.queued_input_audio
+                    self.queued_input_audio = None
+            else:
+                new_item['status'] = 'in_progress'
+        elif new_item['type'] == 'function_call':
+            new_item['formatted']['tool'] = {
+                'type': 'function',
+                'name': new_item['name'],
+                'call_id': new_item['call_id'],
+                'arguments': ''
+            }
+            new_item['status'] = 'in_progress'
+        elif new_item['type'] == 'function_call_output':
+            new_item['status'] = 'completed'
+            new_item['formatted']['output'] = new_item['output']
+
+        if new_item.get('content'):
+            text_content = [c for c in new_item['content'] if c['type'] in ['text', 'input_text']]
+            for content in text_content:
+                new_item['formatted']['text'] += content['text']
+
+        if new_item['id'] in self.queued_speech_items:
+            new_item['formatted']['audio'] = self.queued_speech_items[new_item['id']]['audio']
+            del self.queued_speech_items[new_item['id']]
+
+        if new_item['id'] in self.queued_transcript_items:
+            new_item['formatted']['transcript'] = self.queued_transcript_items[new_item['id']]['transcript']
+            del self.queued_transcript_items[new_item['id']]
+
+        return {'item': new_item, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::3
+
+
+class RealtimeConversation:
+
+    def _process_conversation_item_truncated(self, event):
+        item_id, audio_end_ms = event['item_id'], event['audio_end_ms']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"item.truncated: Item '{item_id}' not found")
+
+        end_index = int((audio_end_ms * self.default_frequency) / 1000)
+        item['formatted']['transcript'] = ''
+        item['formatted']['audio'] = item['formatted']['audio'][:end_index]
+        return {'item': item, 'delta': None}
+
+    def _process_conversation_item_deleted(self, event):
+        item_id = event['item_id']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"item.deleted: Item '{item_id}' not found")
+
+        del self.item_lookup[item['id']]
+        self.items = [i for i in self.items if i['id'] != item['id']]
+        return {'item': item, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::4
+
+
+class RealtimeConversation:
+
+    def _process_conversation_item_input_audio_transcription_completed(self, event):
+        item_id, content_index, transcript = event['item_id'], event['content_index'], event['transcript']
+        item = self.item_lookup.get(item_id)
+        formatted_transcript = transcript or ' '
+
+        if not item:
+            self.queued_transcript_items[item_id] = {'transcript': formatted_transcript}
+            return {'item': None, 'delta': None}
+
+        item['content'][content_index]['transcript'] = transcript
+        item['formatted']['transcript'] = formatted_transcript
+        return {'item': item, 'delta': {'transcript': transcript}}
+
+    def _process_input_audio_buffer_speech_started(self, event):
+        item_id, audio_start_ms = event['item_id'], event['audio_start_ms']
+        self.queued_speech_items[item_id] = {'audio_start_ms': audio_start_ms}
+        return {'item': None, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::5
+
+
+class RealtimeConversation:
+
+    def _process_input_audio_buffer_speech_stopped(self, event, input_audio_buffer):
+        item_id, audio_end_ms = event['item_id'], event['audio_end_ms']
+        speech = self.queued_speech_items[item_id]
+        speech['audio_end_ms'] = audio_end_ms
+        if input_audio_buffer is not None:
+            start_index = int((speech['audio_start_ms'] * self.default_frequency) / 1000)
+            end_index = int((speech['audio_end_ms'] * self.default_frequency) / 1000)
+            speech['audio'] = input_audio_buffer[start_index:end_index]
+        return {'item': None, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::6
+
+
+class RealtimeConversation:
+
+    def _process_response_created(self, event):
+        response = event['response']
+        if response['id'] not in self.response_lookup:
+            self.response_lookup[response['id']] = response
+            self.responses.append(response)
+        return {'item': None, 'delta': None}
+
+    def _process_response_output_item_added(self, event):
+        response_id, item = event['response_id'], event['item']
+        response = self.response_lookup.get(response_id)
+        if not response:
+            raise ValueError(f"response.output_item.added: Response '{response_id}' not found")
+        response['output'].append(item['id'])
+        return {'item': None, 'delta': None}
+
+    def _process_response_output_item_done(self, event):
+        item = event['item']
+        if not item:
+            raise ValueError("response.output_item.done: Missing 'item'")
+        found_item = self.item_lookup.get(item['id'])
+        if not found_item:
+            raise ValueError(f"response.output_item.done: Item '{item['id']}' not found")
+        found_item['status'] = item['status']
+        return {'item': found_item, 'delta': None}
+
+    def _process_response_content_part_added(self, event):
+        item_id, part = event['item_id'], event['part']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.content_part.added: Item '{item_id}' not found")
+        item['content'].append(part)
+        return {'item': item, 'delta': None}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::7
+
+
+class RealtimeConversation:
+
+    def _process_response_audio_transcript_delta(self, event):
+        item_id, content_index, delta = event['item_id'], event['content_index'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.audio_transcript.delta: Item '{item_id}' not found")
+        item['content'][content_index]['transcript'] += delta
+        item['formatted']['transcript'] += delta
+        return {'item': item, 'delta': {'transcript': delta}}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::8
+
+
+class RealtimeConversation:
+
+    def _process_response_audio_delta(self, event):
+        item_id, content_index, delta = event['item_id'], event['content_index'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.audio.delta: Item '{item_id}' not found")
+        array_buffer = RealtimeUtils.base64_to_array_buffer(delta)
+        append_values = np.frombuffer(array_buffer, dtype=np.int16)
+        item['formatted']['audio'] = np.concatenate([item['formatted']['audio'], append_values])
+        return {'item': item, 'delta': {'audio': append_values}}
+====================================================================
+-> Chunk: openai_realtime\conversation.py::9
+
+
+class RealtimeConversation:
+
+    def _process_response_text_delta(self, event):
+        item_id, content_index, delta = event['item_id'], event['content_index'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.text.delta: Item '{item_id}' not found")
+        item['content'][content_index]['text'] += delta
+        item['formatted']['text'] += delta
+        return {'item': item, 'delta': {'text': delta}}
+
+    def _process_response_function_call_arguments_delta(self, event):
+        item_id, delta = event['item_id'], event['delta']
+        item = self.item_lookup.get(item_id)
+        if not item:
+            raise ValueError(f"response.function_call_arguments.delta: Item '{item_id}' not found")
+        item['arguments'] += delta
+        item['formatted']['tool']['arguments'] += delta
+        return {'item': item, 'delta': {'arguments': delta}}
+====================================================================
+-> Chunk: openai_realtime\event_handler.py::1
+
+
+import asyncio
+from typing import Callable, Dict, List, Any
+
+class RealtimeEventHandler:
+    def __init__(self):
+        self.event_handlers: Dict[str, List[Callable]] = {}
+        self.next_event_handlers: Dict[str, List[Callable]] = {}
+
+    def clear_event_handlers(self):
+        self.event_handlers.clear()
+        self.next_event_handlers.clear()
+        return True
+
+    def on(self, event_name: str, callback: Callable = None):
+        def decorator(func):
+            if event_name not in self.event_handlers:
+                self.event_handlers[event_name] = []
+            self.event_handlers[event_name].append(func)
+            return func
+
+        if callback is None:
+            return decorator
+        else:
+            return decorator(callback)
+
+    def on_next(self, event_name: str, callback: Callable):
+        if event_name not in self.next_event_handlers:
+            self.next_event_handlers[event_name] = []
+        self.next_event_handlers[event_name].append(callback)
+
+    def off(self, event_name: str, callback: Callable = None):
+        if event_name in self.event_handlers:
+            if callback:
+                self.event_handlers[event_name].remove(callback)
+            else:
+                del self.event_handlers[event_name]
+        return True
+
+    def off_next(self, event_name: str, callback: Callable = None):
+        if event_name in self.next_event_handlers:
+            if callback:
+                self.next_event_handlers[event_name].remove(callback)
+            else:
+                del self.next_event_handlers[event_name]
+        return True
+
+    async def wait_for_next(self, event_name: str, timeout: float = None):
+        next_event = None
+        def set_next_event(event):
+            nonlocal next_event
+            next_event = event
+
+        self.on_next(event_name, set_next_event)
+
+        start_time = asyncio.get_event_loop().time()
+        while not next_event:
+            if timeout and asyncio.get_event_loop().time() - start_time > timeout:
+                return None
+            await asyncio.sleep(0.001)
+
+        return next_event
+
+    def dispatch(self, event_name: str, event: Any):
+        handlers = self.event_handlers.get(event_name, []).copy()
+        for handler in handlers:
+            handler(event)
+
+        next_handlers = self.next_event_handlers.pop(event_name, [])
+        for next_handler in next_handlers:
+            next_handler(event)
+
+        return True
+====================================================================
+-> Chunk: openai_realtime\utils.py::1
+
+
+import base64
+import numpy as np
+
+class RealtimeUtils:
+    @staticmethod
+    def float_to_16bit_pcm(float32_array):
+        int16_array = (np.clip(float32_array, -1, 1) * 32767).astype(np.int16)
+        return int16_array.tobytes()
+
+    @staticmethod
+    def base64_to_array_buffer(base64_string):
+        return base64.b64decode(base64_string)
+
+    @staticmethod
+    def array_buffer_to_base64(array_buffer):
+        if isinstance(array_buffer, np.ndarray):
+            if array_buffer.dtype == np.float32:
+                array_buffer = RealtimeUtils.float_to_16bit_pcm(array_buffer)
+            elif array_buffer.dtype == np.int16:
+                array_buffer = array_buffer.tobytes()
+        return base64.b64encode(array_buffer).decode('utf-8')
+
+    @staticmethod
+    def merge_int16_arrays(left, right):
+        if isinstance(left, bytes):
+            left = np.frombuffer(left, dtype=np.int16)
+        if isinstance(right, bytes):
+            right = np.frombuffer(right, dtype=np.int16)
+        if not isinstance(left, np.ndarray) or not isinstance(right, np.ndarray):
+            raise ValueError("Both items must be numpy arrays or bytes objects")
+        return np.concatenate((left, right))
+
+    @staticmethod
+    def generate_id(prefix, length=21):
+        import random
+        chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+        return prefix + ''.join(random.choice(chars) for _ in range(length - len(prefix)))
+====================================================================
+
+
+Total coherence score: 0.20634920634920637

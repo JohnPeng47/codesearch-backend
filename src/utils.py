@@ -23,6 +23,7 @@ if platform.system() == "Windows":
 
 logger = getLogger(__name__)
 
+DELIMETER = f"\n\n{'-' * 80}\n" # only 1 tokens good deal!
 
 def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
     """Returns the number of tokens in a text string."""

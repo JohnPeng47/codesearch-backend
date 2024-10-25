@@ -1,8 +1,10 @@
 from typing import List
 from pydantic import BaseModel, field_validator
 from pathlib import Path
+import ell
+from openai import OpenAI
 
-from src.cluster.types import ClusteredTopic
+from src.cluster.models import ClusteredTopic
 from src.cluster.cluster import (
     generate_full_code_clusters, 
     generate_summarized_clusters,
@@ -10,10 +12,9 @@ from src.cluster.cluster import (
     generate_random_clusters
 )
 from src.config import EVAL_ROOT
+from src.llm.invoke_mt import invoke_multithread
 
-from openai import OpenAI
-from pydantic import BaseModel, Field
-
+from .lmps import eval_coherence_single, eval_remove_chunks
 from .utils import EvalReport
 
 # TODO: rerun this eval set to determine new number ranking
@@ -62,107 +63,26 @@ def eval_cross_file_cluster(clusters: List[ClusteredTopic], min_chunks: int = 3)
     return avg_cross_file_score
 
 
-class OneToFiveScale(BaseModel):
-    rating: int
-
-    @field_validator("rating")
-    def validate_rating(cls, v):
-        if isinstance(v, float):
-            raise ValueError("Rating must be an integer")
-        if v < 1 or v > 5:
-            raise ValueError("Rating must be between 1 and 5")
-        return v
-    
-def eval_coherence_single(cluster: ClusteredTopic):
-    DELIMITER = "\n\n================="
-    cluster_code = "\n".join([chunk.get_content() + DELIMITER for chunk in cluster.chunks])
-
-    EVAL_COHERENCE = """
-You are given a cluster that is the output of a clustering algorithm designed to group together code from related features. 
-Your task is to evaluate how well the code in this cluster works together as a cohesive functional unit in the wider codebase. 
-Output your score on a scale of 1 to 5, where:
-
-1 indicates either:
-
-The cluster contains completely unrelated code snippets with no functional relationship whatsoever
-The code snippets actively conflict in their purposes or dependencies
-The grouping appears to be essentially random
-Less than 20% of the code could be reasonably considered part of the same feature
-
-2 indicates:
-
-The cluster has only superficial relationships (e.g., sharing some common utility functions)
-Most code snippets (>60%) would work better in different clusters
-The code lacks any meaningful architectural or functional cohesion
-While some pieces may be related, they don't form any meaningful functional unit
-
-3 indicates:
-
-The cluster has a recognizable theme but significant problems
-40-60% of the code belongs together, but the rest should be elsewhere
-The related code pieces have weak or indirect functional dependencies
-The cluster mixes multiple distinct functionalities that should be separated
-
-4 indicates:
-
-The cluster represents a clear functional unit with minor issues
-At least 80% of the code clearly belongs together
-Any outliers are at least tangentially related to the main functionality
-The code has strong functional dependencies and shared purpose
-No critical pieces of the functionality are missing
-
-5 indicates:
-The cluster represents a perfect or near-perfect functional unit
-Virtually all code (>95%) is strongly related and necessary for the feature
-The cluster captures complete functionality with no missing pieces
-Clear, strong functional dependencies between all components
-No code that should obviously be placed elsewhere
-Removing any piece would break the functionality
-
-Here is the code in the cluster:
-{code}
-
-Evaluate the coherence and output your rating.
-"""
-    messages = [
-        # {"role": "system", "content": "You are an AI assistant that evaluates code clusters."},
-        {"role": "user", "content": EVAL_COHERENCE.format(code=cluster_code)}
-    ]
-
-    response = client.beta.chat.completions.parse(
-        model="gpt-4o-2024-08-06",
-        messages=messages,
-        response_format=OneToFiveScale
-    )
-
-    return response.choices[0].message.parsed.rating
-
-
 # TODO: make a log_report object with add_section() method
 def eval_coherence_clusters(clusters: List[ClusteredTopic], 
                             iters: int,
                             eval_name: str,
-                            log_local: bool = False,
-                            subdir: str = "",
+                            repo_name: str,
                             min_chunks: int = 4) -> List[int]:
-    reportdir = Path(eval_name) if not subdir else Path(eval_name) / subdir
-    eval_report = EvalReport(eval_name, reportdir=reportdir, log_local=log_local)
+    eval_report = EvalReport(report_dir=Path("coherence") / repo_name / eval_name)
     to_eval = [cluster for cluster in clusters if len(cluster.chunks) >= min_chunks]
     if not to_eval:
         NO_CLUSTERS_MSG = f"No clusters found matching min_chunks requirement for {eval_name}, exiting..."
         eval_report.add_line(NO_CLUSTERS_MSG)
         return
-
+    
     # coherence scores
     scores = []
     for _ in range(iters):
-        eval_i_scores = []
-        for eval_cluster in to_eval:
-            eval_i_scores.append(
-                eval_coherence_single(eval_cluster)
-            )
-
-        scores.append(eval_i_scores)
+        # TODO: pass the session ID and test if we are passing it properly
+        cluster_scores = [score.parsed.rating for score in 
+                         invoke_multithread(to_eval, eval_coherence_single, max_workers=6)["results"]]
+        scores.append(cluster_scores)
 
     # LEARN: zip(*scores) is a way to transpose a list of lists
     # calculate estimated variance of a single cluster across iterations 
@@ -200,11 +120,14 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
     # for chunk, score in chunks_n_scores:
     #     f.write(f"Coherence score: ")
 
-    total_score = sum(sum(iter_score) / len(to_eval) for iter_score in scores) / iters
-    eval_report.add_line(f"Total coherence score: {total_score}")
+    avg_score = sum(sum(iter_score) / len(to_eval) for iter_score in scores) / iters        
+    variance = sum((sum(iter_score) / len(to_eval) - avg_score) ** 2 for iter_score in scores) / iters
+    std = variance ** 0.5
+
+    eval_report.add_line(f"Total coherence score: {avg_score}")
     eval_report.write()
 
-    return total_score
+    return avg_score, std
 
 def eval_clusters(clusters: List[ClusteredTopic]):
     cf_score = eval_cross_file_cluster(clusters)
@@ -212,7 +135,6 @@ def eval_clusters(clusters: List[ClusteredTopic]):
 
     return 1.5 * cohere_score + cf_score
     
-
 def eval_clusters_metrics(repo_path: Path, iters: int = 1):
     repo_name = repo_path.name
     eval_report = EvalReport("cluster_metrics", reportdir=EVAL_ROOT / repo_path.name / "cluster_metrics")

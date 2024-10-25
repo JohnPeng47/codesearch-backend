@@ -1,12 +1,13 @@
-from src.cluster.types import ClusteredTopic
+from src.cluster.models import ClusteredTopic
 
 from collections import defaultdict
 from datetime import datetime
 from typing import List, Dict
 import os
 from pathlib import Path
-import inspect
 import copy
+
+from src.config import EVAL_ROOT
 
 class EvalReport:
     """
@@ -14,52 +15,21 @@ class EvalReport:
     """
     _parent_instance: Dict[str, "EvalReport"] = {}
 
-    def __new__(cls, title: str, reportdir: Path = "", log_local: bool = False):
-        caller_file = inspect.currentframe().f_back.f_code.co_filename
-        parent_instance = cls._parent_instance.get(caller_file)
-        if parent_instance:
-            child_logger: "EvalReport" = parent_instance._clone()
-            child_logger._init_child(title, reportdir, log_local=log_local)
-            return child_logger
-        
-        print(f"Creating new instance for {caller_file}")
-        instance = super().__new__(cls)
-        cls._parent_instance[caller_file] = instance
-        instance.__init__(title, reportdir, is_parent=True, log_local=log_local)
-        return instance
-
-    # NOTE: very strange behaviour, that this would get called even if __new__
-    # returns the child instance
     def __init__(self, 
-                 title: str, 
-                 reportdir: Path = "", 
-                 log_local: bool = False, 
-                 is_parent: bool = False):
-        if not is_parent:
-            return
+                 report_dir: str = None,
+                 report_root: str = EVAL_ROOT): 
+        # create the report root for today if it doesnt exist
+        curr_date = datetime.now().strftime('%Y-%m-%d')
+        report_root = Path(report_root) / curr_date
+        if not report_root.exists():
+            os.makedirs(report_root, exist_ok=True)
 
-        if not log_local:
-            if not reportdir.exists():
-                os.makedirs(reportdir, exist_ok=True)
-            curr_date = datetime.now().strftime('%Y-%m-%d')
-            f_index = self._get_file_index(reportdir, fn_prefix=curr_date)
+        # let report_dir be the same as report_root if not specified
+        self.report_dir = report_root / report_dir if report_dir else report_root
+        if not self.report_dir.exists():
+            os.makedirs(self.report_dir, exist_ok=True)
 
-            self._currdir = reportdir / f"{curr_date}_{f_index}"
-            os.makedirs(self._currdir, exist_ok=True)
-        else:
-            self._currdir = Path(".")
-
-        self._content = f"_____ {title} _____\n\n"
-
-    def _init_child(self, title: str, child_dir: Path, log_local: bool = False):
-        if not log_local:
-            self._currdir = self._currdir / child_dir
-            if not self._currdir.exists():
-                os.makedirs(self._currdir, exist_ok=True)
-        else:
-            self._currdir = Path(".")
-
-        self._content = f"_____ {title} _____\n\n"
+        self._content = ""
         
     def add_section(self, name: str):
         self._content += f"###### {name} ######\n"
@@ -72,8 +42,8 @@ class EvalReport:
         Writes the evaluation log to a file with a unique, incremented index
         for a given date timestamp
         """        
-        latest_index = self._get_file_index(self._currdir)
-        fp = self._currdir / f"{name}{latest_index}.txt"
+        latest_index = self._get_file_index(self.report_dir)
+        fp = self.report_dir / f"{name}{latest_index}.txt"
         
         with open(fp, "w", encoding="utf-8") as f:
             f.write(self._content)
@@ -90,16 +60,6 @@ class EvalReport:
                 ], default=0
             ) + 1
         )
-
-    def _clone(self):
-        """
-        Creates a deep copy of the current EvalReport
-        """
-        new_instance = object.__new__(EvalReport)
-        for attr, value in self.__dict__.items():
-            setattr(new_instance, attr, copy.deepcopy(value))
-        
-        return new_instance
 
     def __str__(self):
         return self._content

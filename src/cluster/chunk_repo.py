@@ -20,8 +20,10 @@ from rtfs.chunk_resolution.graph import (
     ImportEdge as RefToEdge,
 )
 from src.index.service import get_or_create_index
-from src.cluster.types import CodeChunk, ClusterInputType
 from src.config import GRAPH_ROOT
+
+from src.chunk.models import CodeChunk, ClusterInputType
+
 @dataclass
 class ChunkCtxtNode:
     ctxt_list: List[ChunkContext]
@@ -173,7 +175,8 @@ def chunk_vanilla(repo_dir: Path, mode: str = "full", exclusions=[]) -> List[Cod
                 CodeChunk(
                     id= node_id,
                     metadata=chunk_node.metadata,
-                    node_id=node_id,                    input_type=ClusterInputType.CHUNK,
+                    node_id=node_id, 
+                    input_type=ClusterInputType.CHUNK,
                     content="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n"),
                     metadata=chunk_node.metadata,
             )
@@ -223,7 +226,6 @@ def chunk_repo(repo_dir: Path,
     else:
         raise ValueError(f"Invalid chunking strategy: {chunk_strat}")
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Concatenate Python files in a directory and generate a directory tree, with exclusions."
@@ -233,14 +235,8 @@ if __name__ == "__main__":
                         help="The chunking strategy to use")
     parser.add_argument("-e", "--exclude", action="append", default=[],
                         help="Exclusion patterns (can be used multiple times)")
-    # parser.add_argument(
-    #     "-f",
-    #     "--full",
-    #     nargs="*",
-    #     default=[],
-    #     help="To include whole content or just partial context",
-    # )
-    args = parser.parse_args()
+    parser.add_argument("--output-format", choices=["text", "json"], default="text",
+                        help="Output format for the chunks")
 
     # Default exclusions
     default_exclusions = [
@@ -260,18 +256,23 @@ if __name__ == "__main__":
     ]
 
     # Combine user-provided exclusions with default exclusions
-    exclusions = default_exclusions + args.exclude
+    exclusions = default_exclusions + parser.parse_args().exclude
     print(f"Exclusion patterns: {exclusions}")
 
-    chunks = chunk_repo(Path(args.directory), chunk_strat=args.strattype, mode="full", exclusions=exclusions)
-    print(f"Finisehd chunking with {len(chunks)} chunks")
+    chunks = chunk_repo(Path(parser.parse_args().directory), chunk_strat=parser.parse_args().strattype, mode="full", exclusions=exclusions)
+    print(f"Finished chunking with {len(chunks)} chunks")
 
-    # Write chunks to chunks.txt
-    with open("chunks.txt", "w", encoding="utf-8") as f:
-        for chunk in chunks:
-            f.write(f"Chunk ID: {chunk.id}\n")
-            f.write(f"Filepath: {chunk.filepath}\n")
-            f.write(f"Content:\n{chunk.content}\n")
-            f.write("-" * 80 + "\n")
-    
-    print(f"Chunks have been written to chunks.txt")
+    if parser.parse_args().output_format == "json":
+        # Serialize CodeChunk objects to JSON
+        with open("chunks.json", "w", encoding="utf-8") as f:
+            f.write(json.dumps([chunk.dict() for chunk in chunks], indent=4))
+        print(f"Chunks have been written to chunks.json")
+    else:
+        # Write chunks to chunks.txt
+        with open("chunks.txt", "w", encoding="utf-8") as f:
+            for chunk in chunks:
+                f.write(f"Chunk ID: {chunk.id}\n")
+                f.write(f"Filepath: {chunk.filepath}\n")
+                f.write(f"Content:\n{chunk.content}\n")
+                f.write("-" * 80 + "\n")
+        print(f"Chunks have been written to chunks.txt")

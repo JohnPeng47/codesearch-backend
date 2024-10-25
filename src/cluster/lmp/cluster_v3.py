@@ -1,8 +1,9 @@
 from typing import List, Tuple
 from pydantic import BaseModel
 import ell
-from ..types import (
-    ClusterInput,
+
+from src.chunk.models import ClusterInput
+from ..models import (
     ClusteredTopic,
     LMClusteredTopicList
 )

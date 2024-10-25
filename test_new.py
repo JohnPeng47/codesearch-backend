@@ -1,22 +1,15 @@
-class Hello:
-    a = 1
-    def __new__(cls):
-        print("Creating instance")
-        return super().__new__(cls)
-        
+from src.cluster.chunk_repo import ChunkStrat
+from pathlib import Path
 
-    def __init__(self):
-        self.b = 2
-    
-    def clone(self):
-        instance = object.__new__(self.__class__)
-        for k,v in self.__dict__.items():
-            setattr(instance, k, v)     
+from src.cluster.cluster_v2 import ClusterStrategy
+from src.cluster.lmp.cluster_v4 import generate_clusters
+from src.chunk.chunk import chunk_repo, ChunkStrat
 
-        return instance   
+repo_name = "ell"
+repo_path = Path("src/cluster/repos") / repo_name
 
-
-h = Hello()
-print(h.a, h.b)
-c = h.clone()
-print(c.a, c.b)
+chunks = chunk_repo(repo_path, ChunkStrat.VANILLA)
+chunk_strat = ClusterStrategy(chunks, 
+                              cluster_op=generate_clusters,
+                              max_iters=1)
+chunk_strat.run()

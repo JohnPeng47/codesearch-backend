@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List
 from pathlib import Path
 
-from ..types import CodeChunk
+from ..models import CodeChunk
 from ..chunk_repo import chunk_repo
 
 

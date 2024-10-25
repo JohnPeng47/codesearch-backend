@@ -53,7 +53,6 @@ class TokenUsage(BaseModel):
     def cpt_token_cost(self) -> float:
         return OPENAI_MODELS[self.model]["completion_token_cost"]
 
-    # THIS IS WRONGNNNGGG
     def total_cost(self) -> int:
         return (self.prompt_tokens - self.cached_tokens) * self.prt_token_cost \
                 + self.cached_tokens * self.cch_token_cost \

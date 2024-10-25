@@ -2,10 +2,11 @@ from typing import List, Tuple
 from pydantic import BaseModel
 import ell
 from enum import Enum
-from ..types import (
-    ClusterInput,
+from src.chunk.models import ClusterInput
+from ..models import (
     ClusteredTopic,
-    LMClusteredTopicList
+    LMClusteredTopicList,
+    LMClusteredTopic
 )
 
 DELIMETER = f"\n\n{'-' * 80}\n" # only 1 tokens good deal!
@@ -48,7 +49,6 @@ Now generate the output
 
 @ell.complex(model="gpt-4o-2024-08-06")
 def generate_clusters_raw(chunks: List[ClusterInput],
-                      cluster_len: Tuple[int, int] = (5, 10),
                       chunk_type: ChunkType = ChunkType.LOGIC) -> LMClusteredTopicList:
     codebase = ""
     for chunk in chunks:
@@ -62,9 +62,8 @@ Here are chunks of code representing a repo:
 Now take each of the seed chunks below and identify a group of other chunks,
 together with the seed chunk, which forms a coherent set code grouping that
 implements some functionality in the codebase. You are encouraged to optimize
-for file diversity in your clusters, and to keep the size of your clusters
-within {cluster_len_0} to {cluster_len_1} chunks.
-
+for file diversity in your clusters. You are also encouraged to not create clusters
+of less than 3. There are no upper bound restrictions
 Here are some example outputs on what you clusters should look like:
 
 # 1. Vector Embedding Generation Cluster:
@@ -91,9 +90,7 @@ Now generate the list of clusters according to the examples above
 """
     return GEN_CLUSTERS.format(
         code=codebase, 
-        seed_chunks=identify_key_chunks(chunks, n_chunks=6, chunk_type=chunk_type),
-        cluster_len_0=cluster_len[0],
-        cluster_len_1=cluster_len[1]
+        seed_chunks=identify_key_chunks(chunks, n_chunks=6, chunk_type=chunk_type)
     )
 
 class LMChunkWithDescription(BaseModel):
@@ -113,8 +110,7 @@ class LMClusteredTopicListDescr(BaseModel):
 
 # TODO: potentially eliminating this last step
 @ell.complex(model="gpt-4o-mini", response_format=LMClusteredTopicList)
-def generate_clusters(chunks: List[ClusterInput], 
-                      cluster_len: Tuple[int, int] = (5, 10),
+def generate_clusters_lmp(chunks: List[ClusterInput], 
                       chunk_type: ChunkType = ChunkType.LOGIC) -> LMClusteredTopicList:
     CONVERT_LLM_RES = """
 Convert the following LLM response to JSON. When converting to the chunks field, make sure
@@ -129,4 +125,13 @@ Here is the LLM response:
 
 {llm_res}
 """
-    return CONVERT_LLM_RES.format(llm_res=generate_clusters_raw(chunks, cluster_len, chunk_type))
+    return CONVERT_LLM_RES.format(llm_res=generate_clusters_raw(chunks, chunk_type))
+
+def generate_clusters(chunks: List[ClusterInput], 
+                      chunk_type: ChunkType = ChunkType.LOGIC) -> List[LMClusteredTopic]: 
+    all_clusters = []
+    for chunk_type in ChunkType:
+        clusters: LMClusteredTopicList = generate_clusters_lmp(chunks, chunk_type=chunk_type.value).parsed
+        all_clusters.extend(clusters.topics)
+
+    return all_clusters

@@ -12,7 +12,7 @@ from rtfs.chunk_resolution.graph import (
     ImportEdge as RefToEdge,
 )
 
-from src.cluster.types import CodeChunk
+from src.cluster.models import CodeChunk
 import networkx as nx
 
 
