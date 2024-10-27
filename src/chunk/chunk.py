@@ -160,7 +160,8 @@ def chunk_hybrid(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
 
 def chunk_random(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
     chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
-    return random.shuffle(chunks)
+    random.shuffle(chunks)
+    return chunks
 
 def chunk_summary(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
     chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
@@ -178,8 +179,8 @@ def chunk_summary(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
     print(f"Summary tokens: {summary_tokens}, \
         Code tokens: {code_tokens}, \
         Ratio: {summary_tokens / code_tokens}")
-    
-    chunks = summary_chunks
+
+    return summary_chunks 
 
 
 def chunk_repo(repo_dir: Path, 

@@ -5,7 +5,7 @@ import ell
 from openai import OpenAI
 
 from src.cluster.models import ClusteredTopic
-from src.cluster.cluster import (
+from src.cluster.cluster_v1 import (
     generate_full_code_clusters, 
     generate_summarized_clusters,
     generate_graph_clusters,
@@ -65,9 +65,9 @@ def eval_cross_file_cluster(clusters: List[ClusteredTopic], min_chunks: int = 3)
 
 # TODO: make a log_report object with add_section() method
 def eval_coherence_clusters(clusters: List[ClusteredTopic], 
-                            iters: int,
                             eval_name: str,
                             repo_name: str,
+                            iters: int = 1,
                             min_chunks: int = 4) -> List[int]:
     eval_report = EvalReport(report_dir=Path("coherence") / repo_name / eval_name)
     to_eval = [cluster for cluster in clusters if len(cluster.chunks) >= min_chunks]
@@ -76,13 +76,18 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
         eval_report.add_line(NO_CLUSTERS_MSG)
         return
     
-    # coherence scores
+    # if multiple iterations, evaluate each single cluster in parallel batches
+    # to take advantage of prompt caching
     scores = []
-    for _ in range(iters):
+    for cluster in to_eval:
+        eval_clusters = [cluster] * iters
         # TODO: pass the session ID and test if we are passing it properly
         cluster_scores = [score.parsed.rating for score in 
-                         invoke_multithread(to_eval, eval_coherence_single, max_workers=6)["results"]]
+                        invoke_multithread(eval_clusters, eval_coherence_single, max_workers=6)["results"]]
         scores.append(cluster_scores)
+
+    scores = [score for score in zip(*scores)]
+
 
     # LEARN: zip(*scores) is a way to transpose a list of lists
     # calculate estimated variance of a single cluster across iterations 
@@ -105,7 +110,7 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
         eval_report.add_section(f"Cluster Eval")
         eval_report.add_line(f"Score: {score}")
         eval_report.add_line(f"Cluster name: {cluster.name}")
-        eval_report.add_line(f"{cluster}")
+        eval_report.add_line(f"{cluster.full_code()}")
 
     # TODO: code not run before, not sure working
     # Take the higest and lowest coherence scores and the index into

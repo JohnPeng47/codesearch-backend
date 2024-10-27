@@ -44,8 +44,9 @@ text into vector representations for efficient similarity search.
 
 Now generate the output
 """
-    return IMPORTANT_CHUNKS.format(code=codebase, n_chunks=n_chunks, chunk_type=chunk_type)
-
+    important_chunks = IMPORTANT_CHUNKS.format(code=codebase, n_chunks=n_chunks, chunk_type=chunk_type)
+    print("Important chunks:", important_chunks)
+    return important_chunks
 
 @ell.complex(model="gpt-4o-2024-08-06")
 def generate_clusters_raw(chunks: List[ClusterInput],

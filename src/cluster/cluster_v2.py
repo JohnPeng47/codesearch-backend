@@ -7,32 +7,6 @@ from .models import (
 from src.chunk.models import ClusterInput
 
 from typing import List, Callable, Set, Dict
-from pydantic import BaseModel
-from typing import Set
-
-# TODO: change this to keep track of every successive cluster stat
-# so we can see the change in perf as the iterations go on
-class ClusterIterationStat(BaseModel):
-    unique_chunks: Set = set()
-    total_chunks: int = 0
-    unclassified_chunks: int = 0
-    total_input_chunks: int = 0
-    current_iteration: int = 0
-    
-    def __add__(self, other: 'ClusterIterationStat') -> 'ClusterIterationStat':
-        return ClusterIterationStat(
-            unique_chunks=self.unique_chunks.union(other.unique_chunks),
-            total_chunks=self.total_chunks + other.total_chunks,
-            unclassified_chunks=other.unclassified_chunks,  # Take the most recent
-            total_input_chunks=other.total_input_chunks,    # Take the most recent
-            current_iteration=max(self.current_iteration, other.current_iteration)
-        )
-    
-    def __str__(self):
-        return (f"Iteration {self.current_iteration} statistics:\n"
-                f"Unclassified chunks: {self.unclassified_chunks} / {self.total_input_chunks}\n"
-                f"Unique chunks: {len(self.unique_chunks)}\n"
-                f"Total clustered chunks: {self.total_chunks}")
 
 class ClusterStrategy:
     def __init__(self, 
@@ -44,25 +18,20 @@ class ClusterStrategy:
         self.chunks = chunks
         self.cluster_op = cluster_op
         self.max_iters = max_iters
-        self.stats = ClusterIterationStat()
         
-    def run(self) -> List[ClusteredTopic]:
+    def run(self,
+            iterative: bool = True) -> List[ClusteredTopic]:
         cluster_inputs = self.chunks.copy()
         all_chunks = self.chunks.copy()
         name_to_cluster = {chunk.get_name(): i for i, chunk in enumerate(all_chunks)}
         
         generated_clusters = []
         
-        for iteration in range(1, self.max_iters + 1):
+        for _ in range(1, self.max_iters + 1):
             # Check early stopping condition
             if len(cluster_inputs) < 0.3 * len(all_chunks):
                 break
-                
-            # Update iteration stats
-            self.stats.current_iteration = iteration
-            self.stats.unclassified_chunks = len(cluster_inputs)
-            self.stats.total_input_chunks = len(all_chunks)
-                
+                                
             # Get clusters for current iteration
             new_clusters = self._cluster_iteration(
                 cluster_inputs=cluster_inputs,
@@ -71,8 +40,8 @@ class ClusterStrategy:
             )
             
             generated_clusters.extend(new_clusters)
-            # Log current iteration statistics
-            print(self.stats)
+            if iterative:
+                cluster_inputs = new_clusters
             
         return generated_clusters
 
@@ -86,9 +55,9 @@ class ClusterStrategy:
         Iterate through the output of the cluster operation and match the names of the LLM output
         to actual CodeChunk objects and update the stats
         """
-        clusters = self.cluster_op(self.chunks)
+        clusters = self.cluster_op(cluster_inputs)
         new_clusters = []
-        iteration_stat = ClusterIterationStat()
+        unique_chunks = set()
         
         for cluster in clusters:
             chunks = []
@@ -108,8 +77,7 @@ class ClusterStrategy:
                     pass
 
                 # Update iteration statistics
-                iteration_stat.unique_chunks.add(matched_chunk)
-                iteration_stat.total_chunks += 1
+                unique_chunks.add(matched_chunk)
 
             if chunks:  # Only create cluster if it has valid chunks
                 new_clusters.append(
@@ -121,7 +89,5 @@ class ClusterStrategy:
                         ]
                     )
                 )
-        
-        # Accumulate statistics
-        self.stats += iteration_stat
+
         return new_clusters

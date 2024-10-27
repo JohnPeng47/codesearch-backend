@@ -1,5 +1,5 @@
 from networkx import random_reference
-from src.cluster.cluster import (
+from src.cluster.cluster_v1 import (
     generate_full_code_clusters, 
     generate_full_code_clustersv2,
     generate_graph_clusters, 
@@ -11,7 +11,6 @@ from src.cluster.cluster import (
 from src.llm.evals.eval_cluster import eval_clusters_metrics, eval_coherence_clusters
 from src.llm.evals.utils import EvalReport
 from src.cluster.chunk_repo import ChunkStrat
-from src.cluster import ClusterInputType
 
 from pathlib import Path
 from typing import List
@@ -40,7 +39,7 @@ def generate_cgraph_clusters() -> List[ClusteredTopic]:
                     id=chunk.og_id,
                     content=chunk.content,
                     filepath=chunk.file_path,
-                    input_type=ClusterInputType.CHUNK,
+                    input_type="chunk",
                 ).dict() for chunk in cluster.chunks
             ],
         ) 
