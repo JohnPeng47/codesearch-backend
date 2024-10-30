@@ -66,9 +66,12 @@ Here are chunks of code representing a repo:
 
 Now take each of the seed chunks below and identify a group of other chunks,
 together with the seed chunk, which forms a coherent set code grouping that
-implements some functionality in the codebase. You are encouraged to optimize
-for file diversity in your clusters. You are also encouraged to not create clusters
-of less than 3. There are no upper bound restrictions
+implements some functionality in the codebase.
+
+You are encouraged to optimize for clusters that include chunks that are located farther 
+apart from each other.
+You are also encouraged to not create clusters of less than 3. 
+There are no upper bound restrictions
 Here are some example outputs on what you clusters should look like:
 
 1. Vector Embedding Generation:
