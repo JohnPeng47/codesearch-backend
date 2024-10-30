@@ -8,6 +8,7 @@ from src.chunk.models import ClusterInput
 from src.llm.lmp_base import LMP
 
 from typing import List, Callable, Set, Dict
+import random
 
 class LMChunk(ClusterInput):
     def __init__(self, chunk: CodeChunk):
@@ -23,6 +24,9 @@ class LMChunk(ClusterInput):
     
     def get_name(self) -> str:
         return self._id
+
+    def set_id(self, id: str):
+        self._id = id
 
     def set_content(self, content: str):
         self._content = content
@@ -49,6 +53,7 @@ class ClusterStrategy:
     
     def run(self,
             remove_classified: bool = True,
+            use_anon_chunks: bool = False,
             iters: int = 1):
         # create chunks that we can manipulate the representation of
         cluster_inputs = [LMChunk(chunk) for chunk in self.chunks]
@@ -60,15 +65,17 @@ class ClusterStrategy:
                 break
                                 
             # Get clusters for current iteration
-            new_clusters = self._cluster_iteration(cluster_inputs)
+            new_clusters = self._cluster_iteration(cluster_inputs, use_anon_chunks=use_anon_chunks)
             # apply gather ops
             for enrich_op in self.enrich_ops:
                 new_clusters = enrich_op(new_clusters, cluster_inputs)
 
             generated_clusters.extend(new_clusters)
             if remove_classified:
-                new_chunks = [new_chunk.get_name() for cluster in new_clusters for new_chunk in cluster.chunks]
-                cluster_inputs = [chunk for chunk in cluster_inputs if chunk.get_name() not in new_chunks]
+                new_chunks = [new_chunk.get_name() for cluster in new_clusters 
+                              for new_chunk in cluster.chunks]
+                cluster_inputs = [chunk for chunk in cluster_inputs 
+                                  if chunk.get_name() not in new_chunks]
 
             print(f"Chunks clustered this round: { len(new_chunks)}/{len(self.chunks)}" )
             print(f"New inputs: {len(cluster_inputs)}")
@@ -77,19 +84,31 @@ class ClusterStrategy:
             
     def _cluster_iteration(
         self,
-        cluster_inputs: List[ClusterInput]
+        cluster_inputs: List[LMChunk],
+        use_anon_chunks: bool = False
     ) -> List[ClusteredTopic]:
         """
         Iterate through the output of the cluster operation and match the names of the LLM output
         to actual CodeChunk objects and update the stats
         """
-        clusters, perplexity = self.cluster_op(cluster_inputs)
         all_inputs = [chunk.get_name() for chunk in cluster_inputs]
         new_clusters = []
+
+        if use_anon_chunks:
+            random_id = random.randint(0, 100000)
+            anon_chunk_map = {f"Chunk::{random_id}": chunk.get_name() 
+                              for i, chunk in enumerate(cluster_inputs)}
+            for i, chunk in enumerate(cluster_inputs):
+                chunk.set_id(f"Chunk: Chunk::{random_id}")
         
+        # run the clustering operation
+        clusters, perplexity = self.cluster_op(cluster_inputs)
         for cluster in clusters:
             chunks = []
             for chunk_name in cluster.chunks:
+                if use_anon_chunks:
+                    chunk_name = anon_chunk_map.get(chunk_name)
+                
                 matched_chunk = self.name_to_chunk.get(chunk_name)
                 if not matched_chunk or matched_chunk.get_name() not in all_inputs:
                     print(f"Chunk Name: {chunk_name} hallucinated, skipping...")
