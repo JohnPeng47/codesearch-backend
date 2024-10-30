@@ -1,13 +1,14 @@
 from pydantic import BaseModel
 import ell
 
+from src.llm.lmp_base import LogProbLMP
 from src.cluster.models import ClusteredTopic
 
 class OneToSixteenScale(BaseModel):
     rating: float
 
-@ell.complex(model="gpt-4o-2024-08-06", response_format=OneToSixteenScale)
-def eval_coherence_single(cluster: ClusteredTopic):
+@ell.complex(model="gpt-4o-2024-08-06", return_metadata=True)
+def eval_coherence_single_lmp(cluster: ClusteredTopic):
     DELIMITER = "\n\n================="
     cluster_code = "\n".join([chunk.get_content() + DELIMITER for chunk in cluster.chunks])
 
@@ -20,6 +21,33 @@ You are given a cluster that is the output of a clustering algorithm designed to
 14-16 indicates the cluster represents a perfect or near-perfect functional unit. Virtually all code (>95%) is strongly related and necessary for the feature. The cluster captures complete functionality with no missing pieces and clear, strong functional dependencies between all components. Removing any piece would break the functionality.
 Here is the code in the cluster:
 {code}
-Evaluate the coherence and output your rating.
+
+Evaluate the coherence and output your rating. Your output format should be in the following form:
+Score: <YOU_SCORE>
+
+For example, here are some valid outputs:
+Score: 4.333
+Here is another one:
+Score: 5.0
+Here is yet another one:
+Score: 6.0
+
+Now output your score:
 """
     return EVAL_COHERENCE.format(code=cluster_code)
+
+
+def eval_coherence_single(cluster: ClusteredTopic):
+    lmp_func = LogProbLMP(eval_coherence_single_lmp)
+    lmp_func2 = LogProbLMP(eval_coherence_single_lmp)
+
+    result1 = lmp_func.call(cluster, output_rgx="")
+    result2 = lmp_func2.call(cluster, output_rgx=r"Score\s*:\s*(\d+\.?\d*)")
+
+    perp1 = lmp_func.logprobs().perplexity()
+    perp2 = lmp_func2.logprobs().perplexity()
+
+    return (result1, perp1), (result2, perp2)
+
+
+    

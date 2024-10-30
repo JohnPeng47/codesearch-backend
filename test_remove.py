@@ -1,5 +1,5 @@
 from networkx import random_reference
-from src.cluster.cluster import (
+from src.cluster.cluster_v1 import (
     generate_full_code_clusters, 
     generate_full_code_clustersv2,
     generate_graph_clusters, 

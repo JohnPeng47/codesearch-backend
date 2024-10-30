@@ -69,7 +69,7 @@ def eval_coherence_clusters(clusters: List[ClusteredTopic],
                             repo_name: str,
                             iters: int = 1,
                             min_chunks: int = 4) -> List[int]:
-    eval_report = EvalReport(report_dir=Path("coherence") / repo_name / eval_name)
+    eval_report = EvalReport(subdir=Path("coherence") / repo_name / eval_name)
     to_eval = [cluster for cluster in clusters if len(cluster.chunks) >= min_chunks]
     if not to_eval:
         NO_CLUSTERS_MSG = f"No clusters found matching min_chunks requirement for {eval_name}, exiting..."

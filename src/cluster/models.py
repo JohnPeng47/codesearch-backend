@@ -19,7 +19,8 @@ class ClusteredTopic(BaseModel):
         )
     
     def full_code(self):
-        chunk_list = "\n".join([chunk.get_content() + DELIMETER for chunk in self.chunks])
+        chunk_list = "\n".join([chunk.id + "\n" + chunk.get_content() + DELIMETER 
+                                for chunk in self.chunks])
         return (
             f"{self.name}:\n"
             f"{chunk_list}\n\n"

@@ -1,6 +1,9 @@
 import ell
-# from ell.ctxt import get_session_id
-# from src.llm.utils import get_session_cost
+from pydantic import BaseModel
+from typing import List
+
+from src.llm.lmp_base.logprobs import LogProbLMP
+
 
 ell.init(store="logdir/test_joke")
 
@@ -18,7 +21,7 @@ def select_joke(topics: str):
    """
    return SELECT_TOPIC_PROMPT.format(topics=topics)
 
-@ell.complex(model="gpt-4o-mini", temperature=2, max_tokens=20)
+@ell.complex(model="gpt-4o-mini", temperature=2, max_tokens=20, return_metadata=True)
 def tell_joke():
    """
    Generate a joke using the language model.
@@ -32,20 +35,30 @@ def tell_joke():
    # selected = select_joke(suggestions)
    return JOKE_PROMPT.format(subject=select_joke(suggest_jokes()))
 
-# print(tell_joke(subject="chickens"))
+@ell.complex(model="gpt-4o-mini", max_tokens=100, return_metadata=True)
+def write_short_story(subject):
+   """
+   Generate a short story using the language model.
+   """
+   return """
+   Write a short story about {subject}. 
+   The story should be engaging and have a clear beginning, middle, and end.
+   """.format(subject=subject)
 
-# import threading
 
-# threads = []
-# for i in range(3):
-#     thread = threading.Thread(target=tell_story, kwargs={"session_id": get_session_id()})
-#     threads.append(thread)
-#     thread.start()
+class ShortStory(BaseModel):
+   story: str
+   characters: List[str]
+   setting: str
+   plot: str
 
-# for thread in threads:
-#     thread.join()
 
-print(tell_joke())
+# lmp = UnstructuredLMP(write_short_story)
+# res = lmp.call("cats", response_format=ShortStory)
+# print(res)
 
-# cost = get_session_cost()
-# print(cost)
+lmp = LogProbLMP(write_short_story)
+res = lmp.call("cats")
+print(res)
+print(lmp.logprobs())
+print(lmp.logprobs().perplexity())

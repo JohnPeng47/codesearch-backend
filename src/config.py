@@ -45,6 +45,7 @@ INDEX_ROOT = Path(CODESEARCH_DIR) / "index"
 GRAPH_ROOT = Path(CODESEARCH_DIR) / "graphs"
 SUMMARIES_ROOT = Path(CODESEARCH_DIR) / "summaries"
 EVAL_ROOT = Path(CODESEARCH_DIR) / "evals"
+CLUSTER_ROOT = Path(CODESEARCH_DIR) / "clusters"
 
 ELL_STORAGE = "./logdir"
 

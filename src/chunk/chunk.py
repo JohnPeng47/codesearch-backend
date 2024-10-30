@@ -165,14 +165,15 @@ def chunk_random(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
 
 def chunk_summary(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
     chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
-
     results = invoke_multithread(chunks, summarize_chunk)
-    summed = results["results"]
     # TODO: handle context too long
     errors = results["errors"]
     summary_chunks  = [SummaryChunk.from_chunk(chunk, summed.parsed) for chunk, summed in 
-                    zip(chunks, summed)]
+                    zip(chunks, results["results"]) if summed]
     
+    # for s in summary_chunks:
+    #     print(s)
+
     summary_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in summary_chunks]))
     code_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in chunks]))
 

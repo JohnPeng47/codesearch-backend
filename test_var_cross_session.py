@@ -1,5 +1,5 @@
 from src.llm.evals.eval_cluster import eval_coherence_clusters
-from src.cluster.cluster import (
+from src.cluster.cluster_v1 import (
     generate_full_code_clusters, 
     generate_full_code_clustersv2,
     generate_summarized_clusters,

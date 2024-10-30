@@ -31,7 +31,7 @@ class CodeChunk(BaseModel, ClusterInput):
     id: MoatlessChunkID 
     input_type: ClusterInputType
     content: str
-    # ctxt_str: str
+    summary: Optional[str] = ""
     filepath: Optional[str] = None
 
     # for backwards compat with BaseNode

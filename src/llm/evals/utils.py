@@ -16,7 +16,7 @@ class EvalReport:
     _parent_instance: Dict[str, "EvalReport"] = {}
 
     def __init__(self, 
-                 report_dir: str = None,
+                 subdir: str = None,
                  report_root: str = EVAL_ROOT): 
         # create the report root for today if it doesnt exist
         curr_date = datetime.now().strftime('%Y-%m-%d')
@@ -25,12 +25,20 @@ class EvalReport:
             os.makedirs(report_root, exist_ok=True)
 
         # let report_dir be the same as report_root if not specified
-        self.report_dir = report_root / report_dir if report_dir else report_root
+        self.report_dir = report_root / subdir if subdir else report_root
         if not self.report_dir.exists():
             os.makedirs(self.report_dir, exist_ok=True)
 
+        self._subdir = subdir
         self._content = ""
-        
+        self._subfolders = []
+    
+    def create_subfolder(self, subfolder: str):
+        """
+        Adds a subfolder to the current report directory        
+        """
+        return EvalReport(subdir=self._subdir / subfolder)
+
     def add_section(self, name: str):
         self._content += f"###### {name} ######\n"
 
@@ -71,7 +79,6 @@ def match_clusters(cluster_a: List[ClusteredTopic],
     """
     Loops through all clusters to find the best match for each cluster in the other set.
     """
-    min_match = 0
     matched_clusters = []
     for a in cluster_a:
         best_match = None
@@ -82,7 +89,10 @@ def match_clusters(cluster_a: List[ClusteredTopic],
                 best_score = score
                 best_match = b
         if best_score >= min_match:
-            matched_clusters.append((a, best_match))
+            matched_clusters.append((a, 
+                                     best_match, 
+                                     best_score / len(a.chunks), 
+                                     best_score / len(best_match.chunks)))
 
     return matched_clusters
     

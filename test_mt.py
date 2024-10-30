@@ -1,5 +1,5 @@
-from src.cluster.cluster import generate_full_code_clustersv2
-from src.cluster.cluster import (
+from src.cluster.cluster_v1 import generate_full_code_clustersv2
+from src.cluster.cluster_v1 import (
     generate_full_code_clusters, 
     generate_graph_clusters, 
     generate_summarized_clusters,
