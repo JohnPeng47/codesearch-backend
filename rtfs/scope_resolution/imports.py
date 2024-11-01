@@ -2,7 +2,6 @@ from dataclasses import dataclass, asdict
 from typing import Optional, List
 
 from rtfs.utils import TextRange
-
 from .graph_types import NodeKind
 
 
@@ -43,9 +42,7 @@ class LocalImportStmt:
     # Technically, this is the only python specific method
     def __str__(self):
         from_name = f"from {self.from_name} " if self.from_name else ""
-        # TODO: fix this
         alias_str = f" as {self.aliases}" if self.aliases else ""
-
         names = ", ".join(self.names)
 
         return f"{from_name}import {names}{alias_str}"

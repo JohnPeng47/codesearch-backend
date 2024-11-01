@@ -14,7 +14,7 @@ from pydantic import BaseModel
 import dotenv
 
 from src.utils import rm_tree
-from src.repo.extensions import EXTTOFILE, FILETOEXT
+from src.common import EXTTOFILE, FILETOEXT
 
 dotenv.load_dotenv()
 logger = getLogger(__name__)

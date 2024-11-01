@@ -3,25 +3,7 @@ import json
 from pathlib import Path
 from typing import List, Optional
 
-DEFAULT_EXCLUSIONS = [
-    "ell*/",
-    "**/repos/**",
-    "examples/*",
-    "tests/*",
-    ".venv/*",
-    "__pycache__/*",
-    "*.pyc",
-    ".git/*",
-    ".idea/*",
-    ".vscode/*",
-    "node_modules/*",
-    "build/*",
-    "dist/*",
-    "*.egg-info/*",
-    ".pytest_cache/*",
-    ".coverage",
-    "htmlcov/*",
-]
+from src.common import EXTTOFILE, FILETOEXT
 
 def load_config_exclusions() -> List[str]:
     """Load exclusion patterns from .tree.config file if it exists."""
@@ -93,6 +75,30 @@ def generate_tree(
     return "\n".join(output)
 
 def main():
+    # Default exclusions
+    DEFAULT_EXCLUSIONS = [
+        "cowboy_lib/*",
+        "rtfs_rewrite/*", 
+        ".venv/*",
+        "notebooks/*",
+        "__pycache__/*",
+        "*.pyc",
+        ".git/*", 
+        ".idea/*",
+        ".vscode/*",
+        "node_modules/*",
+        "build/*",
+        "dist/*",
+        "*.egg-info/*",
+        "cache/*",
+        "*.db",
+        "examples/*", 
+        "tests/*",
+        ".pytest_cache/*",
+        ".coverage",
+        "htmlcov/*"
+    ]
+
     # Parse arguments
     parser = argparse.ArgumentParser(
         description="Generate a directory tree with optional file content concatenation"

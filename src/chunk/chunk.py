@@ -25,7 +25,33 @@ from src.config import GRAPH_ROOT
 from src.utils import num_tokens_from_string
 
 from .lmp import summarize_chunk
-from .models import CodeChunk, ClusterInputType, SummaryChunk
+from .models import CodeChunk, ClusterInputType, SummaryChunk, FILE_CLASSIFICATIONS
+from .classify_files import classify_files
+
+# Default exclusions
+DEFAULT_EXCLUSIONS = [
+    "cowboy_lib/*",
+    "rtfs_rewrite/*", 
+    ".venv/*",
+    "notebooks/*",
+    "__pycache__/*",
+    "*.pyc",
+    ".git/*", 
+    ".idea/*",
+    ".vscode/*",
+    "node_modules/*",
+    "build/*",
+    "dist/*",
+    "*.egg-info/*",
+    "cache/*",
+    "*.db",
+    "examples/*", 
+    "tests/*",
+    ".pytest_cache/*",
+    ".coverage",
+    "htmlcov/*"
+]
+
 
 def temp_index_dir(repo_name: str):
     temp_dir = tempfile.gettempdir()
@@ -170,9 +196,6 @@ def chunk_summary(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
     errors = results["errors"]
     summary_chunks  = [SummaryChunk.from_chunk(chunk, summed.parsed) for chunk, summed in 
                     zip(chunks, results["results"]) if summed]
-    
-    # for s in summary_chunks:
-    #     print(s)
 
     summary_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in summary_chunks]))
     code_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in chunks]))
@@ -186,18 +209,27 @@ def chunk_summary(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
 
 def chunk_repo(repo_dir: Path, 
                chunk_strat: ChunkStrat,
-               exclusions=[]) -> List[CodeChunk]:
-    
-    if chunk_strat == ChunkStrat.VANILLA:
-        return chunk_vanilla(repo_dir, exclusions=exclusions)
-    elif chunk_strat == ChunkStrat.HYBRID:
-        return chunk_hybrid(repo_dir, exclusions=exclusions)
-    elif chunk_strat == ChunkStrat.RANDOM:
-        return chunk_random(repo_dir, exclusions=exclusions)
-    elif chunk_strat == ChunkStrat.SUMMARY:
-        return chunk_summary(repo_dir, exclusions=exclusions)
-    else:
-        raise ValueError(f"Invalid chunking strategy: {chunk_strat}")
+               exclusions=DEFAULT_EXCLUSIONS) -> List[CodeChunk]:
+    print("Exclusions: ", exclusions)
+
+    files = classify_files(repo_dir, exclusions=exclusions)
+    exclusions = exclusions + [f.fp for f in files if f.classification != FILE_CLASSIFICATIONS.CORE]
+
+    for f in [f for f in files if f.classification == FILE_CLASSIFICATIONS.CORE]:
+        print(f)
+
+    return
+
+    # if chunk_strat == ChunkStrat.VANILLA:
+    #     return chunk_vanilla(repo_dir, exclusions=exclusions)
+    # elif chunk_strat == ChunkStrat.HYBRID:
+    #     return chunk_hybrid(repo_dir, exclusions=exclusions)
+    # elif chunk_strat == ChunkStrat.RANDOM:
+    #     return chunk_random(repo_dir, exclusions=exclusions)
+    # elif chunk_strat == ChunkStrat.SUMMARY:
+    #     return chunk_summary(repo_dir, exclusions=exclusions)
+    # else:
+    #     raise ValueError(f"Invalid chunking strategy: {chunk_strat}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -211,25 +243,8 @@ if __name__ == "__main__":
     parser.add_argument("--output-format", choices=["text", "json"], default="text",
                         help="Output format for the chunks")
 
-    # Default exclusions
-    default_exclusions = [
-        "cowboy_lib/*",
-        "rtfs_rewrite/*",
-        ".venv/*",
-        "notebooks/*",
-        "__pycache__/*",
-        "*.pyc",
-        ".git/*",
-        ".idea/*",
-        ".vscode/*",
-        "node_modules/*",
-        "build/*",
-        "dist/*",
-        "*.egg-info/*",
-    ]
-
     # Combine user-provided exclusions with default exclusions
-    exclusions = default_exclusions + parser.parse_args().exclude
+    exclusions = DEFAULT_EXCLUSIONS + parser.parse_args().exclude
     print(f"Exclusion patterns: {exclusions}")
 
     chunks = chunk_repo(Path(parser.parse_args().directory), chunk_strat=parser.parse_args().strattype, exclusions=exclusions)

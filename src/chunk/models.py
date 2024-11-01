@@ -106,3 +106,23 @@ class SummaryChunk(CodeChunk, ClusterInput):
     
     def get_filecontent(self) -> str:
         return self.content
+
+class FILE_CLASSIFICATIONS(str, Enum):
+    CORE = "CORE"
+    PERIPHERY = "PERIPHERY"
+    DOCUMENTATION = "DOCUMENTATION"
+    CONFIGURATION = "CONFIGURATION"
+
+FILE_CLASSIFICATIONS_DICT = {
+    FILE_CLASSIFICATIONS.CORE : "Core is core logic that is distinct, and largely differentiated from other software that aims to do different tasks",
+    FILE_CLASSIFICATIONS.PERIPHERY : "Periphery code are the opposite, being commodified pieces of logic that is used to support the core",
+    FILE_CLASSIFICATIONS.DOCUMENTATION : "Documentation is documentation",
+    FILE_CLASSIFICATIONS.CONFIGURATION : "Configuration is configuration"
+}
+
+class ClassifiedFile(BaseModel):
+    fp: str
+    classification: str
+
+class ClassifiedFilesList(BaseModel):
+    classified_files: List[ClassifiedFile]

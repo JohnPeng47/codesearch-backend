@@ -106,29 +106,6 @@
   (dotted_name
     (identifier) @local.import.name)+) @local.import.statement
 
-;;    import a as b
-;;    
-;;    `a` is ignored
-;;    `b` is an import
-(import_statement
-  (aliased_import
-    "as"
-    (identifier) @local.import))
-
-;; OLD IMPORT STATEMENT
-;;    from module import name1, name2
-;;    from module import (
-;;       LocalScope,
-;;       LocalDef,
-;;    )
-;;(import_from_statement
-;;  module_name: 
-;;    (dotted_name) @local.import.module
-;;  name: 
-;;    (dotted_name 
-;;      (identifier) @local.import.name)+
-;;) @local.import.statement
-
 ;; Capture regular and relative imports
 (import_from_statement
   module_name: 
