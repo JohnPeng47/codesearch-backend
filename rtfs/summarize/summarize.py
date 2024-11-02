@@ -55,6 +55,49 @@ class SummarizedCluster:
             "chunks": [chunk.__dict__ for chunk in self.chunks],
             "children": [child.to_dict() for child in self.children],
         }
+    
+    @classmethod
+    def from_json(cls, data: Dict):
+        # Control flags
+        has_valid_fields = all(field in data for field in ["id", "title", "key_variables", "summary", "chunks", "children"])
+        should_process = has_valid_fields
+        
+        # Process chunks
+        processed_chunks = []
+        if should_process:
+            processed_chunks = [
+                SummarizedChunk(
+                    id=chunk["id"],
+                    og_id=chunk["og_id"], 
+                    file_path=chunk["file_path"],
+                    start_line=chunk["start_line"],
+                    end_line=chunk["end_line"]
+                )
+                for chunk in data["chunks"]
+            ]
+        
+        # Process children recursively 
+        processed_children = []
+        if should_process:
+            processed_children = [
+                SummarizedCluster.from_json(child) 
+                for child in data["children"]
+            ]
+
+        # Create instance
+        result = None
+        if should_process:
+            result = cls(
+                id=data["id"],
+                title=data["title"],
+                key_variables=data["key_variables"],
+                summary=data["summary"],
+                chunks=processed_chunks,
+                children=processed_children
+            )
+
+        return result
+
 
 
 class Summarizer:

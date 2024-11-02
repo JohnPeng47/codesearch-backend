@@ -13,11 +13,12 @@ from src.config import (
     REPOS_ROOT, 
     INDEX_ROOT, 
     GRAPH_ROOT, 
+    SUMMARIES_ROOT,
     ENV, 
     GITHUB_API_TOKEN,
     REPO_MAX_SIZE_MB
 )
-from rtfs.summarize.summarize import Summarizer
+from rtfs.summarize.summarize import Summarizer, SummarizedCluster
 from rtfs.transforms.cluster import cluster
 from rtfs.cluster.graph import ClusterGraph
 
@@ -216,14 +217,19 @@ async def summarize_repo(
     )
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
+    
+    summary_json = repo_ident(repo.owner, repo.repo_name) + ".json"
+    summary_path = SUMMARIES_ROOT / summary_json
 
-    summary_path = (
-        repo.summary_path + "_" + request.graph_type if repo.summary_path else None
-    )
     if summary_path and Path(summary_path).exists():
+        print("Loading summary from cache ...")
         with open(summary_path, "r") as f:
-            return json.loads(f.read())
+            summarized_clusters = json.loads(f.read())
+            return SummarizedClusterResponse(
+                summarized_clusters=[SummarizedCluster.from_json(s) for s in summarized_clusters]
+            )
 
+    print("Summarizing ...")
     # summarization logic
     code_index = get_or_create_index(repo.file_path, repo.index_path)
     cg = get_or_create_chunk_graph(
@@ -245,13 +251,10 @@ async def summarize_repo(
         f"Summarizing stats: {request.graph_type} for {repo.file_path}: \n{cg.get_stats()}"
     )
 
-    save_graph_path = GRAPH_ROOT / repo_ident(repo.owner, repo.repo_name)
     summary = summarizer.get_output()
-    with open(save_graph_path, "w") as f:
+    with open(summary_path, "w") as f:
+        print("Writing summary to: ", summary_path)
         f.write(json.dumps([s.to_dict() for s in summary]))
-
-    repo.summary_path = str(save_graph_path)
-    db_session.commit()
 
     return SummarizedClusterResponse(summarized_clusters=summary)
 

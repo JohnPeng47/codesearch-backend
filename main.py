@@ -42,8 +42,6 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=os.path.join(STATIC_DIR, "static")))
-
-
 @app.get("/")
 def read_root():
     with open(os.path.join(STATIC_DIR, "index.html"), "r") as f:
