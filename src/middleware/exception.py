@@ -1,4 +1,4 @@
-from fastapi import status
+from fastapi import status, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -12,15 +12,6 @@ from logging import getLogger
 
 logger = getLogger(__name__)
 
-
-# class ExceptionResponse(BaseModel):
-#     type: str
-#     msg: str
-#     input: Dict = None
-#     ctx: Optional[Dict] = None
-#     loc: Optional[List[Union[str, int]]] = None
-
-
 class ExceptionMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
@@ -29,6 +20,12 @@ class ExceptionMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         
+        except HTTPException as e:
+            response = JSONResponse(
+                status_code=e.status_code,
+                content={"detail": [{"msg": e.detail}]},
+            )
+
         # handles all retryable client errors
         except ClientActionException as e:
             response = JSONResponse(
@@ -48,7 +45,7 @@ class ExceptionMiddleware(BaseHTTPMiddleware):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={
                     "detail": [
-                        {"msg": "Unknown", "loc": ["Unknown"], "type": "Unknown"}
+                        {"msg": "Unknown server error", "type": "ServerError"},
                     ],
                     "error": True,
                 },

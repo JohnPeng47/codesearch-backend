@@ -9,7 +9,6 @@ from ..chunk_resolution.graph import (
     NodeKind,
     SummarizedChunk,
     ClusterEdgeKind,
-    ClusterEdge,
 )
 from .lmp import (
     summarize as summarize_llm,
@@ -20,8 +19,9 @@ from .lmp import ClusterList
 
 from rtfs.graph import CodeGraph
 from rtfs.utils import VerboseSafeDumper
-from rtfs.models import OpenAIModel, extract_yaml
 from rtfs.exceptions import LLMValidationError
+
+from llm import LLMModel
 
 
 def get_cluster_id():
@@ -98,11 +98,13 @@ class SummarizedCluster:
 
         return result
 
-
-
 class Summarizer:
     def __init__(self, graph: CodeGraph):
-        self._model = OpenAIModel()
+        self._model = LLMModel(
+            provider="openai",
+            model_name="gpt-4o-2024-08-06",
+            temperature=0
+        )
         self.code_graph = graph
 
     # TODO: can generalize this to only generating summaries for parent nodes
@@ -115,7 +117,7 @@ class Summarizer:
     # TODO: reimplement test_run
     def summarize(self):
         for cluster_id, child_content in self._iterate_clusters_with_text():
-            summary_data = summarize_llm(child_content).parsed
+            summary_data = summarize_llm(self._model, child_content)
 
             print("updating node: ", cluster_id, "with summary: ", summary_data)
             cluster_node = ClusterNode(id=cluster_id, **summary_data.dict())
@@ -147,9 +149,9 @@ class Summarizer:
         while retries > 0:
             try:
                 generated_clusters: ClusterList = (
-                    recategorize_llm(cluster_yaml).parsed
+                    recategorize_llm(self._model, cluster_yaml)
                     if retries == 3
-                    else categorize_missing(cluster_yaml, previous_clusters).parsed
+                    else categorize_missing(self._model, cluster_yaml, previous_clusters)
                 )
                 generated_child_clusters = []
                 for category in generated_clusters.clusters:

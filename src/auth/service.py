@@ -49,10 +49,6 @@ def create(*, db_session, user_in: UserRegister | UserCreate) -> User:
     db_session.add(user)
     db_session.commit()
 
-    print("Token: ", user.token)
-    # create the credentials
-    # store_oai_key(user_in.openai_api_key, user.id)
-
     return user
 
 

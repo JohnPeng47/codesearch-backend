@@ -200,8 +200,6 @@ async def get_repo_files(
     }
     return filter_files
 
-
-# TODO: should really
 @repo_router.post("/repo/summarize", response_model=SummarizedClusterResponse)
 async def summarize_repo(
     request: RepoSummaryRequest,
@@ -216,6 +214,7 @@ async def summarize_repo(
         repo_name=request.repo_name,
     )
     if not repo:
+        print("Repo not found")
         raise HTTPException(status_code=404, detail="Repository not found")
     
     summary_json = repo_ident(repo.owner, repo.repo_name) + ".json"

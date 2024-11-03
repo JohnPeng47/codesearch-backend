@@ -57,16 +57,16 @@ app.add_middleware(ExceptionMiddleware)
 app.add_middleware(DBMiddleware)
 app.add_middleware(AddTaskQueueMiddleware)
 
-app.include_router(auth_router)
-app.include_router(repo_router)
-app.include_router(task_queue_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(repo_router, prefix="/api")
+app.include_router(task_queue_router, prefix="/api")
+app.include_router(health_router, prefix="/api")
+
 # app.include_router(search_router)
-app.include_router(health_router)
 # logfire.configure(console=False)
 # logfire.instrument_fastapi(app, excluded_urls=["/task/get"])
 
-
-def calculate_workers(num_threads_per_core=2):
+def calculate_workers(num_threads_per_core=1):
     """
     Calculate the number of workers based on the formula:
     number_of_workers = number_of_cores x num_of_threads_per_core + 1
@@ -77,7 +77,6 @@ def calculate_workers(num_threads_per_core=2):
     num_cores = multiprocessing.cpu_count()
     number_of_workers = (num_cores * num_threads_per_core) + 1
     return number_of_workers
-
 
 if __name__ == "__main__":
     # start the repo sync thread
@@ -106,7 +105,7 @@ if __name__ == "__main__":
         host="localhost",
         port=PORT,
         # workers=2,
-        # workers=calculate_workers(),
+        workers=calculate_workers(),
         reload=True,
         # reload_excludes=["data"],
         # log_config=config,

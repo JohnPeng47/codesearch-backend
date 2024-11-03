@@ -47,6 +47,8 @@ pytest = "^8.3.3"
 instructor = "~1"
 sqlalchemy-utils = "^0.41.2"
 ell-ai = "^0.0.14"
+langchain-openai = "^0.2.5"
+langchain-anthropic = "^0.2.4"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.5"
