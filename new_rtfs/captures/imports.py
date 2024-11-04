@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 @dataclass
-class SourceLocation:
+class TSCaptureInfo:
     """Represents the location information of an import statement in source code."""
     start_line: int
     end_line: int
@@ -23,7 +23,7 @@ class ImportSpecifier:
     original_name: str
     local_name: str
     is_default: bool
-    location: Optional[SourceLocation] = None
+    location: Optional[TSCaptureInfo] = None
 
     @property
     def is_aliased(self) -> bool:
@@ -38,7 +38,7 @@ class ImportSource:
     resolved_path: Optional[Path] = None
     is_relative: bool = False
     is_builtin: bool = False
-    location: Optional[SourceLocation] = None
+    location: Optional[TSCaptureInfo] = None
 
     def resolve(self) -> Optional[Path]:
         """Attempt to resolve the import path to an absolute path."""

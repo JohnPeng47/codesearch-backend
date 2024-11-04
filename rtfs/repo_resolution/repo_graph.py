@@ -55,7 +55,7 @@ class RepoGraph(CodeGraph):
         # Original code commented out for reference
         for path, g in self.scopes_map.items():
             self._imports[path] = self._construct_import(g, path, self.fs)
-            print("Adding import: ", path, g)
+            # print("Adding import: ", path, g)
 
             self._missing_import_refs[path] = [
                 str(imp.namespace) for imp in self._imports[path]

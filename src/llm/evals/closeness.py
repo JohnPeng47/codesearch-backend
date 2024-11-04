@@ -39,12 +39,9 @@ def measure_closeness_chunks(cluster, input_chunks, window = 3):
         curr_index = input_chunks.index(c)
         prev_index = input_chunks.index(prev_chunk)
         # actually good case, out of order
-        if curr_index < prev_index:
-            continue
-
         # print("Curr chunk: ", input_chunks[curr_index].id)
         # print("Prev chunk: ", input_chunks[prev_index].id)
-        if curr_index - prev_index <= window:
+        if abs(curr_index - prev_index) <= window:
             score += 1
         
         prev_chunk = c

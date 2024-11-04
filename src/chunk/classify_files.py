@@ -39,4 +39,5 @@ def classify_files(repo_dir: Path, exclusions=[], iters=3) -> List[ClassifiedFil
         
         print("Remaining files: ", len(all_fps))
 
-    return classified_fps
+    unclassified_fps = all_fps
+    return classified_fps, unclassified_fps

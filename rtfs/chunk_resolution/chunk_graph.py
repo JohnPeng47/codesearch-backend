@@ -90,6 +90,7 @@ class ChunkGraph(ClusterGraph):
                 continue
 
             chunk_node = ChunkNode(
+                id=chunk.node_id,
                 og_id=chunk.node_id,
                 metadata=metadata,
                 content=chunk.get_content(),
@@ -166,7 +167,6 @@ class ChunkGraph(ClusterGraph):
                 # so in the future we can use this for file level edges
                 ref_edge = ImportEdge(src=chunk_node.id, dst=dst_chunk.id, ref=ref.name)
 
-                print("Adding refEdge: ", ref_edge)
                 # print(f"Adding edge: {chunk_node.id} -> {dst_chunk.id}")
                 self.add_edge(ref_edge)
 

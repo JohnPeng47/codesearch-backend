@@ -30,6 +30,8 @@ from .classify_files import classify_files
 
 # Default exclusions
 DEFAULT_EXCLUSIONS = [
+    "versions/*",
+    "alembic/*",
     "cowboy_lib/*",
     "rtfs_rewrite/*", 
     ".venv/*",
@@ -122,10 +124,11 @@ class ChunkStrat(str, Enum):
     HYBRID = "hybrid"
     RANDOM = "random"
     SUMMARY = "summary"
+    BATCH = "batch"
 
-def chunk_vanilla(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
+def chunk_vanilla(repo_dir: Path, index_dir = None, exclusions=[]) -> List[CodeChunk]:
     cluster_input = []
-    index_dir = temp_index_dir(repo_dir.name)
+    index_dir = index_dir if index_dir else temp_index_dir(repo_dir.name)
     chunk_index = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
     chunk_nodes = chunk_index._docstore.docs.values()
 
@@ -136,16 +139,15 @@ def chunk_vanilla(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
     # TODO: not making use of the ctxt right now but we should use it for functions
     for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes):
         chunk_node, ctxt_list = chunk_ctxt
-
         if chunk_fp == chunk_node.metadata["file_path"]:
             chunk_i += 1
         else:
             chunk_fp = chunk_node.metadata["file_path"]
             chunk_i = 1
 
-        short_name = f"{os.path.sep}".join(chunk_fp.split(os.path.sep)[-2:])
+        short_name = f"/".join(chunk_fp.split(os.path.sep)[-2:])
+        print("Chunk short: ", short_name)
         node_id = f"{short_name}::{chunk_i}"
-        
         cluster_input.append(
             CodeChunk(
                 id= node_id,
@@ -158,6 +160,47 @@ def chunk_vanilla(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
             )
         )            
     return cluster_input
+
+def chunk_batch(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
+    BATCH_SIZE = 6000
+
+    chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
+    remaining_chunks = chunks.copy()
+    current_batch = []
+    current_size = 0
+    batched_chunks = []
+    batches = []
+
+    # Create batches
+    while remaining_chunks:
+        chunk = remaining_chunks.pop(0)
+        chunk_size = len(chunk.get_content())
+        
+        should_add = current_size + chunk_size <= BATCH_SIZE
+        should_start_new = not should_add and current_batch
+        
+        if should_add:
+            current_batch.append(chunk)
+            current_size += chunk_size
+        
+        if should_start_new:
+            batches.append(current_batch)
+            current_batch = [chunk]
+            current_size = chunk_size
+            
+    # Handle final batch
+    if current_batch:
+        batches.append(current_batch)
+        
+    # Shuffle and flatten batches
+    random.shuffle(batches)
+    batched_chunks = [chunk for batch in batches for chunk in batch]
+    batch_size = len(batched_chunks) / len(batches)
+
+    print("Avg batch size: ", batch_size)
+    
+    return batched_chunks
+    
 
 def chunk_hybrid(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
     chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
@@ -209,27 +252,27 @@ def chunk_summary(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
 
 def chunk_repo(repo_dir: Path, 
                chunk_strat: ChunkStrat,
-               exclusions=DEFAULT_EXCLUSIONS) -> List[CodeChunk]:
-    print("Exclusions: ", exclusions)
+               exclusions=DEFAULT_EXCLUSIONS,
+               split_files=False) -> List[CodeChunk]:
+    if split_files:
+        files, unclassified = classify_files(repo_dir, exclusions=exclusions)
+        exclude_noncore = [f.fp for f in files if f.classification != FILE_CLASSIFICATIONS.CORE]
+        exclusions += exclude_noncore
 
-    files = classify_files(repo_dir, exclusions=exclusions)
-    exclusions = exclusions + [f.fp for f in files if f.classification != FILE_CLASSIFICATIONS.CORE]
+        print(f"Excluded {len(exclude_noncore)} non-core files")
 
-    for f in [f for f in files if f.classification == FILE_CLASSIFICATIONS.CORE]:
-        print(f)
-
-    return
-
-    # if chunk_strat == ChunkStrat.VANILLA:
-    #     return chunk_vanilla(repo_dir, exclusions=exclusions)
-    # elif chunk_strat == ChunkStrat.HYBRID:
-    #     return chunk_hybrid(repo_dir, exclusions=exclusions)
-    # elif chunk_strat == ChunkStrat.RANDOM:
-    #     return chunk_random(repo_dir, exclusions=exclusions)
-    # elif chunk_strat == ChunkStrat.SUMMARY:
-    #     return chunk_summary(repo_dir, exclusions=exclusions)
-    # else:
-    #     raise ValueError(f"Invalid chunking strategy: {chunk_strat}")
+    if chunk_strat == ChunkStrat.VANILLA:
+        return chunk_vanilla(repo_dir, exclusions=exclusions)
+    elif chunk_strat == ChunkStrat.HYBRID:
+        return chunk_hybrid(repo_dir, exclusions=exclusions)
+    elif chunk_strat == ChunkStrat.RANDOM:
+        return chunk_random(repo_dir, exclusions=exclusions)
+    elif chunk_strat == ChunkStrat.SUMMARY:
+        return chunk_summary(repo_dir, exclusions=exclusions)
+    elif chunk_strat == ChunkStrat.BATCH:
+        return chunk_batch(repo_dir, exclusions=exclusions)
+    else:
+        raise ValueError(f"Invalid chunking strategy: {chunk_strat}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
