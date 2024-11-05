@@ -23,8 +23,12 @@ COWBOY_JWT_EXP = config("DISPATCH_JWT_EXP", cast=int, default=308790000)  # Seco
 COWBOY_OPENAI_API_KEY = config("OPENAI_API_KEY")
 
 DB_PASS = config("DB_PASS")
-DB_USER = config("POSTGRES_USER")
-SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASS}@{config('POSTGRES_REMOTE_IP')}:{config('POSTGRES_PORT')}/{config('POSTGRES_DB')}"
+SQLALCHEMY_DATABASE_URI = (
+    f"postgresql://postgres:{DB_PASS}@127.0.0.1:5432/codesearch"
+    if ENV == "release"
+    else f"postgresql://postgres:{DB_PASS}@{config('DB_URL')}:5432/codesearch"
+)
+
 
 SQLALCHEMY_ENGINE_POOL_SIZE = 50
 

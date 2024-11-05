@@ -59,6 +59,7 @@ env/
 
 # test repos
 repos/*
+src/cluster/repos/*
 !log/*.py
 log/*.log
 

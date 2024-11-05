@@ -1,7 +1,8 @@
-from typing import List, Optional, Any
+from typing import List, Optional, Any, NewType
 
 from pydantic import BaseModel, Field
 
+MoatlessChunkID = NewType("MoatlessChunkID", str)
 
 class FileWithSpans(BaseModel):
     file_path: str = Field(

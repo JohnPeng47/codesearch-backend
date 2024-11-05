@@ -1,0 +1,684 @@
+Score: 5.0
+Cluster name: Binary Difference Analyzer
+Binary Difference Analyzer:
+
+-> Filename: bin_diff.py
+
+class BinDiff:
+    def __init__(self, child_crash, parent_crash):
+        self.executor = GDBExecutor(executable)
+
+        self.child_sgsev, self.parent_sgsev = self._check_segfault(child_crash, parent_crash)
+        if not self.parent_sgsev and not self.child_sgsev:
+            raise NoCrashException
+
+        crashed = CrashedBytes(child_crash, self.child_sgsev, parent_crash)
+        offset = crashed.offset
+        modified_bytes = crashed.modified_bytes
+        modified_parent = crashed.modified_parent
+        self.linearity, self.bytes_controlled = self._find_control_width(offset, modified_bytes, modified_parent)
+
+    def _dword_byte_pos(self, delta):
+        return int(math.log(delta,2))
+-> Filename: bin_diff.py
+
+class BinDiff:
+
+    def _check_segfault(self, child_crash, parent_crash):
+        # check that parent and child have diff crash sites
+        try:
+            futures = self.executor.run_jobs([child_crash, parent_crash], ordered=True)
+            child_sgsev = next(futures).segfault
+            parent_sgsev = next(futures).segfault
+            # child_sgsev, parent_sgsev = futures[0].result().segfault, futures[1].result().segfault
+        except AttributeError:
+            raise NoCrashException("Check segfault crashed")
+        if not child_sgsev or not parent_sgsev:
+            print("Either the child or the parent did not crash")
+            return None, None
+        if child_sgsev == parent_sgsev:
+            print("Child segfault == Parent segfault, skipping {}".format(child_crash))
+            return None, None
+        return child_sgsev, parent_sgsev
+-> Filename: bin_diff.py
+
+class BinDiff:
+
+    def _is_linear(self, segfaults: List[int]):
+        linearity = False
+        byte_pos = None
+
+        segfaults = map(hex_str_to_int, segfaults)
+        segfaults = list(segfaults)
+
+        # check if segfaults resulting from modifying the same byte remains the same ie. there is a linear relationship between that byte and the segfault
+        if (segfaults[2] - segfaults[1]) == (segfaults[1] - segfaults[0]) and ((segfaults[1] - segfaults[0]) != 0):
+            linearity = True
+            segfault_delta = abs(segfaults[2] - segfaults[1])
+            if segfault_delta:
+                byte_pos = self._dword_byte_pos(segfault_delta)
+                # bytes_controlled[i+3] = byte_pos
+                # if segfault_delta < smallest_diff:
+                #     smallest_diff = segfault_delta
+                #     closest_segfaults = segfaults
+            print("Linear relationship found: {}", segfaults)
+        return linearity, byte_pos
+-> Filename: bin_diff.py
+
+class BinDiff:
+
+    def _get_byte_n_offset(self, mod_bytes, offset, modified_file, struct_size=DWORD):
+        possible_bytes = bytes()
+        off_start = offset - struct_size + 1
+        off_end = offset + len(mod_bytes)
+        with open(modified_file, "rb") as handle:
+            handle.seek(off_start)
+            possible_bytes += handle.read(struct_size - 1)
+            possible_bytes += mod_bytes
+            handle.seek(off_end)
+            possible_bytes += handle.read(struct_size - 1)
+        print(type(possible_bytes))
+        return zip(possible_bytes, range(off_start, off_end + struct_size))
+-> Filename: bin_diff.py
+
+class BinDiff:
+
+    def _find_control_width(self, mod_offset, mod_bytes, modified_file):
+        linear_relationship = False
+        bytes_controlled = [None] * (len(mod_bytes) + 2 * (DWORD - 1))
+        # Test 1: subtract/add n bytes to the mod_bytes @ offset, then compare segfaulting addresses
+        # to detect if linear relationship exists
+        # For now we treat all crashing bytes as an integer offset stored in a DWORD
+        if len(mod_bytes) <= 4:
+            # get the bytes that come before/after the DWORD/QWORD in memory
+            bytes_n_offsets = self._get_byte_n_offset(mod_bytes, mod_offset, modified_file, struct_size=DWORD)
+
+            # Apparently iterating over bytes in Python will yield ints
+            for byte, offset in bytes_n_offsets:
+                assert(type(byte) == int)
+                # Note: add_bytes adds a wraparound behaviour that is not currently accounted for in the linearity calculation
+                inc_bytes =  [add_bytes(byte, i) for i in range(0, 3)]
+                inc_bytes =  bytes(inc_bytes)
+                with PrepFiles(modified_file, inc_bytes, offset) as files:
+                    exploitables = self.executor.run_jobs(files.filenames, ordered=True)
+                    # if any one of the files do not crash, just skip this batch of files
+                    try:
+                        segfaults = [e.segfault for e in exploitables]
+                        print(segfaults)
+                    except Exception as e:
+                        print(e)
+                        continue
+                # check if segfaults resulting from modifying the same byte remains the same ie. there is a linear relationship between that byte and the segfault
+                linearity, byte_pos = self._is_linear(segfaults)
+                if linearity:
+                    # which bytes in the segfault are controllable
+                    bytes_controlled[offset - mod_offset + DWORD - 1] = byte_pos
+                linear_relationship = linearity if not linear_relationship else True
+
+            print("bytes_controlled: ", bytes_controlled)
+        # Test 2: Random tests
+        return linear_relationship, bytes_controlled
+
+    def get_crash_analysis(self):
+        try:
+            return self.linearity, self.bytes_controlled
+        except AttributeError:
+            return None, None, None
+-> Filename: bin_diff.py
+
+# Basic algorithm
+# 1. Find the most popular crash site
+# 2. Find the least different crash file with a different segfaulting address
+# 3. Find the fileoffset that triggers crash by replacing successive byte ranges between the input file diffs
+# -> Greedy strategy: to only change bytes that that differ for the current comparison; this decreases the likelihood of
+# a false positive in identifying the input file offset for controlling the crash/segfault address (crashing offset)
+# -> Non-greedy strategy: replace all the bytes, but this
+# 4. When byte range(s) have been identified, then apply control_width_discovery algorithm for finding the control width
+# Prior research by CSE Group used a Metasploit style unique byte ranges strategy, where the identified byte ranges were replaced
+# with unqiue byte sequences, which allowed for easy correlation between the segfaulting address and the input file offset. However,
+# this strategy only works in the case where the input file bytes are directly accessed as a memory address, without any transformation
+# In the case where bytes could be transformed before accessed as memory (ie. some basic linear transformation), this strategy will not
+# be able to identify the crashing offset, since bytes in the crash could be very different than their representation in the input file
+# 5. Repeat with a less optimal crash file (reason for this may be due to complex operations)
+
+# TODO: USE THIS FUNCTION
+def get_afl_queue_dir(crash_filepath):
+    crash_name = crash_filepath[crash_filepath.rindex("/") + 1:]
+    crash_dir = crash_filepath[:crash_filepath.rindex("/")]
+    parent_id = crash_name.split(",")[0]
+    queue_dir = os.path.join(crash_dir[:crash_dir.rindex("/")], "queue")
+-> Filename: bin_diff.py
+
+# handle
+def get_parent_id(crash_file):
+    # delimiters = [":", "_"]
+    # print("crashing_file:", crash_file)
+    delimiters = [":"]
+    try:
+        crash_name = crash_file[crash_file.rindex("/"):]
+    except IndexError:
+        crash_name = crash_file
+    except ValueError:
+        crash_name = crash_file
+    # afl have different path delimiters
+    parent_id = re.search("src:([0-9]*)", crash_file).group(1)
+    # id:000000 is the seed corpus, so at this point we stop the search
+    if parent_id == "000000":
+        return None
+    for d in delimiters:
+        return "id:" + parent_id
+-> Filename: bin_diff.py
+
+def radiff2(a, b):
+    res, err = subprocess.Popen(["radiff2", a, b], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).communicate()
+    # remove extra line at the end of the file
+    return res.decode('utf-8').split("\n")[:-1]
+
+def get_ancestor_crashes(crash_name, queue_dir, ancestor_tree:list):
+    parent_id = get_parent_id(crash_name)
+    # we have reached the end of the parent tree
+    if not parent_id:
+        return
+    # queue_dir needs to bemanually specified if the crash_file isn't using AFL's canonical crash path
+    try:
+        parent = glob.glob(os.path.join(queue_dir, parent_id + "*"))[0]
+        ancestor_tree.append(parent)
+        return get_ancestor_crashes(parent, queue_dir, ancestor_tree)
+    except IndexError:
+        print("No ancestors found, check that queue directory is correct: ", ancestor_tree)
+        return
+-> Filename: bin_diff.py
+
+def find_closest_ancestor(crash_file, ancestors):
+    print(crash_file)
+    diff_len = 99999999999
+    closest_ancestor = ancestors[0]
+    for ancestor_crash in ancestors:
+        # get bytes from diff
+        #TODO: reimplement radiff in python
+        diff = diff_crash(crash_file, ancestor_crash)
+        print(len(diff), ancestor_crash)
+        if len(diff) < diff_len:
+            diff_len = len(diff)
+            print("Closest ancestor: ", ancestor_crash, "diff_bytes: ", len(diff))
+            closest_ancestor = ancestor_crash
+    print("AAClosest ancestor: ", ancestor_crash, "diff_bytes: ", diff_len)
+    # start
+    return closest_ancestor
+
+def diff_crash(crash_file, ancestor_crash):
+    diff = []
+    for l in radiff2(crash_file, ancestor_crash):
+        try:
+            child_off, child_bytes, _, parent_bytes, parent_off = l.split(" ")
+            child_bytes = hex_str_to_bytes(child_bytes)
+            diff.append((int(parent_off, 16), child_bytes))
+        except Exception as e:
+            logging.exception(e)
+    return diff
+
+
+
+Score: 4.0
+Cluster name: Crash Analysis and Job Management
+Crash Analysis and Job Management:
+
+-> Filename: crashwalk.py
+
+#!/usr/bin/python
+
+from posixpath import pathsep
+from typing_extensions import runtime
+from pwn import process, context
+import glob
+import sys
+import argparse
+import os
+import glob
+import re
+import hashlib
+import threading
+import multiprocessing
+from time import sleep
+from datetime import datetime
+import pickle
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import functools
+import time
+
+logging.getLogger("pwnlib").setLevel(logging.WARNING)
+
+class Timer:
+    def __init__(self):
+        if os.path.exists("perf.log"):
+            os.remove("perf.log")
+    @staticmethod
+    def timer(func):
+        """Print the runtime of the decorated function"""
+        @functools.wraps(func)
+        def wrapper_timer(*args, **kwargs):
+            start_time = time.perf_counter()    # 1
+            value = func(*args, **kwargs)
+            end_time = time.perf_counter()      # 2
+            run_time = end_time - start_time    # 3
+            print(f"Finished {func.__name__!r} in {run_time:.4f} secs")
+            with open("perf.log", "a") as times:
+                times.write(str(run_time) + "\n")
+            return value
+        return wrapper_timer
+t = Timer()
+
+# Exceptions
+class TimeoutException(Exception):
+    pass
+class NoCrashException(Exception):
+    pass
+class CrashwalkError(Exception):
+    pass
+-> Filename: crashwalk.py
+
+# TODO: should not have written this as two separate classes
+class GDBJob:
+    def __init__(self, proc_name, filename, timeout=20):
+        START_PARSE = "---START_HERE---"
+        END_PARSE = "---END_HERE---"
+        self.filename = filename
+        self.crashed = True
+        self.timedout = False
+        exploitable_path = "/mnt/c/Users/pengjohn/Documents/tools/exploit/exploitable/exploitable/exploitable.py"
+        if env_exploitable := os.environ.get("EXPLOITABLE_PATH", None):
+            self.exploitable_path = env_exploitable
+        context.log_level = "error"
+        gdb = process(["gdb", "--args", proc_name, filename], stdin=process.PTY, stdout=process.PTY, timeout=timeout)
+        # PWN complains when string encoding is not explicit
+        # Need this or GDB will require user keystroke to display rest of output
+        gdb.sendline("set height unlimited".encode("utf-8"))
+        gdb.sendline("gef config context False".encode("utf-8"))
+        gdb.sendline("r".encode("utf-8"))
+        if not os.path.isfile(exploitable_path):
+            raise Exception(f"Exploitable not found at {exploitable_path}".encode("utf-8"))
+        gdb.sendline(f"source {exploitable_path}".encode("utf-8"))
+        gdb.sendline(f"p '{START_PARSE}'".encode("utf-8"))
+        gdb.sendline("exploitable -v".encode("utf-8"))
+        actions = [
+            "frame 2",
+            "p *next"
+        ]
+        # segfaulting address
+        gdb.sendline("SegfaultAddy".encode("utf-8"))
+        gdb.sendline("p $_siginfo._sifields._sigfault.si_addr".encode("utf-8"))
+        self.send(actions, gdb)
+        gdb.sendline(f"p '{END_PARSE}'".encode('utf-8'))
+        self.output = gdb.recvuntil(f"{END_PARSE}".encode("utf-8")).decode('utf-8').split('\n')
+        gdb.close()
+
+        if self.timedout == True:
+            return
+        # check if process actually crashed
+        for line in self.output:
+            if "exited normally" in line or "exited with" in line:
+                self.crashed = False
+
+    def send(self, actions, gdb):
+        for action in actions:
+            gdb.sendline(action.encode("utf-8"))
+
+    def generate_exploitable(self):
+        if not self.crashed:
+            print("{} did not crash".format(self.filename))
+            raise NoCrashException
+        elif self.timedout == True:
+            print("{} timed out".format(self.filename))
+            raise TimeoutException
+        elif not self.output:
+            print("no output")
+            raise Exception
+        return Exploitable(self.output, self.filename)
+-> Filename: crashwalk.py
+
+class Exploitable:
+    def __init__(self, output, crash_file):
+        try:
+            START_PARSE = "---START_HERE---"
+            self.classification = []
+            self.exploitable = False
+            self.crash_file = crash_file
+            self._output = iter(output)
+            self.raw_output = output
+            not_start = True
+            line = next(self._output, None)
+            while line or not_start:
+                if f"{START_PARSE}" in line:
+                    not_start = False
+                if "Nearby code:" in line:
+                    self.disassembly, line = self.parse_until("Stack trace:")
+                    # Dont need this line since the iterator from the prev parse_until call will consume this line
+                    # if "Stack trace:" in line:
+                    self.stack_trace, line = self.parse_until("Faulting frame:")
+                    self.faulting_frame = line.split(" ")[5]
+                if "Description:" in line:
+                    self.classification, line = self.parse_until("gef")
+                if "SegfaultAddy" in line:
+                    self.segfault = self.parse_segfault()
+                line = next(self._output, None)
+            self.assert_correctness()
+        except Exception:
+            print(f"Crashwalk error, self.output: ")
+            for l in self.raw_output:
+                print(l)
+            raise CrashwalkError
+
+    def parse_segfault(self):
+        segfault = next(self._output, None)
+        if not segfault:
+            raise Exception("Error parsing segfault")
+        match = re.search("(0x.*)", segfault)
+        if match:
+            return match.group(1)
+
+    # hash the first n callstacks
+    def get_call_hash(self, n):
+        callstack_string = "".join(self.get_callstack()[:n])
+        return hashlib.md5(callstack_string.encode("utf-8")).hexdigest()
+
+    def parse_until(self, stop_parse):
+        trace = []
+        line = next(self._output, None)
+        if not line:
+            raise Exception("Error parsing stacktrace")
+        while line and stop_parse not in line:
+            trace.append(line)
+            line = next(self._output, None)
+        return trace, line
+
+    def get_callstack(self):
+        # normalize the spaces for the split call
+        #  0 Umbra::BlockMemoryManager<4096>::removeFreeAlloc at 0x7ffff7a6957d in /mnt/c/Users/pengjohn/Documents/umbra/umbra3/bin/linux64/libumbraoptimizer64.so
+        callstack = [frame.replace("  ", " ").split(" ")[2] for frame in self.stack_trace]
+        return callstack
+
+    def get_callstack_raw(self):
+        return self.stack_trace
+
+    def assert_correctness(self):
+        assert self.disassembly
+        assert self.get_callstack_raw()
+        assert self.classification
+
+    # output functions
+    def print_raw(self):
+        print("Disassembly: ")
+        for line in self.disassembly:
+            print(line)
+        print("CallStack: ")
+        for frame in self.get_callstack_raw():
+            print(frame)
+        for descr in self.classification:
+            print(descr)
+        print("Segmentation Fault: ", self.segfault)
+
+    def set_linearity(self, linearity):
+        self.linearity = linearity
+
+    def set_crash_offset(self, crash_offset):
+        self.crash_offset = crash_offset
+
+    def set_crash_bytes(self, crash_bytes):
+        self.crash_bytes = crash_bytes
+-> Filename: crashwalk.py
+
+@t.timer
+def run_GDBWorker(filepath):
+    try:
+        print("Checking crash for {}".format(filepath))
+        exploitable = GDBJob(executable, filepath).generate_exploitable()
+        # why doesn't python complain about explotiables not being declared as global variable
+        return exploitable
+    except NoCrashException as e:
+        print("No crash")
+
+def get_pickle_fname(pickle_path):
+    pickle_fname = os.path.normpath(pickle_path)
+    if "/" in pickle_fname:
+        pickle_fname = pickle_fname.replace('/', "_")
+    return pickle_fname
+-> Filename: crashwalk.py
+
+def write_pickle(pickle_path, exploitables):
+    if os.path.isdir(pickle_path):
+        pickle_path += datetime.now().strftime("%m-%d-%Y_%H_%M_%S")
+    with open("{}.pickle".format(pickle_path), "wb") as cw_pickle:
+        # only exploitable crashes are going to be serialized
+        # exploitables = [e for e in exploitables if e != None and e.exploitable]
+        exploitables = [e for e in exploitables if e]
+        pickle.dump(exploitables, cw_pickle)
+-> Filename: crashwalk.py
+
+if __name__ == "__main__":
+    argParse = argparse.ArgumentParser()
+    argParse.add_argument("--executable", help="Path to the executable, if not provided via cmdline, will be read from CRASHWALK_BINARY env variable")
+    argParse.add_argument("path", help="Path to the crash file")
+    argParse.add_argument("--pickle-name", help="Optionally specify the name of the pickle file")
+    argParse.add_argument("--verbose", help="Print output to stdout", action="store_true")
+
+    arguments = argParse.parse_args()
+
+    try:
+        executable = arguments.executable if arguments.executable else os.environ["CRASHWALK_BINARY"]
+    except KeyError:
+        print("Please specify the executable binary via env variables or cmd line arguments")
+        sys.exit(-1)
+    pickle_name = arguments.pickle_name
+    path = arguments.path
+    verbose = arguments.verbose if arguments.verbose else False
+
+    GDB_PROCS = multiprocessing.cpu_count()
+    crash_files = [path]
+
+    # no recursive search for crash files and all files present are crash files
+    if os.path.isdir(path):
+        crash_files = glob.glob(os.path.join(path, "*"))
+    total_files = len(crash_files)
+
+    # initialize length so each thread can individually update its index without locking
+    exploitables = []
+    # updates the exit status of the GDB job: 1 for success, 2 for an exception raised
+    run_status = [0] * len(crash_files)
+
+    # TODO: fix this
+    # try:
+    #     # read files previously seen files and skip them
+    #     seen_crashes = [s.strip() for s in open(".prev_files.db", "r").readlines()]
+    #     crash_files = [crash for crash in crash_files if crash not in seen_crashes]
+    #     print("Restarting, using {}, {}/{} files to look through".format(crash_files[0], len(crash_files), total_files))
+    # except FileNotFoundError as e:
+    #     pass
+    # except IndexError:
+    #     print("{} already processed in previous run")
+    #     sys.exit(-1)
+
+    seen_crashes = open(".prev_files.db", "a")
+    pending_futures = []
+    try:
+        with ThreadPoolExecutor(max_workers=GDB_PROCS) as executor:
+            for i, crash in enumerate(crash_files):
+                print("Launching job {}".format(i))
+                pending_futures.append( executor.submit(run_GDBWorker, crash) )
+
+            # as_completed registers a callback event that gets called for each thread that's current waiting on a exploitable object
+            # https://stackoverflow.com/questions/51239251/how-does-concurrent-futures-as-completed-work
+            for future in as_completed(pending_futures):
+                exploitable = future.result()
+                if verbose:
+                    exploitable.print_raw()
+                exploitables.append(future.result())
+
+    except KeyboardInterrupt:
+        if not pickle_name:
+            pickle_name = get_pickle_fname(path)
+        print("Serializing pickle")
+        write_pickle(pickle_name, exploitables)
+
+    if not pickle_name:
+        pickle_name = get_pickle_fname(path)
+    write_pickle(pickle_name, exploitables)
+
+
+
+Score: 4.0
+Cluster name: General Utility Functions
+General Utility Functions:
+
+-> Filename: utils.py
+
+import os
+import pickle
+from concurrent.futures import ThreadPoolExecutor
+import queue
+import functools
+import time
+import shutil
+from multiprocessing import cpu_count
+from crashwalk import GDBJob, NoCrashException
+
+# utils
+def bytes_to_hex_str(b: bytes, endianess="little")-> str:
+    hex_str = ""
+    b = b if endianess == "big" else b[::-1]
+    for byte in b:
+        hex_str += hex(byte).replace("0x","")
+    return "0x" + hex_str
+
+def hex_str_to_bytes(hex_bytes: str) -> bytes:
+    byte_str_array = [int(hex_bytes[i:i+2], 16) for i in range(0, len(hex_bytes)-1, 2)]
+    return bytes(byte_str_array)
+
+def hex_str_to_int(hex_bytes: str) -> int:
+    return int(hex_bytes.replace("0x", ""), 16)
+
+
+def add_bytes(a:int, b:int) -> int:
+    return (a + b) % 256
+-> Filename: utils.py
+
+def serialize_exploitables(path, exploitables):
+    pickle_fname = os.path.normpath(path)
+    if "/" in path:
+        # Note: Python trick
+        # Find reverse index
+        # pickle_fname = path[len(path) - path[::-1].index('/'):]
+        pickle_fname = pickle_fname.replace('/', "_")
+        print("Pickled filename: {}".format(pickle_fname))
+    with open("{}.pickle".format(pickle_fname), "wb") as cw_pickle:
+        # only exploitable crashes are going to be serialized
+        # exploitables = [e for e in exploitables if e != None and e.exploitable]
+        exploitables = [e for e in exploitables if e]
+        pickle.dump(exploitables, cw_pickle)
+-> Filename: utils.py
+
+# multithread stuff
+GDB_PROCS = cpu_count()
+class CustomThreadPoolExecutor(ThreadPoolExecutor):
+    def shutdown(self, wait=True, *, cancel_futures=False):
+        with self._shutdown_lock:
+            self._shutdown = True
+            if cancel_futures:
+                # Drain all work items from the queue, and then cancel their
+                # associated futures.
+                while True:
+                    try:
+                        work_item = self._work_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if work_item is not None:
+                        work_item.future.cancel()
+
+            # Send a wake-up to prevent threads calling
+            # _work_queue.get(block=True) from permanently blocking.
+            self._work_queue.put(None)
+        if wait:
+            for t in self._threads:
+                t.join()
+-> Filename: utils.py
+
+# class UtilsDecorator:
+#     def __init__(self):
+#         self.decorators = [
+#             Timer,
+
+#         ]
+
+class Timer:
+    def __init__(self):
+        if os.path.exists("perf.log"):
+            os.remove("perf.log")
+
+    def wrap(self, func):
+        self.timer(func)
+
+    @staticmethod
+    def timer(func):
+        """Print the runtime of the decorated function"""
+        @functools.wraps(func)
+        def wrapper_timer(*args, **kwargs):
+            start_time = time.perf_counter()    # 1
+            value = func(*args, **kwargs)
+            end_time = time.perf_counter()      # 2
+            run_time = end_time - start_time    # 3
+            with open("perf.log", "a") as times:
+                times.write(str(run_time) + "\n")
+            return value
+        return wrapper_timer
+-> Filename: utils.py
+
+def replaceBytes(file_handle, offset, b):
+    if type(b) != bytes:
+        b = bytes([b])
+    # TODO:
+    # write back old bytes after GDB call, so we don't make any inadvertent changes to execution trace
+    # old_bytes = file_handle.read(len(bytes))
+    # double seeking required since advance moves the file pointer
+    file_handle.seek(offset)
+    # print("Writing {} at {} @ file: {}".format(bytes, offset, modified_parent))
+    written = file_handle.write(b)
+    if written != len(b):
+        return False
+    file_handle.flush()
+    return True
+-> Filename: utils.py
+
+class GDBExecutor:
+    def __init__(self, executable):
+        self.t_pool = CustomThreadPoolExecutor(max_workers=GDB_PROCS)
+        self.executable = executable
+        self.inc_me = 0
+
+    def run_jobs(self, crashes, ordered=False):
+        if not ordered:
+            jobs = []
+            for crash in crashes:
+                job = self.t_pool.submit(self.runGDBJob, crash)
+                jobs.append(job)
+            return jobs
+        # map returns ordered results (not promises)
+        else:
+            jobs = self.t_pool.map( self.runGDBJob, crashes)
+            return jobs
+
+    @t.timer
+    def runGDBJob(self, filepath):
+        try:
+            # print(f"running {filepath}")
+            exploitable = GDBJob(self.executable, filepath).generate_exploitable()
+            # why doesn't python complain about explotiables not being declared as global variable
+            return exploitable
+        except NoCrashException:
+            print(f"No crash {filepath}")
+            return None
+
+if __name__ == "__main__":
+    pass
+
+
+

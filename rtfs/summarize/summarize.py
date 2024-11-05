@@ -17,7 +17,7 @@ from .lmp import (
 )
 from .lmp import ClusterList
 
-from rtfs.graph import CodeGraph
+from rtfs.cluster.graph import ClusterGraph
 from rtfs.utils import VerboseSafeDumper
 from rtfs.exceptions import LLMValidationError
 
@@ -99,13 +99,13 @@ class SummarizedCluster:
         return result
 
 class Summarizer:
-    def __init__(self, graph: CodeGraph):
+    def __init__(self, graph: ClusterGraph):
         self._model = LLMModel(
             provider="openai",
             model_name="gpt-4o-2024-08-06",
             temperature=0
         )
-        self.code_graph = graph
+        self.graph = graph
 
     # TODO: can generalize this to only generating summaries for parent nodes
     # this way we can use generic CodeGraph abstraction
@@ -121,7 +121,7 @@ class Summarizer:
 
             print("updating node: ", cluster_id, "with summary: ", summary_data)
             cluster_node = ClusterNode(id=cluster_id, **summary_data.dict())
-            self.code_graph.update_node(cluster_node)
+            self.graph.update_node(cluster_node)
 
     def gen_categories(self):
         """
@@ -130,7 +130,7 @@ class Summarizer:
         """
 
         def cluster_yaml_str(cluster_nodes):
-            clusters_json = self._clusters(cluster_nodes)
+            clusters_json = self.graph.clusters(cluster_nodes)
             for cluster in clusters_json:
                 cluster.pop("chunks")
                 cluster.pop("key_variables")
@@ -144,7 +144,7 @@ class Summarizer:
         retries = 3
         previous_clusters = []
         cluster_yaml, og_clusters = self._clusters_to_yaml(
-            self.code_graph.filter_nodes({"kind": NodeKind.Cluster})
+            self.graph.filter_nodes({"kind": NodeKind.Cluster})
         )
         while retries > 0:
             try:
@@ -160,7 +160,7 @@ class Summarizer:
                     if not category.children:
                         continue
 
-                    cluster_node = self.code_graph.find_node(
+                    cluster_node = self.graph.find_node(
                         {"kind": NodeKind.Cluster, "title": category.category}
                     )
                     if not cluster_node:
@@ -169,19 +169,19 @@ class Summarizer:
                             title=category.category,
                             kind=NodeKind.Cluster,
                         )
-                        self.code_graph.add_node(cluster_node)
+                        self.graph.add_node(cluster_node)
 
                     for child in category.children:
                         # TODO: consider moving this function from chunkGraph to here
-                        child_node = self.code_graph.find_node(
+                        child_node = self.graph.find_node(
                             {"kind": NodeKind.Cluster, "title": child}
                         )
                         if not child_node:
                             print("Childnode not found: ", child)
                             continue
 
-                        # TODO: should really be using self.code_graph.add_edge
-                        self.code_graph._graph.add_edge(
+                        # TODO: should really be using self.graph.add_edge
+                        self.graph._graph.add_edge(
                             child_node.id,
                             cluster_node.id,
                             kind=ClusterEdgeKind.ClusterToCluster,
@@ -199,7 +199,7 @@ class Summarizer:
 
             except LLMValidationError as e:
                 cluster_yaml, og_clusters = cluster_yaml_str(
-                    [self.code_graph.get_node(c) for c in generated_child_clusters]
+                    [self.graph.get_node(c) for c in generated_child_clusters]
                 )
                 previous_clusters = [
                     cluster.category for cluster in generated_clusters.clusters
@@ -211,76 +211,27 @@ class Summarizer:
             except Exception as e:
                 raise e
 
-    def get_output(self) -> List[SummarizedCluster]:
-        cluster_nodes = [
-            node
-            for node in self.code_graph.filter_nodes({"kind": NodeKind.Cluster})
-            if len(self.code_graph.parents(node.id)) == 0
-        ]
-
-        return self._clusters(cluster_nodes, return_type="obj")
-
     def _iterate_clusters_with_text(self):
         """
         Concatenates the content of all children of a cluster node
         """
         for cluster in [
             node
-            for node, data in self.code_graph._graph.nodes(data=True)
+            for node, data in self.graph._graph.nodes(data=True)
             if data["kind"] == NodeKind.Cluster
         ]:
             child_content = "\n".join(
                 [
-                    self.code_graph.get_node(c).get_content()
-                    for c in self.code_graph.children(cluster)
-                    if self.code_graph.get_node(c).kind
+                    self.graph.get_node(c).get_content()
+                    for c in self.graph.children(cluster)
+                    if self.graph.get_node(c).kind
                     in [NodeKind.Chunk, NodeKind.Cluster]
                 ]
             )
             yield (cluster, child_content)
 
-    def _clusters(
-        self, cluster_nodes: List[ClusterNode], return_type: str = "json"
-    ) -> List[Dict | SummarizedCluster]:
-        """
-        Returns a list of clusters and their child chunk nodes. Returns either
-        JSON or as SummarizedCluster
-        """
-
-        def dfs_cluster(cluster_node: ClusterNode) -> SummarizedCluster:
-            chunks = []
-            children = []
-
-            for child in self.code_graph.children(cluster_node.id):
-                child_node: ChunkNode = self.code_graph.get_node(child)
-                if child_node.kind == NodeKind.Chunk:
-                    chunk_info = SummarizedChunk(
-                        id=child_node.id,
-                        og_id=child_node.og_id,
-                        file_path=child_node.metadata.file_path,
-                        start_line=child_node.range.line_range()[0] + 1,
-                        end_line=child_node.range.line_range()[1] + 1,
-                    )
-                    chunks.append(chunk_info)
-                elif child_node.kind == NodeKind.Cluster:
-                    children.append(dfs_cluster(child_node))
-
-            return SummarizedCluster(
-                id=cluster_node.id,
-                title=cluster_node.title,
-                key_variables=cluster_node.key_variables[:4],
-                summary=cluster_node.summary,
-                chunks=chunks,
-                children=children,
-            )
-
-        if return_type == "json":
-            return [dfs_cluster(node).to_dict() for node in cluster_nodes]
-        else:
-            return [dfs_cluster(node) for node in cluster_nodes]
-
     def _clusters_to_yaml(self, cluster_nodes: List[ClusterNode]):
-        clusters_json = self._clusters(cluster_nodes)
+        clusters_json = self.graph.clusters(cluster_nodes)
         for cluster in clusters_json:
             del cluster["chunks"]
             del cluster["key_variables"]

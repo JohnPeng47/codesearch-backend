@@ -1,14 +1,7 @@
 from infomap import Infomap
-import networkx as nx
 from logging import getLogger
-from typing import List, Tuple, Dict
+from typing import List, Dict
 
-from rtfs.chunk_resolution.graph import (
-    ClusterNode,
-    ClusterEdgeKind,
-    ClusterEdge,
-    ChunkNodeID,
-)
 from rtfs.graph import CodeGraph
 
 logger = getLogger(__name__)
@@ -37,25 +30,4 @@ def cluster_infomap(network: CodeGraph) -> Dict[str, int]:
         cluster_dict[node_id] = levels[-1]
 
     # replace leaf nodes with their original id
-    return cluster_dict
-
-
-def cluster(graph: CodeGraph, alg: str = "infomap") -> Dict[ChunkNodeID, Tuple]:
-    """
-    Entry method for cluster construction on ChunkGraph
-    """
-    if alg == "infomap":
-        cluster_dict = cluster_infomap(graph)
-    else:
-        raise Exception(f"{alg} not supported")
-
-    for chunk_node, cluster in cluster_dict.items():
-        if not graph.has_node(cluster):
-            graph.add_node(ClusterNode(id=cluster))
-
-        cluster_edge = ClusterEdge(
-            src=chunk_node, dst=cluster, kind=ClusterEdgeKind.ChunkToCluster
-        )
-        graph.add_edge(cluster_edge)
-
     return cluster_dict

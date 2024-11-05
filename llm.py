@@ -114,7 +114,6 @@ class LLMModel:
                 )
             lm = self.model.with_structured_output(response_format, strict=True)
                         
-        prompt = self._filter_prompt(prompt)
         return lm.invoke(prompt)
     
     def update_config(

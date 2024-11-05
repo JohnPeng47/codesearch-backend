@@ -217,8 +217,8 @@ async def summarize_repo(
         print("Repo not found")
         raise HTTPException(status_code=404, detail="Repository not found")
     
-    summary_json = repo_ident(repo.owner, repo.repo_name) + ".json"
-    summary_path = SUMMARIES_ROOT / summary_json
+    summary_path = SUMMARIES_ROOT / (repo_ident(repo.owner, repo.repo_name) + ".json")
+    graph_path = GRAPH_ROOT / repo_ident(repo.owner, repo.repo_name)
 
     if summary_path and Path(summary_path).exists():
         print("Loading summary from cache ...")
@@ -249,12 +249,17 @@ async def summarize_repo(
     logger.info(
         f"Summarizing stats: {request.graph_type} for {repo.file_path}: \n{cg.get_stats()}"
     )
-
     summary = summarizer.get_output()
+
+    # write to both summary and graph
     with open(summary_path, "w") as f:
         print("Writing summary to: ", summary_path)
         f.write(json.dumps([s.to_dict() for s in summary]))
 
+    with open(graph_path, "w") as f:
+        print("Writing graph to: ", graph_path)
+        f.write(json.dumps(cg.to_json()))
+    
     return SummarizedClusterResponse(summarized_clusters=summary)
 
 

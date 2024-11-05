@@ -13,7 +13,7 @@ from rtfs.fs import RepoFs
 from rtfs.utils import TextRange
 
 from rtfs.models import OpenAIModel, BaseModel
-from rtfs.cluster.graph import ClusterGraph
+from rtfs.cluster.cluster_graph import ClusterGraph
 
 from .graph import (
     ChunkMetadata,
@@ -193,74 +193,6 @@ class ChunkGraph(ClusterGraph):
                 return cluster_node
         return None
 
-    # def children(self, node_id: str):
-    #     return [child for child, _ in self._graph.in_edges(node_id)]
-
-    # # TODO: this only works for cluster nodes
-    # def parent(self, node_id: str):
-    #     parents = [parent for _, parent in self._graph.out_edges(node_id)]
-    #     if parents:
-    #         return parents[0]
-    #     return None
-
-    def get_clusters_at_depth(self, roots: List[ClusterNode], level):
-        queue = deque([(root, 0) for root in roots])
-        visited = set(roots)
-        clusters_at_level = []
-
-        while queue:
-            node, depth = queue.popleft()
-
-            if depth == level:
-                clusters_at_level.append(node)
-            elif depth > level:
-                break
-
-            for neighbor in self.children(node):
-                if neighbor not in visited:
-                    if self._graph.nodes[neighbor]["kind"] == NodeKind.Cluster:
-                        visited.add(neighbor)
-                        queue.append((neighbor, depth + 1))
-
-        return clusters_at_level
-
-    def _get_cluster_roots(self):
-        """
-        Gets the multiple root cluster nodes generated from Infomap
-        """
-        roots = []
-        for node in self._graph.nodes:
-            if isinstance(self.get_node(node), ClusterNode):
-                if not self.parents(node)[0]:
-                    roots.append(node)
-
-        return roots
-
-    # TODO: code quality degrades exponentially from this point forward .. dont look
-    def get_chunks_attached_to_clusters(self):
-        chunks_attached_to_clusters = {}
-        clusters = defaultdict(int)
-
-        total_chunks = len(
-            [
-                node
-                for node, attrs in self._graph.nodes(data=True)
-                if attrs["kind"] == "Chunk"
-            ]
-        )
-        total_leaves = 0
-        for u, v, attrs in self._graph.edges(data=True):
-            if attrs.get("kind") == ClusterEdgeKind.ChunkToCluster:
-                chunk_node = self.get_node(u)
-                cluster_node = self.get_node(v)
-
-                if cluster_node.id not in chunks_attached_to_clusters:
-                    chunks_attached_to_clusters[cluster_node.id] = []
-
-                chunks_attached_to_clusters[cluster_node.id].append(chunk_node)
-                clusters[cluster_node.id] += 1
-                total_leaves += 1
-
         # for cluster, chunks in chunks_attached_to_clusters.items():
         #     print(f"---------------------{cluster}------------------")
         #     for chunk in chunks:
@@ -279,51 +211,6 @@ class ChunkGraph(ClusterGraph):
         size = chunk_node.metadata["end_line"] - chunk_node.metadata["start_line"]
 
         return f"{filename}#{i}.{size}"
-
-    def _get_classes_and_funcs(
-        self, file_path: Path, scope_id: ScopeID
-    ) -> List[RepoNodeID]:
-        def_nodes = self._repo_graph.scopes_map[file_path].definitions(scope_id)
-
-        return list(
-            filter(lambda d: d.data["def_type"] in ["class", "function"], def_nodes)
-        )
-
-    # async def summarize(self, user_confirm: bool = False, test_run: bool = False):
-    #     if self._cluster_depth is None:
-    #         raise ValueError("Must cluster before summarizing")
-
-    #     if user_confirm:
-    #         agg_chunks = ""
-    #         for _, chunk_text in self.iterate_clusters_with_text():
-    #             agg_chunks += chunk_text
-
-    #         tokens, cost = self._lm.calc_input_cost(agg_chunks)
-    #         user_input = input(
-    #             f"The summarization will cost ${cost} and use {tokens} tokens. Do you want to proceed? (yes/no): "
-    #         )
-    #         if user_input.lower() != "yes":
-    #             print("Aborted.")
-    #             exit()
-
-    #     limit = 2 if test_run else float("inf")
-    #     for cluster, chunk_text in self.iterate_clusters_with_text():
-    #         try:
-    #             summary_data = await summarize_chunk_text(chunk_text, self._lm)
-    #         except LLMException:
-    #             continue
-
-    #         # limit run for tests
-    #         if limit <= 0:
-    #             break
-    #         limit -= 1
-
-    #         cluster_node = ClusterNode(id=cluster, summary_data=summary_data)
-    #         self.update_node(cluster_node)
-
-    #     # ...
-    #     if limit <= 0:
-    #         return
 
     ##### FOR testing prompt #####
     def get_chunk_imports(self):
@@ -378,21 +265,6 @@ class ChunkGraph(ClusterGraph):
             )
         return
 
-    def to_str_cluster(self):
-        repr = ""
-        for node_id, node_data in self._graph.nodes(data=True):
-            # print(node_data)
-            if node_data["kind"] == "Cluster":
-                repr += f"ClusterNode: {node_id}\n"
-                for child, _, edge_data in self._graph.in_edges(node_id, data=True):
-                    if edge_data["kind"] == ClusterEdgeKind.ChunkToCluster:
-                        chunk_node = self.get_node(child)
-                        repr += f"  ChunkNode: {chunk_node.id}\n"
-                    elif edge_data["kind"] == ClusterEdgeKind.ClusterToCluster:
-                        cluster_node = self.get_node(child)
-                        repr += f"  ClusterNode: {cluster_node.id}\n"
-        return repr
-
     def clusters_to_str(self):
         INDENT_SYM = lambda d: "-" * d + " " if d > 0 else ""
 
@@ -409,50 +281,3 @@ class ChunkGraph(ClusterGraph):
                 #     result += f"{indent}  ChunkNode: {chunk['id']}\n"
 
         return result
-
-    # def get_import_refs(
-    #     self, unresolved_refs: set[str], file_path: Path, scopes: List[ScopeID]
-    # ):
-    #     # get refs from the local scope that is a file-level import
-    #     imported_refs = []
-    #     file_imports = self._repo_graph.imports[file_path]
-
-    #     for ref in unresolved_refs:
-    #         if ref in [imp.namespace.child for imp in file_imports]:
-    #             imported_refs.append(ref)
-
-    #     return imported_refs
-
-    # def unresolved_refs(
-    #     self, file_path: Path, chunk_scopes: List[ScopeID]
-    # ) -> Tuple[set, set]:
-    #     """
-    #     Find refs that
-    #     """
-    #     scope_graph = self.scopes_map[file_path]
-
-    #     resolved = set()
-    #     unresolved = set()
-
-    #     # TODO: we also have the check definitions in the parent scope
-    #     # TODO: also overlapped scopes/chunk ranges
-    #     for scope in chunk_scopes:
-    #         refs = [
-    #             scope_graph.get_node(r).name
-    #             for r in scope_graph.references_by_origin(scope)
-    #         ]
-    #         local_defs = [
-    #             scope_graph.get_node(d).name for d in scope_graph.definitions(scope)
-    #         ]
-
-    #         # try to resolve refs with local defs
-    #         for ref in refs:
-    #             if ref in local_defs:
-    #                 resolved.add(ref)
-    #             else:
-    #                 unresolved.add(ref)
-
-    #     return resolved, unresolved
-
-    # def get_modified_chunks(self):
-    #     return self.chunks
