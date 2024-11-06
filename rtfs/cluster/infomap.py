@@ -17,7 +17,7 @@ def cluster_infomap(network: CodeGraph) -> Dict[str, int]:
 
     # Add nodes and edges to Infomap using integer IDs
     for edge in network._graph.edges():
-        print("Adding edge: ", node_id_map[edge[0]], node_id_map[edge[1]])
+        # print("Adding edge [infomap]: ", node_id_map[edge[0]], node_id_map[edge[1]])
         infomap.addLink(node_id_map[edge[0]], node_id_map[edge[1]])
 
     # Run Infomap clustering

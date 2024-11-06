@@ -4,11 +4,8 @@ import random
 from dataclasses import dataclass
 
 from ..chunk_resolution.graph import (
-    ChunkNode,
     ClusterNode,
     NodeKind,
-    SummarizedChunk,
-    ClusterEdgeKind,
 )
 from .lmp import (
     summarize as summarize_llm,
@@ -17,6 +14,7 @@ from .lmp import (
 )
 from .lmp import ClusterList
 
+from rtfs.graph import EdgeKind
 from rtfs.cluster.cluster_graph import ClusterGraph
 from rtfs.utils import VerboseSafeDumper
 from rtfs.exceptions import LLMValidationError
@@ -112,7 +110,7 @@ class Summarizer:
                         self.graph._graph.add_edge(
                             child_node.id,
                             cluster_node.id,
-                            kind=ClusterEdgeKind.ClusterToCluster,
+                            kind=EdgeKind.ClusterToCluster,
                         )
                         generated_child_clusters.append(child_node.id)
 

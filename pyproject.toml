@@ -57,6 +57,7 @@ matplotlib = "^3.9.2"
 scipy = "^1.14.1"
 ell-ai = {path = "C:/Users/jpeng/Documents/projects/useful/ell-forked", develop = true}
 plotly = "^5.24.1"
+dspy = "^2.5.27"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.5"

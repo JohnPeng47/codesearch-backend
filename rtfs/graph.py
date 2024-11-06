@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from networkx import MultiDiGraph
 from typing import List, Type, Dict, Optional
 import uuid
+from enum import Enum
 
 
 class MultipleNodesException(Exception):
@@ -29,6 +30,14 @@ class Node(DictMixin):
 class Edge(DictMixin):
     src: str
     dst: str
+
+class EdgeKind(str, Enum):
+    ChunkToCluster = "ChunkToCluster"
+    ClusterToCluster = "ClusterToCluster"
+    ClusterRef = "ClusterRef"
+
+class NodeKind(str, Enum):
+    ClusterNode = "ClusterNode"
 
 
 class CodeGraph:
@@ -70,11 +79,36 @@ class CodeGraph:
     def update_node(self, node: Node):
         self.add_node(node)
 
-    def children(self, node_id: str):
-        return list(self._graph.predecessors(node_id))
+    def get_edges(self, 
+                 src: str, 
+                 dst: str, 
+                 edge_types: List[str] = None) -> List[Dict]:
+        if not self._graph.has_edge(src, dst):
+            return []
+                    
+        edge_data = self._graph.get_edge_data(src, dst)
+        return edge_data if not edge_types else [data for data in edge_data.values() 
+                                                 if data.get("kind") in edge_types]
 
-    def parents(self, node_id: str):
-        return list(self._graph.successors(node_id))
+    def children(self, node_id: str, edge_types: List[str] = None):
+        if edge_types is None:
+            return list(self._graph.predecessors(node_id))
+        
+        children = []
+        for child in self._graph.predecessors(node_id):
+            if self.get_edges(child, node_id, edge_types):
+                children.append(child)
+        return children
+
+    def parents(self, node_id: str, edge_types: List[str] = None):
+        if edge_types is None:
+            return list(self._graph.successors(node_id))
+            
+        parents = []
+        for parent in self._graph.successors(node_id):
+            if self.get_edges(node_id, parent, edge_types):
+                parents.append(parent)
+        return parents
 
     def filter_nodes(self, node_filter: Dict) -> List[Node]:
         """

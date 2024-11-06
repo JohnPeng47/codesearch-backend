@@ -21,7 +21,6 @@ from .graph import (
     ChunkNode,
     ImportEdge,
     CallEdge,
-    ClusterEdgeKind,
     ChunkEdgeKind,
     ClusterEdge,
     NodeKind,
@@ -40,9 +39,9 @@ class ChunkGraph(ClusterGraph):
         self,
         repo_path: Path,
         graph: MultiDiGraph,
-        cluster_roots=[],
+        clustered=[],
     ):
-        super().__init__(graph=graph, repo_path=repo_path, cluster_roots=cluster_roots)
+        super().__init__(graph=graph, repo_path=repo_path, clustered=clustered)
 
         self.fs = RepoFs(repo_path)
         self._repo_graph = RepoGraph(repo_path)
@@ -60,7 +59,7 @@ class ChunkGraph(ClusterGraph):
         the list of scopes, and then using the scope -> scope mapping provided in RepoGraph
         to resolve the exports
         """
-        g = DiGraph()
+        g = MultiDiGraph()
         cg: ChunkGraph = cls(repo_path, g)
         cg._file2scope = defaultdict(set)
 
@@ -167,7 +166,7 @@ class ChunkGraph(ClusterGraph):
                 # so in the future we can use this for file level edges
                 ref_edge = ImportEdge(src=chunk_node.id, dst=dst_chunk.id, ref=ref.name)
 
-                # print(f"Adding edge: {chunk_node.id} -> {dst_chunk.id}")
+                # print(f"Adding chunkedge: {chunk_node.id} -> {dst_chunk.id}")
                 self.add_edge(ref_edge)
 
     # TODO: should really use IntervalGraph here but chunks are small enough

@@ -1,14 +1,15 @@
+import os
 from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Optional, Literal
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 
-from rtfs.graph import Edge, Node
+from rtfs.graph import Edge, Node, EdgeKind, NodeKind
 
 @dataclass(kw_only=True)
 class ClusterNode(Node):
-    kind: str = "ClusterNode"
+    kind: NodeKind = NodeKind.ClusterNode
     title: str = ""
     summary: str = ""
     key_variables: List[str] = field(default_factory=list)
@@ -19,18 +20,16 @@ class ClusterNode(Node):
     def __hash__(self):
         return hash(self.id)
 
-class ClusterEdgeKind(str, Enum):
-    ChunkToCluster = "ChunkToCluster"
-    ClusterToCluster = "ClusterToCluster"
-
 @dataclass(kw_only=True)
 class ClusterEdge(Edge):
-    kind: Literal[ClusterEdgeKind.ClusterToCluster, ClusterEdgeKind.ChunkToCluster]
+    kind: Literal[EdgeKind.ClusterToCluster, EdgeKind.ChunkToCluster]
 
 @dataclass
 class ClusterRefEdge(Edge):
     ref: str
-    kind: str = "ClusterRef"
+    src_node: str
+    dst_node: str
+    kind: EdgeKind = EdgeKind.ClusterRef
 
 # Note: only ClusterChunk and Cluster can be pydantic BaseModel
 # because it provides too much latency during graph construction
@@ -41,6 +40,10 @@ class ClusterChunk(BaseModel):
     start_line: int
     end_line: int
     content: Optional[str] = ""
+
+    # @property
+    # def name(self) -> str:
+    #     return f"/".join(self.file_path.split(os.path.sep)[-2:])
 
     def to_str(self, return_content: bool = False) -> str:
         s = f"Chunk: {self.id}"
@@ -121,8 +124,7 @@ class Cluster(BaseModel):
                 children=processed_children
             )
 
-        return result
-
+        return result    
 
 class ClusterGStats(BaseModel):
     num_clusters: int

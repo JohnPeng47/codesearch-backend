@@ -5,20 +5,18 @@ import networkx as nx
 from dataclasses import dataclass
 from pydantic import BaseModel
 
+from .path import ClusterPath, ChunkPathSegment
+
 from rtfs.chunk_resolution.graph import ClusterNode, ChunkNode, ChunkMetadata, NodeKind
-from rtfs.graph import CodeGraph, Edge
+from rtfs.graph import CodeGraph, EdgeKind
 from rtfs.cluster.infomap import cluster_infomap
 from rtfs.cluster.graph import (
     ClusterRefEdge,
     ClusterEdge,
-    ClusterEdgeKind,
     Cluster,
     ClusterChunk,
     ClusterGStats
 )
-
-from src.cluster.models import ClusteredTopic
-
     
 class ClusterGraph(CodeGraph):
     def __init__(
@@ -26,12 +24,12 @@ class ClusterGraph(CodeGraph):
         *,
         repo_path: Path,
         graph: nx.MultiDiGraph,
-        cluster_roots: List[str] = [],
+        clustered: List[str] = [],
     ):
         super().__init__(graph=graph, node_types=[ChunkNode, ClusterNode])
 
         self.repo_path = repo_path
-        self._cluster_roots = cluster_roots
+        self._clustered = clustered
 
     @classmethod
     def from_chunks(cls, repo_path: Path, chunks: List[BaseNode]):
@@ -47,7 +45,7 @@ class ClusterGraph(CodeGraph):
         return cls(
             repo_path=repo_path,
             graph=cg,
-            cluster_roots=json_data.get("cluster_roots", []),
+            clustered=json_data.get("clustered", []),
         )
 
     def to_json(self):
@@ -82,11 +80,11 @@ class ClusterGraph(CodeGraph):
             return data
 
         graph_dict = {}
-        graph_dict["cluster_roots"] = self._cluster_roots
+        graph_dict["clustered"] = self._clustered
         graph_dict["link_data"] = custom_node_link_data(self._graph)
 
         return graph_dict
-    
+        
     def cluster(self, alg="infomap"):
         """
         Performs the actual clustering operation on the graph
@@ -101,74 +99,27 @@ class ClusterGraph(CodeGraph):
                 self.add_node(ClusterNode(id=cluster))
 
             cluster_edge = ClusterEdge(
-                src=chunk_node, dst=cluster, kind=ClusterEdgeKind.ChunkToCluster
+                src=chunk_node, dst=cluster, kind=EdgeKind.ChunkToCluster
             )
+            print("Adding chunk to cluster edge: ", cluster_edge)
             self.add_edge(cluster_edge)
 
-    def clusters(
-        self, 
-        cluster_nodes: List[ClusterNode], 
-        return_content: bool = False,
-        return_type: str = "json"
-    ) -> List[Dict | Cluster]:
-        """
-        Returns a list of clusters and their child chunk nodes. Returns either
-        JSON or as Cluster
-        """
+        # cluster the clusters
+        self._build_cluster_edges()
 
-        def dfs_cluster(cluster_node: ClusterNode) -> Cluster:
-            chunks = []
-            children = []
-
-            for child in self.children(cluster_node.id):
-                child_node: ChunkNode = self.get_node(child)
-                if child_node.kind == NodeKind.Chunk:
-                    chunk_info = ClusterChunk(
-                        id=child_node.id,
-                        og_id=child_node.og_id,
-                        file_path=child_node.metadata.file_path,
-                        start_line=child_node.range.line_range()[0] + 1,
-                        end_line=child_node.range.line_range()[1] + 1,
-                        content=child_node.content if return_content else "",
-                    )
-                    chunks.append(chunk_info)
-                elif child_node.kind == NodeKind.Cluster:
-                    children.append(dfs_cluster(child_node))
-
-            return Cluster(
-                id=cluster_node.id,
-                title=cluster_node.title,
-                key_variables=cluster_node.key_variables[:4],
-                summary=cluster_node.summary,
-                chunks=chunks,
-                children=children,
-            )
-
-        if return_type == "json":
-            return [dfs_cluster(node).to_dict() for node in cluster_nodes]
-        else:
-            return [dfs_cluster(node) for node in cluster_nodes]
-
-
-    def get_clusters(self, return_content: bool = False) -> List[Cluster]:
-        cluster_nodes = [
-            node
-            for node in self.filter_nodes({"kind": NodeKind.Cluster})
-            # looking for top-level parent clusters
-            if len(self.parents(node.id)) == 0
-        ]
-
-        return self.clusters(cluster_nodes, return_content, return_type="obj")
-    
-    def build_cluster_edges(self):
+    def _build_cluster_edges(self):
         """
         Construct edges between clusters based on the edges between their chunks
         """
+        total_edges = 0
+        
+        # TODO: we don't create a a cluster hierarchy until summarize clusters is called
+        # need to move actual cluster to cluster connection in here
         cluster_nodes = [
             node
             for node in self.filter_nodes({"kind": NodeKind.Cluster})
-            # looking for bottom level child clusters
-            if len(self.parents(node.id)) != 0
+            # # looking for bottom level child clusters
+            # if len(self.parents(node.id)) != 0
         ]
 
         # Create edges between clusters based on chunk relationships
@@ -201,21 +152,104 @@ class ClusterGraph(CodeGraph):
                     
                     # Add edge between clusters if they're different
                     if target_cluster_id != cluster_node.id:
-                        print("Adding edge: ", data["ref"], cluster_node.id, target_cluster_id)
+                        # print("Adding edge: ", data["ref"], cluster_node.id, target_cluster_id)
+                        total_edges += 1
                         self.add_edge(
                             ClusterRefEdge(
                                 src=cluster_node.id,
                                 dst=target_cluster_id,
-                                ref=data["ref"]
+                                ref=data["ref"],
+                                src_node=chunk.id,
+                                dst_node=target_chunk.id
                             )
                         )
+        print("Total edges: ", total_edges)
 
-    def get_longest_path(self, num_paths: int = 10):
+
+    def node_to_cluster(self, 
+                    cluster_id: str, 
+                    return_content = False) -> Cluster:
         """
-        Returns the num_paths longest paths between clusters connected by reference edges.
-        Each path is a list of cluster IDs.
+        Converts graph ClusterNode to Cluster by node ID
+    """
+        cluster_node: ClusterNode = self.get_node(cluster_id)
+        if not cluster_node or cluster_node.kind != NodeKind.Cluster:
+            raise ValueError(f"Node {cluster_node} is the wrong input type")
+
+        chunks = []
+        children = []
+        for child in self.children(cluster_id, edge_types=[EdgeKind.ChunkToCluster, 
+                                                           EdgeKind.ClusterToCluster]):
+            if child == cluster_id:
+                raise ValueError(f"Cluster {cluster_id} has a self-reference")
+            child_node: ChunkNode = self.get_node(child)
+            if child_node.kind == NodeKind.Chunk:
+                chunk_info = self.node_to_chunk(child, return_content=return_content)
+                chunks.append(chunk_info)
+            elif child_node.kind == NodeKind.Cluster:
+                children.append(self.node_to_cluster(child))
+
+        return Cluster(
+            id=cluster_node.id,
+            title=cluster_node.title,
+            key_variables=cluster_node.key_variables[:4],
+            summary=cluster_node.summary,
+            chunks=chunks,
+            children=children,
+        )
+
+    def node_to_chunk(self, 
+                      chunk_id: str, 
+                      return_content = False) -> ClusterChunk:
         """
-        # Get subgraph of only cluster nodes and their reference edges
+        Converts graph ChunkNode to ClusterChunk by node ID
+        """
+        chunk_node: ChunkNode = self.get_node(chunk_id)
+        if chunk_node.kind != NodeKind.Chunk:
+            raise ValueError(f"Node {chunk_id} is not a chunk node")
+
+        return ClusterChunk(
+            id=chunk_node.id,
+            og_id=chunk_node.og_id,
+            file_path=chunk_node.metadata.file_path,
+            start_line=chunk_node.range.line_range()[0] + 1,
+            end_line=chunk_node.range.line_range()[1] + 1,
+            content=chunk_node.content if return_content else "",
+        )
+
+    def clusters(
+        self, 
+        cluster_nodes: List[ClusterNode], 
+        return_content: bool = False,
+        return_type: str = "json"
+    ) -> List[Dict | Cluster]:
+        """
+        Returns a list of clusters and their child chunk nodes. Returns either
+        JSON or as Cluster
+        """
+        if return_type == "json":
+            return [self.node_to_cluster(node).to_dict() for node in cluster_nodes]
+        else:
+            return [self.node_to_cluster(node) for node in cluster_nodes]
+
+
+    def get_clusters(self, return_content: bool = False) -> List[Cluster]:
+        cluster_nodes = [
+            node.id
+            for node in self.filter_nodes({"kind": NodeKind.Cluster})
+            # looking for top-level parent clusters
+            if len(self.parents(node.id)) == 0
+        ]
+
+        return self.clusters(cluster_nodes, return_content, return_type="obj")
+    
+    def get_longest_path(self, num_paths: int = 10) -> List[ClusterPath]:
+        """
+        Returns the num_paths longest paths between clusters as a list of (source, edge, target) tuples.
+        """
+        if not self._clustered:
+            raise Exception("Graph not clustered yet")
+        
         cluster_nodes = [
             node.id for node in self.filter_nodes({"kind": NodeKind.Cluster})
         ]
@@ -226,19 +260,33 @@ class ClusterGraph(CodeGraph):
         for src in cluster_nodes:
             for dst in cluster_nodes:
                 if src != dst:
-                    # Get all simple paths between src and dst
-                    paths = list(nx.all_simple_paths(cluster_subgraph, src, dst))
-                    all_paths.extend(paths)
+                    # Get all simple paths between src and dstu
+                    for path in nx.all_simple_paths(cluster_subgraph, src, dst):
+                        cluster_path = ClusterPath()
+                        for i in range(len(path) - 1):
+                            src_cluster = self.node_to_cluster(path[i])
+                            dst_cluster = self.node_to_cluster(path[i + 1])
+                            # TODO: figure why this returning only single edgeData value
+                            edge_datas = cluster_subgraph.get_edge_data(src_cluster.id, dst_cluster.id).values()
+                            if any(edge_data["kind"] != EdgeKind.ClusterRef for edge_data in edge_datas):
+                                continue
+                            
+                            # add up all the chunk segments between two clusters
+                            chunk_segments = []
+                            for edge_data in edge_datas:
+                                src_chunk = self.node_to_chunk(edge_data["src_node"])
+                                dst_chunk = self.node_to_chunk(edge_data["dst_node"])
 
-        # Sort paths by length in descending order and return top num_paths
+                                # add all paths between source and target
+                                ref = edge_data["ref"]
+                                chunk_segments.append(ChunkPathSegment(src_chunk, ref, dst_chunk))
+                            cluster_path.add_segment((src_cluster, dst_cluster, chunk_segments))
+                        all_paths.append(cluster_path)
+
+        # return all_paths
+        # # Sort paths by length in descending order and return top num_paths
         all_paths.sort(key=len, reverse=True)
-        
-        # Convert paths to use titles instead of IDs
-        all_paths = [
-            [self.get_node(node).title for node in path] for path in all_paths
-        ]
         return all_paths[:num_paths]
-
 
     # Utility methods
     def get_chunk_files(self) -> List[str]:

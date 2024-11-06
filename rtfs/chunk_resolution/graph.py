@@ -5,7 +5,8 @@ from moatless.types import MoatlessChunkID
 
 from rtfs.graph import Node, Edge
 from rtfs.utils import TextRange
-from rtfs.cluster.graph import ClusterNode, ClusterEdge, ClusterEdgeKind
+from rtfs.cluster.graph import ClusterNode, ClusterEdge
+from rtfs.graph import EdgeKind
 
 ChunkNodeID = NewType("ChunkNodeID", str)
 

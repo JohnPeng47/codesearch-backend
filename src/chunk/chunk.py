@@ -11,7 +11,7 @@ import random
 
 from src.llm.invoke_mt import invoke_multithread
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
-from rtfs.transforms.cluster import cluster as cluster_cg
+# from rtfs.transforms.cluster import cluster as cluster_cg
 
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
 from rtfs.chunk_resolution.graph import (
@@ -146,7 +146,6 @@ def chunk_vanilla(repo_dir: Path, index_dir = None, exclusions=[]) -> List[CodeC
             chunk_i = 1
 
         short_name = f"/".join(chunk_fp.split(os.path.sep)[-2:])
-        print("Chunk short: ", short_name)
         node_id = f"{short_name}::{chunk_i}"
         cluster_input.append(
             CodeChunk(
@@ -285,6 +284,7 @@ if __name__ == "__main__":
                         help="Exclusion patterns (can be used multiple times)")
     parser.add_argument("--output-format", choices=["text", "json"], default="text",
                         help="Output format for the chunks")
+    parser.add_argument("--output-file", default="chunks.txt", help="Output file for the chunks")
 
     # Combine user-provided exclusions with default exclusions
     exclusions = DEFAULT_EXCLUSIONS + parser.parse_args().exclude
@@ -293,17 +293,18 @@ if __name__ == "__main__":
     chunks = chunk_repo(Path(parser.parse_args().directory), chunk_strat=parser.parse_args().strattype, exclusions=exclusions)
     print(f"Finished chunking with {len(chunks)} chunks")
 
+    outfp_name = parser.parse_args().output_file
     if parser.parse_args().output_format == "json":
         # Serialize CodeChunk objects to JSON
-        with open("chunks.json", "w", encoding="utf-8") as f:
+        with open(f"{outfp_name}", "w", encoding="utf-8") as f:
             f.write(json.dumps([chunk.dict() for chunk in chunks], indent=4))
         print(f"Chunks have been written to chunks.json")
     else:
         # Write chunks to chunks.txt
-        with open("chunks.txt", "w", encoding="utf-8") as f:
+        with open(f"{outfp_name}", "w", encoding="utf-8") as f:
             for chunk in chunks:
                 f.write(f"Chunk ID: {chunk.id}\n")
                 f.write(f"Filepath: {chunk.filepath}\n")
                 f.write(f"Content:\n{chunk.content}\n")
                 f.write("-" * 80 + "\n")
-        print(f"Chunks have been written to chunks.txt")
+        print(f"Chunks have been written to {outfp_name}")
