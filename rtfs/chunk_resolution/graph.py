@@ -8,6 +8,8 @@ from rtfs.utils import TextRange
 from rtfs.cluster.graph import ClusterNode, ClusterEdge
 from rtfs.graph import EdgeKind
 
+from tree_sitter import Point
+
 ChunkNodeID = NewType("ChunkNodeID", str)
 
 class ScopeType(str, Enum):
@@ -121,8 +123,8 @@ class ChunkNode(Node):
             end_byte=0,
             # HACK
             # NOTE: subtract 1 to convert to 0-based to conform with TreeSitter 0 based indexing
-            start_point=(self.metadata.start_line - 1, 0),
-            end_point=(self.metadata.end_line - 1, 0),
+            start_point=Point(row=self.metadata.start_line - 1, column=0),
+            end_point=Point(row=self.metadata.end_line - 1, column=0),
         )
 
     def set_community(self, community: int):

@@ -33,7 +33,8 @@ class ClusterRefEdge(Edge):
 
 # Note: only ClusterChunk and Cluster can be pydantic BaseModel
 # because it provides too much latency during graph construction
-class ClusterChunk(BaseModel):
+@dataclass
+class ClusterChunk:
     id: str
     og_id: str
     file_path: str
@@ -50,8 +51,8 @@ class ClusterChunk(BaseModel):
         if return_content and self.content:
             s += f"\n{self.content}"
         return s
-
-class Cluster(BaseModel):
+@dataclass
+class Cluster:
     id: int
     title: str
     # key_variables: List[str]

@@ -192,7 +192,7 @@ class ClusterGraph(CodeGraph):
         return Cluster(
             id=cluster_node.id,
             title=cluster_node.title,
-            key_variables=cluster_node.key_variables[:4],
+            # key_variables=cluster_node.key_variables[:4],
             summary=cluster_node.summary,
             chunks=chunks,
             children=children,

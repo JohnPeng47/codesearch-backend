@@ -64,10 +64,11 @@ class CodeGraph:
         self._graph.add_edge(edge.src, edge.dst, **edge.dict())
 
     def get_node(self, node_id: str) -> Node:
-        if not self._graph.has_node(node_id):
+        try:
+            node_data = self._graph.nodes[node_id]
+        except KeyError:
             return None
-
-        node_data = self._graph.nodes[node_id]
+        
         node_kind = node_data.get("kind")
 
         if node_kind not in self.node_types:

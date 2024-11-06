@@ -7,7 +7,7 @@ from rtfs.config import SYS_MODULES_LIST, THIRD_PARTY_MODULES_LIST
 from pathlib import Path
 from collections import deque
 import yaml
-
+from dataclasses import dataclass
 from logging import getLogger
 
 logger = getLogger(__name__)
@@ -38,26 +38,18 @@ def dfs_json(json_data):
             stack.append((child, depth + 1))
 
 
-class TextRange(BaseModel):
+@dataclass
+class TextRange:
     start_byte: int
-    end_byte: int
+    end_byte: int 
     start_point: Point
     end_point: Point
 
-    def __init__(
-        self,
-        *,
-        start_byte: int,
-        end_byte: int,
-        start_point: Tuple[int, int],
-        end_point: Tuple[int, int],
-    ):
-        super().__init__(
-            start_byte=start_byte,
-            end_byte=end_byte,
-            start_point=start_point,
-            end_point=end_point,
-        )
+    def __post_init__(self):    
+        if type(self.start_point) is not Point:
+            raise ValueError("start_point must be a Point object")
+        if type(self.end_point) is not Point:
+            raise ValueError("end_point must be a Point object")
 
     def add_offset(self, start_offset: int, end_offset: int):
         new_start_point = Point(
@@ -91,6 +83,8 @@ class TextRange(BaseModel):
         return range.start_byte >= self.start_byte and range.end_byte <= self.end_byte
 
     def contains_line(self, other: "TextRange", overlap=False):
+        # print(type(self), type(other))
+        # print(type(self.start_point), type(other.start_point))
         if overlap:
             # check that at least one of the points is within the range
             return (
