@@ -72,3 +72,5 @@ src/llm/evals/log
 src/cluster/repos
 profile.out
 ell_storage/chunk_alt
+
+**/repos

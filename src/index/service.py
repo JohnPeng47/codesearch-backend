@@ -1,4 +1,5 @@
 import os
+from typing import List
 
 from moatless.index import CodeIndex
 from moatless.index.settings import IndexSettings

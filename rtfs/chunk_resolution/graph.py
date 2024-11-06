@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import List, Optional, NewType
 from dataclasses import dataclass, field
+from moatless.types import MoatlessChunkID
 
 from rtfs.graph import Node, Edge
 from rtfs.utils import TextRange

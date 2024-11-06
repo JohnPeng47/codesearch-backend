@@ -3,7 +3,7 @@ from typing import List, NamedTuple
 from llama_index.core.schema import BaseNode
 
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
-from rtfs.cluster.graph import ClusterGraph
+from rtfs.cluster.cluster_graph import ClusterGraph
 from rtfs.chunk_resolution.graph import (
     ChunkNode,
     FunctionContext,
