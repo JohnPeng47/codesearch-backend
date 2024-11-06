@@ -73,8 +73,6 @@ async def profiled_main(repo_path, saved_graph_path: Path):
     return fg  # or whatever you want to return from main
 
 
-# untuned implementation could be really expensive
-# need to do this at
 def construct_edge_series(graph: MultiDiGraph):
     edge_series = []
     visited_edges = set()

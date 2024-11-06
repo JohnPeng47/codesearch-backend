@@ -1,9 +1,9 @@
 import os
-from src.config import REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT, SUMMARIES_ROOT
+from src.config import REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT, SUMMARIES_ROOT, EVAL_ROOT, CLUSTER_ROOT
 
 
 def create_directories():
-    directories = [REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT, SUMMARIES_ROOT]
+    directories = [REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT, SUMMARIES_ROOT, EVAL_ROOT, CLUSTER_ROOT]
 
     for directory in directories:
         try:

@@ -71,6 +71,7 @@ class CodeIndex:
     def __init__(
         self,
         file_repo: FileRepository,
+        exclude_files: List[str] = [],
         use_summaries: bool = False,
         summary_vector_store: Optional[BasePydanticVectorStore] = None,
         summary_ref_vars: bool = False,
@@ -89,6 +90,7 @@ class CodeIndex:
         max_exact_results: int = 5,
     ):
         self._settings = settings or IndexSettings()
+        self._exclude_files = exclude_files
 
         self._use_summaries = use_summaries
         self._summaries = []
@@ -1120,8 +1122,10 @@ class CodeIndex:
                 "category": category,
             }
 
+        print("Running ingestion with excluded files: ", self._exclude_files)
         reader = SimpleDirectoryReader(
             input_dir=repo_path,
+            exclude=self._exclude_files,
             file_metadata=file_metadata_func,
             input_files=input_files,
             filename_as_id=True,
@@ -1131,13 +1135,12 @@ class CodeIndex:
 
         embed_pipelines = self._create_embed_pipelines()
         docs = reader.load_data()
-        print(f"Read {len(docs)} documents")
 
         blocks_by_class_name = {}
         blocks_by_function_name = {}
 
         def index_callback(codeblock: CodeBlock):
-            if codeblock.type == CodeBlockType.CLASS:
+            if codeblock.type == CodeBlockType.CLASS: 
                 if codeblock.identifier not in blocks_by_class_name:
                     blocks_by_class_name[codeblock.identifier] = []
                 blocks_by_class_name[codeblock.identifier].append(
@@ -1146,7 +1149,7 @@ class CodeIndex:
 
             if codeblock.type == CodeBlockType.FUNCTION:
                 if codeblock.identifier not in blocks_by_function_name:
-                    blocks_by_function_name[codeblock.identifier] = []
+                    blocks_by_function_name[codeblock.identifier]= []
                 blocks_by_function_name[codeblock.identifier].append(
                     (codeblock.module.file_path, codeblock.full_path())
                 )

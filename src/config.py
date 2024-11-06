@@ -20,7 +20,8 @@ COWBOY_JWT_SECRET = config("DISPATCH_JWT_SECRET", default="")
 COWBOY_JWT_ALG = config("DISPATCH_JWT_ALG", default="HS256")
 COWBOY_JWT_EXP = config("DISPATCH_JWT_EXP", cast=int, default=308790000)  # Seconds
 
-COWBOY_OPENAI_API_KEY = config("OPENAI_API_KEY")
+OPENAI_API_KEY = config("OPENAI_API_KEY")
+ANTHROPIC_API_KEY = config("ANTHROPIC_API_KEY")
 
 DB_PASS = config("DB_PASS")
 SQLALCHEMY_DATABASE_URI = (
@@ -51,6 +52,10 @@ REPO_MAX_SIZE_MB = 80
 SUPPORTED_LANGS = [
     "python"
 ]
+EVAL_ROOT = Path(CODESEARCH_DIR) / "evals"
+CLUSTER_ROOT = Path(CODESEARCH_DIR) / "clusters"
+
+ELL_STORAGE = "./logdir"
 
 AWS_REGION = "us-east-2"
 ANON_LOGIN = True

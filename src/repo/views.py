@@ -41,6 +41,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pathlib import Path
 
+from ell.api import get_invocations_by_curr_sessionid
+
 from logging import getLogger
 
 logger = getLogger(__name__)

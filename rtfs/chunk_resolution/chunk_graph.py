@@ -34,7 +34,6 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-
 # DESIGN_TODO: make a generic Graph object to handle add/update Node
 class ChunkGraph(ClusterGraph):
     def __init__(
@@ -55,7 +54,7 @@ class ChunkGraph(ClusterGraph):
     # turn import => export mapping into a function
     # implement tqdm for chunk by chunk processing
     @classmethod
-    def from_chunks(cls, repo_path: Path, chunks: List[BaseNode], skip_tests=True):
+    def from_chunks(cls, repo_path: Path, chunks: List[BaseNode], skip_tests=True) -> "ChunkGraph":
         """
         Build chunk (import) to chunk (export) mapping by associating a chunk with
         the list of scopes, and then using the scope -> scope mapping provided in RepoGraph
@@ -80,7 +79,8 @@ class ChunkGraph(ClusterGraph):
             #     chunk.metadata["file_path"], repo_path
             # )
             try:
-                metadata = ChunkMetadata(**chunk.metadata)
+                metadata = chunk.metadata
+                # metadata = chunk.metadata
             except TypeError as e:
                 print(f"Chunk error, skipping..: {e}")
                 continue
@@ -89,14 +89,13 @@ class ChunkGraph(ClusterGraph):
                 skipped_chunks += 1
                 continue
 
-            short_name = cg._chunk_short_name(chunk, i)
-            chunk_names.add(short_name)
             chunk_node = ChunkNode(
-                id=short_name,
+                id=chunk.node_id,
                 og_id=chunk.node_id,
                 metadata=metadata,
                 content=chunk.get_content(),
             )
+            chunk_names.add(chunk_node.id)
             cg.add_node(chunk_node)
             cg._chunkmap[Path(metadata.file_path)].append(chunk_node)
 
@@ -113,7 +112,6 @@ class ChunkGraph(ClusterGraph):
         for f, scopes in cg._file2scope.items():
             all_scopes = cg._repo_graph.scopes_map[f].scopes()
             all_scopes = set(all_scopes)
-
             unresolved = all_scopes - scopes
 
         return cg
@@ -168,6 +166,7 @@ class ChunkGraph(ClusterGraph):
                 # differentiate between ImportToExport chunks and CallToExport chunks
                 # so in the future we can use this for file level edges
                 ref_edge = ImportEdge(src=chunk_node.id, dst=dst_chunk.id, ref=ref.name)
+
                 # print(f"Adding edge: {chunk_node.id} -> {dst_chunk.id}")
                 self.add_edge(ref_edge)
 

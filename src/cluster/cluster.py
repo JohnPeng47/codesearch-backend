@@ -1,157 +1,130 @@
-from pathlib import Path
-from typing import List
-import ell
-
-from rtfs.chunk_resolution.chunk_graph import ChunkGraph
-from rtfs.aider_graph.aider_graph import AiderGraph
-from rtfs.cluster.infomap import cluster as cluster_cg
-from src.index.service import get_or_create_index
-
-from .types import (
-    CodeChunk,
-    SummaryChunk,
-    ClusterInput,
+from .models import (
+    CodeChunk, 
+    LMClusteredTopicList, 
     ClusteredTopic,
-    ClusterInputType,
-    LMClusteredTopicList
+    LMClusteredTopic
 )
-from .sum_chunks import summarize_chunk
-from .chunk_repo import chunk_repo, temp_index_dir
-from .utils import get_attrs_or_key
+from src.chunk.models import ClusterInput
+from src.llm.lmp_base import LMP
 
-ell.init(
-    store="logdir",
-    autocommit=True,
-)
+from typing import List, Callable, Set, Dict
+import random
 
-DELIMETER = "\n\n########" # only 3 tokens lol
+class LMChunk(ClusterInput):
+    def __init__(self, chunk: CodeChunk):
+        self._id = chunk.id
+        self._content = chunk.content
+        self._summary = chunk.summary
 
-# TODO: Use dspy to auto-tune a list of topics
-@ell.complex(model="gpt-4o-2024-08-06", response_format=LMClusteredTopicList)
-def generate_clusters(chunks: List[ClusterInput], 
-                      simple_names: List[str]) -> LMClusteredTopicList:
-    codebase = ""
-    for name, chunk in zip(simple_names, chunks):
-        codebase += f"NAME: {name}" + "\n"
-        codebase += chunk.get_chunkinfo()
-        codebase += chunk.get_content() + DELIMETER
-
-    CLUSTER_PROMPT = """
-You are given a codebase comprised of chunks separated by {delimiter}. Identify clusters of code that accomplish a common goal. Make sure
-that the topics you identify adhere to the following guidelines of SRP as best as possible:
-- A cluster should have one, and only one, reason to change.
-- Each cluser should focus on doing one thing well, rather than trying to handle multiple responsibilities.
-- It promotes high cohesion within cluster, meaning that the chunks within a clusters are closely related and 
-focused on a single purpose.
-
-To reiterate, your output should be a list of clusters, where each chunk should be identified by the name provided:
-
-ie. topics: [
-    "Chunk 1",
-    "Chunk 3",
-    "Chunk 2"
-    ...
-]
-
-Here is the codebase:
-{codebase}
-"""
-    return CLUSTER_PROMPT.format(codebase=codebase, delimiter=DELIMETER)
-
-EXCLUSIONS = [
-    "**/tests/**",
-    "**/examples/**"
-]
-
-class LLMException(Exception):
-    pass
-
-
-# NOTE: maybe we can run the clustering algorithm beforehand to seed the order
-# of the chunks, reducing the "distance" penalty in classification
-def _calculate_clustered_range(matched_indices, length):
-    """Measures how wide the range of the clustered chunks are"""
-    pass
-
-# TODO: need to add way to dedup chunks
-# Should track how good we are at tracking faraway chunks
-def _generate_llm_clusters(cluster_inputs: List[ClusterInput], tries: int = 3) -> List[ClusteredTopic]:
-    new_clusters = []
-
-    # need sensible name because its easier for LLm to track
-    unsorted_names = [f"Chunk {i}" for i, _ in enumerate(cluster_inputs)]
-    name_to_chunk = {f"Chunk {i}": chunk for i, chunk in enumerate(cluster_inputs)}
-
-    for i in range(1, tries + 1):
-        if len(unsorted_names) == 0:
-            break
-        
-        output = generate_clusters(cluster_inputs, unsorted_names)
-        # TODO: add structured parsing support to ell
-        parsed = get_attrs_or_key(output, "parsed")
-        clusters = LMClusteredTopicList.parse_obj(parsed).topics
-        if not isinstance(clusters, list):
-            raise LLMException(f"Failed to generate list: {clusters}")
-        
-        # calculate the clustered range
-        # NOTE: chunk_name != chunk.id, former is for LLM, later is for us
-        matched_indices = [i for cluster in clusters for i, chunk in enumerate(unsorted_names) 
-                           if chunk in cluster.chunks]
-        _calculate_clustered_range(matched_indices, len(unsorted_names))
-
-        # convert LMClusteredTopic to ClusteredTopic
-        for cluster in clusters:
-            new_clusters.append(
-                ClusteredTopic(
-                    name=cluster.name, 
-                    chunks=[name_to_chunk[chunk_name] for chunk_name in cluster.chunks]
-                ))
-
-        # remove chunks that have already been clustered
-        cluster_inputs = [chunk for i, chunk in enumerate(cluster_inputs) 
-                          if i not in matched_indices]
-        unsorted_names = [chunk_name for i, chunk_name in enumerate(unsorted_names)
-                          if i not in matched_indices]
-        
-        print(f"Unclassified chunks, iter:[{i}]: ", len(unsorted_names))
-
-    return new_clusters
-
-def generate_full_code_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = chunk_repo(repo_path, mode="full", exclusions=EXCLUSIONS)
-
-    return _generate_llm_clusters(chunks)
-
-
-def generate_summarized_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = chunk_repo(repo_path, mode="partial", exclusions=EXCLUSIONS)
-
-    return _generate_llm_clusters(
-        [
-            SummaryChunk.from_chunk(chunk, summarize_chunk(chunk).parsed) 
-            for chunk in chunks
-        ]
-    )
-
-# NOTE: generated clusters are not named
-def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
-    chunks = get_or_create_index(str(repo_path), str(temp_index_dir(repo_path.name)), 
-                                 exclusions=EXCLUSIONS)._docstore.docs.values()
-    cg = AiderGraph.from_chunks(repo_path, chunks)
+    def get_chunkinfo(self) -> str:
+        return self._id
     
-    cluster_cg(cg)
+    def get_content(self) -> str:
+        return self._content
+    
+    def get_name(self) -> str:
+        return self._id
 
-    return [
-        ClusteredTopic(
-            name="random",
-            chunks=[
-                CodeChunk(
-                    id=chunk.og_id,
-                    content=chunk.content,
-                    filepath=chunk.file_path,
-                    input_type=ClusterInputType.CHUNK
-                ) for chunk in cluster.chunks
-            ],
-        ) 
-        for cluster in cg.get_clusters()
-    ]
+    def set_id(self, id: str):
+        self._id = id
+
+    def set_content(self, content: str):
+        self._content = content
+
+    def get_summary(self) -> str:
+        return self._summary
+
+class ClusterStrategy:
+    """
+    Generates clusters from a list of CodeChunks
+    """
+    def __init__(self, 
+                 chunks: List[CodeChunk],
+                 *,
+                 cluster_op: Callable[[List[ClusterInput]], List[LMClusteredTopic]],
+                 enrich_ops: Callable = []):
+        self.chunks = chunks
+        self.name_to_chunk = {
+            chunk.get_name(): chunk for i, chunk in enumerate(self.chunks)
+        }
+
+        self.cluster_op = cluster_op
+        self.enrich_ops = enrich_ops
+    
+    def run(self,
+            remove_classified: bool = True,
+            use_anon_chunks: bool = False,
+            iters: int = 1):
+        # create chunks that we can manipulate the representation of
+        cluster_inputs = [LMChunk(chunk) for chunk in self.chunks]
+        generated_clusters = []
+        
+        for _ in range(1, iters + 1):
+            # Check early stopping condition
+            if len(cluster_inputs) < 0.3 * len(self.chunks):
+                break
+                                
+            # Get clusters for current iteration
+            new_clusters = self._cluster_iteration(cluster_inputs, use_anon_chunks=use_anon_chunks)
+            # apply gather ops
+            for enrich_op in self.enrich_ops:
+                new_clusters = enrich_op(new_clusters, cluster_inputs)
+
+            generated_clusters.extend(new_clusters)
+            if remove_classified:
+                new_chunks = [new_chunk.get_name() for cluster in new_clusters 
+                              for new_chunk in cluster.chunks]
+                cluster_inputs = [chunk for chunk in cluster_inputs 
+                                  if chunk.get_name() not in new_chunks]
+
+            print(f"Chunks clustered this round: { len(new_chunks)}/{len(self.chunks)}" )
+            print(f"New inputs: {len(cluster_inputs)}")
+
+        return generated_clusters
+            
+    def _cluster_iteration(
+        self,
+        cluster_inputs: List[LMChunk],
+        use_anon_chunks: bool = False
+    ) -> List[ClusteredTopic]:
+        """
+        Iterate through the output of the cluster operation and match the names of the LLM output
+        to actual CodeChunk objects and update the stats
+        """
+        all_inputs = [chunk.get_name() for chunk in cluster_inputs]
+        new_clusters = []
+
+        if use_anon_chunks:
+            random_id = random.randint(0, 100000)
+            anon_chunk_map = {f"Chunk::{random_id}": chunk.get_name() 
+                              for i, chunk in enumerate(cluster_inputs)}
+            for i, chunk in enumerate(cluster_inputs):
+                chunk.set_id(f"Chunk: Chunk::{random_id}")
+        
+        # run the clustering operation
+        clusters, perplexity = self.cluster_op(cluster_inputs)
+        for cluster in clusters:
+            chunks = []
+            for chunk_name in cluster.chunks:
+                if use_anon_chunks:
+                    chunk_name = anon_chunk_map.get(chunk_name)
+                
+                matched_chunk = self.name_to_chunk.get(chunk_name)
+                if not matched_chunk or matched_chunk.get_name() not in all_inputs:
+                    print(f"Chunk Name: {chunk_name} hallucinated, skipping...")
+                    continue
+                
+                # here matched_chunk is a real chunk
+                chunks.append(matched_chunk)
+            if chunks:
+                new_clusters.append(
+                    ClusteredTopic(
+                        name=cluster.name,
+                        chunks=[
+                            {k: v for k, v in chunk.dict().items() 
+                             if k != "metadata"} for chunk in chunks
+                        ]
+                    )
+                )
+
+        return new_clusters

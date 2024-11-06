@@ -22,6 +22,7 @@ from rtfs.utils import VerboseSafeDumper
 from rtfs.exceptions import LLMValidationError
 
 from llm import LLMModel
+from moatless.types import MoatlessChunkID
 
 
 def get_cluster_id():

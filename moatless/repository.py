@@ -3,7 +3,8 @@ import glob
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -172,13 +173,19 @@ class CodeFile(BaseModel):
 
 class FileRepository:
 
-    def __init__(self, repo_path: str):
+    def __init__(self, repo_path: str, exclusions: Optional[List[str]] = None):
         self._repo_path = repo_path
         self._files: dict[str, CodeFile] = {}
+        self._exclusions = exclusions or []
 
     @property
     def path(self):
         return self._repo_path
+
+    def _is_excluded(self, file_path: str) -> bool:
+        path = Path(file_path)
+        print("Matching path: ", path, path.match("**/examples/**"))
+        return any(path.match(pattern) for pattern in self._exclusions)
 
     def get_file(
         self, file_path: str, refresh: bool = False, from_origin: bool = False
@@ -189,6 +196,9 @@ class FileRepository:
         Args:
 
         """
+        if self._is_excluded(file_path):
+            return None
+
         file = self._files.get(file_path)
         if not file or refresh or from_origin:
             full_file_path = os.path.join(self._repo_path, file_path)
@@ -231,7 +241,8 @@ class FileRepository:
         for matched_file in glob.iglob(
             file_pattern, root_dir=self._repo_path, recursive=True
         ):
-            matched_files.append(matched_file)
+            if not self._is_excluded(matched_file):
+                matched_files.append(matched_file)
 
         if not matched_files and not file_pattern.startswith("*"):
             return self.matching_files(f"**/{file_pattern}")
@@ -250,10 +261,13 @@ class FileRepository:
         for matched_file in glob.iglob(
             file_pattern, root_dir=self._repo_path, recursive=True
         ):
-            return True
+            if not self._is_excluded(matched_file):
+                return True
         return False
 
     def file_match(self, file_pattern: str, file_path: str):
+        if self._is_excluded(file_path):
+            return False
         match = False
         for matched_file in glob.iglob(
             file_pattern, root_dir=self._repo_path, recursive=True

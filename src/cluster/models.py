@@ -4,7 +4,7 @@ from typing import List
 
 from src.database.core import Base
 from src.chunk.models import CodeChunk
-# from src.utils import DELIMETER
+from src.utils import DELIMETER
 
 class ClusteredTopic(BaseModel):
     """Output of the clustering algorithm"""
@@ -19,7 +19,7 @@ class ClusteredTopic(BaseModel):
         )
     
     def full_code(self):
-        chunk_list = "\n".join([chunk.id + "\n" + chunk.get_content() + "-------" 
+        chunk_list = "\n".join([chunk.id + "\n" + chunk.get_content() + DELIMETER 
                                 for chunk in self.chunks])
         return (
             f"{self.name}:\n"

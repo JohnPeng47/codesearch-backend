@@ -2,8 +2,10 @@ import os
 import uvicorn
 from logging import getLogger
 import multiprocessing
+import ell
 
-from fastapi import FastAPI, status
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import FastAPI, status, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI
@@ -15,7 +17,7 @@ from src.auth.views import auth_router
 from src.repo.views import repo_router
 from src.queue.views import task_queue_router
 from src.health.views import health_router
-from src.config import PORT, REPOS_ROOT
+from src.config import PORT, REPOS_ROOT, ELL_STORAGE
 
 
 log = getLogger(__name__)
@@ -42,6 +44,7 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=os.path.join(STATIC_DIR, "static")))
+
 @app.get("/")
 def read_root():
     with open(os.path.join(STATIC_DIR, "index.html"), "r") as f:
@@ -52,6 +55,21 @@ def read_root():
 # these paths do not require DB
 NO_DB_PATHS = ["/task/get"]
 
+# Add this middleware to your FastAPI app
+# class LogfireLogUser(BaseHTTPMiddleware):
+#     async def dispatch(self, request: Request, call_next):
+#         try:
+#             # we have to skip requests with x-task-auth or else logfire will log an exception for this
+#             # request when it tries to acces request.state.db
+#             if not request.headers.get("x-task-auth", None):
+#                 with logfire.span("request"):
+#                     user = get_current_user(request)
+#                     logfire.info("{user}", user=user.email)
+#         except AttributeError as e:
+#             pass
+#         finally:
+#             response = await call_next(request)
+#             return response
 
 app.add_middleware(ExceptionMiddleware)
 app.add_middleware(DBMiddleware)
@@ -66,7 +84,9 @@ app.include_router(health_router, prefix="/api")
 # logfire.configure(console=False)
 # logfire.instrument_fastapi(app, excluded_urls=["/task/get"])
 
-def calculate_workers(num_threads_per_core=1):
+ell.init(ELL_STORAGE)
+
+def calculate_workers(num_threads_per_core=2):
     """
     Calculate the number of workers based on the formula:
     number_of_workers = number_of_cores x num_of_threads_per_core + 1

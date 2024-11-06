@@ -1,0 +1,5636 @@
+Chunk ID: runner\shared.py::2
+Filepath: cowboy-lib\api\runner\shared.py
+Content:
+from cowboy_lib.utils import generate_id
+from cowboy_lib.ast.code import Function
+from cowboy_lib.repo.repository import PatchFile
+
+from pydantic import BaseModel, Field, ConfigDict, model_validator
+from typing import List, Optional, Any, Tuple, Dict
+from enum import Enum
+from pathlib import Path
+
+
+class TaskStatus(Enum):
+    PENDING = "PENDING"
+    STARTED = "STARTED"
+    COMPLETE = "COMPLETE"
+    FAILED = "FAILED"
+
+
+class TaskType(str, Enum):
+    SHUTDOWN = "SHUTDOWN"
+    RUN_TEST = "RUN_TEST"
+--------------------------------------------------------------------------------
+Chunk ID: runner\shared.py::3
+Filepath: cowboy-lib\api\runner\shared.py
+Content:
+class TaskResult(BaseModel):
+    coverage: Optional[Dict] = None
+    failed: Optional[Dict] = None
+    exception: Optional[str] = None
+
+    @model_validator(mode="before")
+    def check_coverage_or_exception(cls, values):
+        coverage, failed, exception = (
+            values.get("coverage"),
+            values.get("failed"),
+            values.get("exception"),
+        )
+        if exception and (coverage or failed):
+            raise ValueError(
+                "If 'exception' is specified, 'coverage' and 'failed' must not be specified."
+            )
+        if not exception and not (coverage or failed):
+            raise ValueError(
+                "Either 'coverage' and 'failed' or 'exception' must be specified."
+            )
+        return values
+
+
+class Task(BaseModel):
+    """
+    Task datatype
+    """
+
+    type: TaskType
+    task_id: str = Field(default_factory=lambda: generate_id())
+    result: Optional[TaskResult] = Field(default=None)
+    status: str = Field(default=TaskStatus.PENDING.value)
+    task_args: Optional[Any] = Field(default=None)
+
+
+class FunctionArg(BaseModel):
+    name: str
+    is_meth: bool
+--------------------------------------------------------------------------------
+Chunk ID: runner\shared.py::4
+Filepath: cowboy-lib\api\runner\shared.py
+Content:
+# each classmethod below accepts different signatures which are inconsistent
+# with the class fields of the Pydantic BaseModel, so we had to set the
+# class fields to Any... need better way of expressing this
+class RunTestTaskArgs(BaseModel):
+    repo_name: str
+    patch_file: Optional[Any] = None
+    exclude_tests: List[Tuple[Any, Any]] = Field(default_factory=list)
+    include_tests: List[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_data(
+        cls,
+        repo_name: str,
+        exclude_tests: List[Tuple[Tuple[str, bool], str]] = [],
+        include_tests: List[str] = [],
+        patch_file: PatchFile = None,
+    ):
+        """
+        Used by server
+        """
+        partial = cls(
+            repo_name=repo_name,
+            patch_file=patch_file,
+            exclude_tests=exclude_tests,
+            include_tests=include_tests,
+        )
+
+        if partial.exclude_tests:
+            partial.exclude_tests = [
+                (
+                    FunctionArg(
+                        name=func[0],
+                        is_meth=func[1],
+                    ),
+                    str(path),
+                )
+                for func, path in partial.exclude_tests
+            ]
+
+        return partial
+--------------------------------------------------------------------------------
+Chunk ID: runner\shared.py::5
+Filepath: cowboy-lib\api\runner\shared.py
+Content:
+class RunTestTaskArgs(BaseModel):
+
+    @classmethod
+    def from_json(
+        cls,
+        repo_name: str,
+        patch_file: Dict = {},
+        exclude_tests: List[Tuple[Dict, str]] = [],
+        include_tests: List[str] = [],
+    ):
+        """
+        Used by client
+        """
+        partial = cls(
+            repo_name=repo_name,
+            patch_file=patch_file,
+            exclude_tests=exclude_tests,
+            include_tests=include_tests,
+        )
+
+        if partial.patch_file:
+            partial.patch_file = PatchFile(
+                path=Path(partial.patch_file["path"]),
+                patch=partial.patch_file["patch"],
+            )
+        if partial.exclude_tests:
+            partial.exclude_tests = [
+                (
+                    FunctionArg(
+                        name=func[0],
+                        is_meth=func[1],
+                    ),
+                    Path(path),
+                )
+                for func, path in partial.exclude_tests
+            ]
+
+        return partial
+--------------------------------------------------------------------------------
+Chunk ID: ast\__init__.py::1
+Filepath: cowboy-lib\ast\__init__.py
+Content:
+from .python.ast import PythonAST
+from .code import Class, Decorator, Argument, Function, ASTNode, NodeType
+--------------------------------------------------------------------------------
+Chunk ID: ast\code.py::1
+Filepath: cowboy-lib\ast\code.py
+Content:
+from typing import List, Optional, Tuple, NewType, Union
+from dataclasses import dataclass, field
+from enum import Enum
+
+import ast
+
+
+@dataclass
+class Argument:
+    name: str
+    type: Optional[str]
+
+    def __str__(self):
+        name = self.name
+        type = f"{':' + self.type if self.type else ''}"
+        return name + type
+
+
+class ASTNode:
+    def __init__(
+        self,
+        name: str,
+        range: Tuple[int, int],
+        scope: Optional["ASTNode"],
+        decorators: List["Decorator"],
+        lines: List[str],
+        ast_node: Optional[ast.AST],
+        is_test: bool = False,
+        node_type: Optional["NodeType"] = None,
+    ):
+        # need to turn on mypy for this shit ...
+        if decorators:
+            assert isinstance(decorators[0], Decorator)
+        else:
+            assert isinstance(decorators, list) and len(decorators) == 0
+
+        self._name = name
+        # REFACTOR-AST: create a lang specific AST node class to account for decorators?
+        # ie. PyAST/GolangAST
+        self.decorators = decorators
+        self.range = self._set_range(range)
+        self.lines = [l.rstrip() for l in lines]
+        self.is_test = is_test
+        self.scope = scope
+        self.ast_node = ast_node
+        self.node_type = self.get_node_type()
+
+    def get_node_type(self):
+        return NodeType(self.__class__.__name__)
+
+    def is_ast(self, other_ast: ast.AST) -> bool:
+        """
+        Checks if self matches another ast.AST node
+        """
+        return self.ast_node == other_ast
+
+    def __eq__(self, other: "ASTNode"):
+        return self.name + str(self.range) == other.name + str(other.range)
+
+    def __hash__(self):
+        return sum([ord(c) for c in self.name + str(self.range)])
+
+    def _set_range(self, range) -> Tuple[int, int]:
+        start = self.decorators[0].range[0] if self.decorators else range[0]
+        end = range[1]
+        return (start, end)
+
+    def set_is_test(self, is_test: bool):
+        self.is_test = is_test
+
+    def to_code(self):
+        repr = ""
+        for dec in self.decorators:
+            repr += dec.to_code()
+
+        # newline if we have decorators
+        repr += "\n" if repr else ""
+        repr += "\n".join([l.rstrip() for l in self.lines])
+        return repr
+
+    @property
+    def type(self) -> "NodeType":
+        return NodeType(self.__class__.__name__)
+
+    @property
+    def name(self):
+        raise NotImplementedError
+--------------------------------------------------------------------------------
+Chunk ID: ast\code.py::2
+Filepath: cowboy-lib\ast\code.py
+Content:
+@dataclass
+class Decorator(ASTNode):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+class Class(ASTNode):
+    def __init__(self, *args, **kwargs):
+        self.functions: List[Function] = kwargs.pop("functions", [])
+
+        super().__init__(*args, **kwargs)
+
+    def add_func(self, func: "Function"):
+        self.functions.append(func)
+
+    # def __str__(self):
+    #     funcs_str = "\n".join([f"{func.__str__()}" for func in self.functions])
+    #     return f"Class: {self._name} \n{funcs_str}"
+
+    def __eq__(self, other: "Class"):
+        return self._name == other._name
+
+    # def __repr__(self):
+    #     funcs_str = "\n".join([f"{func}" for func in self.functions])
+    #     return f"Class: {self._name} \n{funcs_str}"
+
+    @property
+    def name(self):
+        return self._name
+--------------------------------------------------------------------------------
+Chunk ID: ast\code.py::3
+Filepath: cowboy-lib\ast\code.py
+Content:
+class Function(ASTNode):
+    def __init__(self, *args, **kwargs):
+        # should replace this with ... a prototype that contains .name property
+        # self.scope: Class = kwargs.pop("scope", [])
+        self.arguments = kwargs.pop("arguments", [])
+
+        super().__init__(*args, **kwargs)
+
+        self.is_test = True if self._name.startswith("test") else False
+
+    def is_meth(self):
+        return bool(self.scope)
+
+    def __str__(self):
+        return f"{self._name}({', '.join([arg.__str__() for arg in self.arguments])})"
+
+    def is_method(self):
+        return self.scope is not None
+
+    def func_name(self):
+        return self._name.split(".")[-1]
+
+    @property
+    def name(self):
+        scope_prefix = f"{self.scope.name}." if self.scope else ""
+        return f"{scope_prefix}{self._name}"
+
+
+class NodeType(Enum):
+    Function = Function.__name__
+    Class = Class.__name__
+    Decorator = Decorator.__name__
+--------------------------------------------------------------------------------
+Chunk ID: python\ast.py::1
+Filepath: cowboy-lib\ast\python\ast.py
+Content:
+from typing import List, Tuple
+import ast
+
+from ..code import Function, Class, Decorator, Argument, ASTNode, NodeType
+
+from logging import getLogger
+
+logger = getLogger("test_results")
+AST_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+# REFACTOR-AST: this whole function needs to be replaced by the Bloop/tree-sitter
+# implementation
+class PythonAST:
+    def __init__(self, code: str):
+        assert isinstance(code, str)
+
+        self.classes: List[ASTNode] = []
+        self.functions: List[ASTNode] = []
+
+        self._code = code
+
+    # Thank you GPT!
+    def _parse_decorators(self, node):
+        decorators = []
+        for d in node.decorator_list:
+            # Initialize d_name as None
+            d_name = None
+
+            # Handle direct attribute access or function call with attribute access
+            if isinstance(d, ast.Attribute) or (
+                isinstance(d, ast.Call) and isinstance(d.func, ast.Attribute)
+            ):
+                d_name_parts = []
+
+                # If it's a Call, we start with d.func to get the Attribute node
+                current_node = d.func if isinstance(d, ast.Call) else d
+
+                # Traverse the Attribute nodes
+                while isinstance(current_node, ast.Attribute):
+                    d_name_parts.append(current_node.attr)
+                    current_node = current_node.value
+
+                # The loop ends at an ast.Name node, which gives us the root name
+                if isinstance(current_node, ast.Name):
+                    d_name_parts.append(current_node.id)
+
+                # Combine the parts to form the full decorator name
+                d_name = ".".join(reversed(d_name_parts))
+
+            elif isinstance(d, ast.Name):
+                d_name = d.id
+
+            # Append the decorator name to the list if it was found
+            if d_name:
+                range = self._get_range(d)
+                decorators.append(
+                    Decorator(
+                        d_name,
+                        # bring range to 0-based indexing
+                        (range[0], getattr(d, "end_lineno", range[0]) - 1),
+                        None,
+                        [],
+                        self._get_lines(*range),
+                        d,
+                    )
+                )
+
+        return decorators
+--------------------------------------------------------------------------------
+Chunk ID: python\ast.py::2
+Filepath: cowboy-lib\ast\python\ast.py
+Content:
+class PythonAST:
+
+    def _parse_classes(self, child: ast.AST, parent: ast.AST):
+        classes = []
+        if isinstance(child, ast.ClassDef):
+            range = self._get_range(child)
+            decorators = self._parse_decorators(child)
+
+            scope = None
+            if isinstance(parent, AST_FUNCTIONS) and isinstance(parent, ast.ClassDef):
+                scope = self.find_node(parent)
+
+            classes.append(
+                Class(
+                    child.name, range, scope, decorators, self._get_lines(*range), child
+                )
+            )
+        return classes
+--------------------------------------------------------------------------------
+Chunk ID: python\ast.py::3
+Filepath: cowboy-lib\ast\python\ast.py
+Content:
+class PythonAST:
+
+    def _parse_functions(self, child: ast.AST, parent: ast.AST):
+        functions = []
+        if isinstance(child, AST_FUNCTIONS):
+            func_name = child.name
+            child_range = self._get_range(child)
+            decorators = self._parse_decorators(child)
+
+            args = [
+                Argument(arg.arg, getattr(arg.annotation, "id", None))
+                for arg in child.args.args
+            ]
+
+            # rethink this loop when not hungover...
+            # assign funcs and classes as parents
+            scope = None
+            if isinstance(parent, AST_FUNCTIONS) or isinstance(parent, ast.ClassDef):
+                scope = self.find_node(parent)
+
+            func = Function(
+                func_name,
+                child_range,
+                scope,
+                decorators,
+                self._get_lines(*child_range),
+                child,
+                arguments=args,
+            )
+
+            # if a parent class contains a test function, then parent class is a test class
+            if scope and isinstance(parent, ast.ClassDef):
+                scope.add_func(func)
+                if func.is_test:
+                    scope.set_is_test(True)
+
+            functions.append(func)
+
+        return functions
+--------------------------------------------------------------------------------
+Chunk ID: python\ast.py::4
+Filepath: cowboy-lib\ast\python\ast.py
+Content:
+class PythonAST:
+
+    def find_node(self, node: ast.AST) -> ASTNode:
+        return next(filter(lambda x: x.is_ast(node), self.classes + self.functions))
+
+    def _get_range(self, node: ast.AST):
+        """AST nodes are 1-indexed"""
+        return (node.lineno - 1, node.end_lineno - 1)
+
+    def _get_lines(self, start: int, end: int) -> List[str]:
+        return self._code.split("\n")[start : end + 1]
+--------------------------------------------------------------------------------
+Chunk ID: python\ast.py::5
+Filepath: cowboy-lib\ast\python\ast.py
+Content:
+class PythonAST:
+
+    def parse(self) -> Tuple[List[Function], List[Class]]:
+        def set_parents(node, parent=None):
+            for child in ast.iter_child_nodes(node):
+                child.parent = node
+                set_parents(child, node)
+
+        def parse_ast(node, parent=None):
+            # classes guranteed to be parsed before their child methods right?
+            for child in ast.iter_child_nodes(node):
+                self.classes.extend(self._parse_classes(child, parent))
+                self.functions.extend(self._parse_functions(child, parent))
+
+                parse_ast(child, parent=child)
+
+        tree = ast.parse(self._code)
+
+        set_parents(tree)
+        parse_ast(tree)
+
+        return self.functions, self.classes
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::1
+Filepath: cowboy-lib\coverage.py
+Content:
+from typing import NamedTuple, Optional, List, Dict, Iterable, Tuple
+from pathlib import Path
+from itertools import product
+from typing import List, Tuple, NewType, Dict
+import re
+
+
+from logging import getLogger
+
+logger = getLogger("test_results")
+
+
+class CoverageException(Exception):
+    pass
+
+
+class CoverageFailure(Exception):
+    pass
+
+
+class CoverageSubtractionError(Exception):
+    def __init__(self):
+        super().__init__("Negative covered but contributed covered_lines")
+
+
+def get_full_path(base_path: Path, filename: str):
+    """
+    Join filename, which is relative to the source repo root to the base repo path, while
+    also converting it to use the same Path format (WindowsPath or PosixPath)
+    """
+    filename = filename.replace("\\", "/")
+    return Path(base_path / filename)
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::2
+Filepath: cowboy-lib\coverage.py
+Content:
+class Coverage:
+    def __init__(
+        self,
+        filename: str,
+        covered_lines: List[int],
+        missing_lines: List[int],
+    ):
+        self.all_lines = covered_lines + missing_lines
+        assert len(self.all_lines) == len(set(self.all_lines))
+
+        # self.cov: int = cov
+        self.covered_lines: List[int] = covered_lines
+        self.missing_lines: List[int] = missing_lines
+
+        self.stmts: int = len(self.all_lines)
+        self.misses: int = len(self.missing_lines)
+        self.covered: int = len(self.covered_lines)
+
+        if covered_lines and missing_lines:
+            for line in covered_lines:
+                if line in missing_lines:
+                    raise CoverageException(
+                        f"Line {line} is both covered and missing in {filename}"
+                    )
+
+        self.filename = self.convert_path(filename)
+
+        # defer initialization
+        self._covered_lines_dict: Dict[int, str] = {}
+        self._miss_lines_dict: Dict[int, str] = {}
+
+    def convert_path(self, filename: str):
+        """
+        Converts the path to a Unix-style path
+        """
+        return filename.replace("\\", "/")
+
+    @property
+    def cov(self) -> float:
+        return self.covered / self.stmts
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::3
+Filepath: cowboy-lib\coverage.py
+Content:
+class Coverage:
+
+    def __eq__(self, other: Optional["Coverage"]):
+        # None comparison
+        if not other:
+            if (
+                self.filename == None
+                and self.stmts == None
+                and self.misses == None
+                and self.covered == None
+                and self.cov == None
+            ):
+                return True
+            return False
+
+        elif isinstance(other, Coverage):
+            if (
+                self.filename == other.filename
+                and self.stmts == other.stmts
+                and self.misses == other.misses
+                and self.covered == other.covered
+                and self.cov == other.cov
+            ):
+                return True
+            return False
+
+        else:
+            raise CoverageException("Comparisons only allowed for Coverage or None")
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::4
+Filepath: cowboy-lib\coverage.py
+Content:
+class Coverage:
+
+    def __sub__(self, other: "Coverage"):
+        try:
+            assert isinstance(other, Coverage)
+            assert self.filename == other.filename
+            # may be from another commit
+            assert self.stmts == other.stmts
+        except AssertionError as e:
+            raise CoverageException(f"Assertion failed: {e}")
+
+        # NOTE:
+        # use set sub here to find only the overlapping missing lines
+        # for eg.
+        # a_miss = [1,2,3]
+        # b_miss = [1,2,4]
+        # if we just sub the abs len of missing lines, we would get:
+        # a_miss - b_miss = []
+        # but instead we want:
+        # a_miss - b_miss = [3]
+        # Because we want to if b improved the coverage of a
+        added_lines = set(self.covered_lines) - set(other.covered_lines)
+        missing_lines = set(self.all_lines) - added_lines
+
+        cov = Coverage(
+            self.filename,
+            covered_lines=list(added_lines),
+            missing_lines=list(missing_lines),
+        )
+        # need to do this to support negative coverage
+        cov.covered = self.covered - other.covered
+        if cov.covered < 0 and cov.covered_lines:
+            # theoretically shud not happen, except in case
+            # where a covered test causes another test to fail
+            raise CoverageSubtractionError
+
+        return cov
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::5
+Filepath: cowboy-lib\coverage.py
+Content:
+class Coverage:
+
+    def __add__(self, other: "Coverage"):
+        """
+        Unlike sub, we can only add the covered from other if it does not overlap
+        with a pre-exsiting line
+        """
+        try:
+            assert isinstance(other, Coverage)
+            assert self.filename == other.filename
+            # may be from another commit
+            assert self.stmts == other.stmts
+        except AssertionError as e:
+            raise CoverageException(f"Assertion failed: {e}")
+
+        added_lines = set(other.covered_lines) - set(self.covered_lines)
+        missing_lines = set(self.all_lines) - set(self.covered_lines) - added_lines
+
+        return Coverage(
+            self.filename,
+            covered_lines=list(set(self.covered_lines).union(added_lines)),
+            missing_lines=list(missing_lines),
+        )
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::6
+Filepath: cowboy-lib\coverage.py
+Content:
+class Coverage:
+
+    @classmethod
+    def diff_cov(cls, a: "Coverage", b: "Coverage", keep_line: int) -> "Coverage":
+        """
+        Gets the diff between two coverages that also includes covered_lines
+        """
+        assert keep_line in [1, 2]
+
+        cov_diff = a - b
+
+        sub1 = set(a.covered_lines) if keep_line == 1 else set(b.covered_lines)
+        sub2 = set(b.covered_lines) if keep_line == 1 else set(a.covered_lines)
+        if len(sub1) < len(sub2):
+            logger.warn("a < b in the subtraction of covered lines, is this expected?")
+
+        covered_lines = sub1 - sub2
+        cov_diff.covered_lines = covered_lines
+        return cov_diff
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::7
+Filepath: cowboy-lib\coverage.py
+Content:
+class Coverage:
+
+    def __str__(self):
+
+        return f"Coverage: {self.filename}, stmts: {self.stmts}, misses: {self.misses}, covered: {self.covered}"
+
+    def read_line_contents(self, base_path: Path):
+        """
+        Lazily reads the line contents of the file
+        """
+        fp = get_full_path(base_path, self.filename)
+
+        with open(fp, "r", encoding="utf-8") as file:
+            # print("Covered lines: ", self.covered_lines)
+            all_lines = ""
+            for i, line in enumerate(file.read().split("\n"), start=1):
+                all_lines += f"{i}. {line}" + "\n"
+                if i in self.covered_lines:
+                    self._covered_lines_dict[i] = line
+                elif i in self.missing_lines:
+                    self._miss_lines_dict[i] = line
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::8
+Filepath: cowboy-lib\coverage.py
+Content:
+class Coverage:
+
+    def print_lines(self, line_type: str = "covered"):
+        lines_dict = (
+            self._covered_lines_dict
+            if line_type == "covered"
+            else self._miss_lines_dict
+        )
+
+        repr = ""
+        repr += f"{line_type} lines in :: {self.filename}\n"
+        for k, v in lines_dict.items():
+            repr += f"{k}: {v}\n"
+
+        return repr
+
+    def get_contiguous_lines(self) -> Iterable[List[Tuple[int, str]]]:
+        """
+        Returns a list of contiguous line groups
+        """
+        from itertools import groupby
+
+        for k, g in groupby(
+            enumerate(self._covered_lines_dict.items()), lambda ix: ix[1][0] - ix[0]
+        ):
+            yield [x for _, x in g]
+
+    def serialize(self):
+        return {
+            "filename": self.filename,
+            "covered_lines": self.covered_lines,
+            "missing_lines": self.missing_lines,
+        }
+
+    @classmethod
+    def deserialize(self, data) -> "Coverage":
+        return Coverage(data["filename"], data["covered_lines"], data["missing_lines"])
+
+
+class NoCoverageDB(Exception):
+    pass
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::9
+Filepath: cowboy-lib\coverage.py
+Content:
+class TestCoverage:
+    """
+    Coverage for a list of files from a commit
+    """
+
+    def __init__(
+        self,
+        cov_list: List[Coverage],
+        isdiff: bool = False,
+    ):
+        self.isdiff = isdiff
+        self.filenames = [cov.filename for cov in cov_list]
+
+        self._cov_list = cov_list
+
+        total_misses = 0
+        total_stmts = 0
+        total_covered = 0
+        for coverage in cov_list:
+            total_misses += coverage.misses
+            total_stmts += coverage.stmts
+            total_covered += coverage.covered
+
+        self.total_cov = Coverage("TOTAL", [], [])
+        self.total_cov.misses = total_misses
+        self.total_cov.stmts = total_stmts
+        self.total_cov.covered = total_covered
+
+    @property
+    def cov_list(self):
+        return [cov for cov in self._cov_list if cov.filename != "TOTAL"]
+
+    # REFACTOR-RUNNER: re-implement as a mixin-method on TestCoverage
+    @classmethod
+    def from_coverage_file(cls, coverage_json: dict) -> "TestCoverage":
+        cov_list = []
+
+        if not coverage_json:
+            return cls(cov_list)
+
+        # add exception catcher here for missing json
+        for filename, data in coverage_json["files"].items():
+            cov_list.append(
+                Coverage(
+                    filename,
+                    data["executed_lines"],
+                    data["missing_lines"],
+                )
+            )
+
+        return cls(cov_list)
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::10
+Filepath: cowboy-lib\coverage.py
+Content:
+class TestCoverage:
+
+    @classmethod
+    def diff_cov(
+        cls, a: "TestCoverage", b: "TestCoverage", keep_line: int
+    ) -> "TestCoverage":
+        """
+        Used for subtracting two TestCoverages when we also want to diff their covered_lines
+        keep_line parameter is introduced to control the order of the set subtraction
+        """
+        if keep_line not in [1, 2]:
+            raise ValueError("keep_line must be 1 or 2")
+
+        cov_list = []
+        for a, b in zip(a.cov_list, b.cov_list):
+            cov_diff = Coverage.diff_cov(a, b, keep_line)
+            cov_list.append(cov_diff)
+
+        return cls(cov_list, isdiff=True)
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::11
+Filepath: cowboy-lib\coverage.py
+Content:
+class TestCoverage:
+
+    def get_file_cov(self, filename: Path, base_path: Path) -> Optional[Coverage]:
+        """
+        Gets a file coverage by filename. Base_path required because coverage file paths are relative
+        to the repo_path as root
+        """
+        try:
+            return next(
+                filter(
+                    lambda x: (
+                        x.filename
+                        if not base_path
+                        else base_path / x.filename == filename
+                    ),
+                    self.cov_list,
+                )
+            )
+        except StopIteration:
+            return None
+
+    def __bool__(self):
+        return self.cov_list != []
+
+    def __iter__(self):
+        return iter([cov for cov in self.cov_list if cov.filename != "TOTAL"])
+
+    def is_zero(self):
+        return self.total_cov.misses == 0
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::12
+Filepath: cowboy-lib\coverage.py
+Content:
+class TestCoverage:
+
+    def __sub__(self, other: "TestCoverage") -> "TestCoverage":
+        """
+        Take the difference of every matching file coverage plus our own coverage
+        that is not matched by other and that is nonzero
+        """
+        a, b = self.cov_list, other.cov_list
+
+        merged_list = []
+        a_only_cov = [a for a in a if a.filename not in [b.filename for b in b]]
+        intersect_fp = [i.filename for i in a if i.filename in [b.filename for b in b]]
+
+        for cov_a, cov_b in product(a, b):
+            if cov_a.filename == cov_b.filename and cov_a.filename in intersect_fp:
+                cov_diff = cov_a - cov_b
+                if cov_diff.covered != 0:
+                    merged_list.append(cov_diff)
+
+        return TestCoverage(merged_list + a_only_cov, isdiff=True)
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::13
+Filepath: cowboy-lib\coverage.py
+Content:
+class TestCoverage:
+
+    def __add__(self, other: "TestCoverage") -> "TestCoverage":
+        """
+        Take add to our existing coverage only those lines that are not covered by ours
+        """
+        a, b = self.cov_list, other.cov_list
+
+        merged_list = []
+        a_only_cov = [a for a in a if a.filename not in [b.filename for b in b]]
+        b_only_cov = [b for b in b if b.filename not in [a.filename for a in a]]
+        intersect_fp = [i.filename for i in a if i.filename in [b.filename for b in b]]
+
+        for cov_a, cov_b in product(a, b):
+            if cov_a.filename == cov_b.filename and cov_a.filename in intersect_fp:
+                merged_list.append(cov_a + cov_b)
+
+        return TestCoverage(a_only_cov + merged_list + b_only_cov, isdiff=True)
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::14
+Filepath: cowboy-lib\coverage.py
+Content:
+class TestCoverage:
+
+    def covered_lines(self) -> List[Tuple[str, List[int]]]:
+        cov_lines = [(cov.filename, cov.covered_lines) for cov in self.cov_list]
+        return cov_lines
+
+    def missing_lines(self) -> List[Tuple[str, List[int]]]:
+        cov_lines = [(cov.filename, cov.missing_lines) for cov in self.cov_list]
+        return cov_lines
+
+    def cov_list_str(self):
+        return "\n".join([str(cov) for cov in self.cov_list])
+
+    def __repr__(self):
+        return f"TestCoverage: {self.total_cov}, IsDiff:{self.isdiff}"
+
+    def serialize(self):
+        return {
+            "cov_list": [cov.serialize() for cov in self.cov_list],
+            "isdiff": self.isdiff,
+        }
+
+    @classmethod
+    def deserialize(self, data: List[List]) -> "TestCoverage":
+        return TestCoverage(
+            [Coverage(**lines) for lines in data["cov_list"]],
+            isdiff=data["isdiff"],
+        )
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::15
+Filepath: cowboy-lib\coverage.py
+Content:
+TestError = NewType("TestError", str)
+
+
+class CoverageResult:
+    """
+    Represents the result of a coverage run
+    """
+
+    def __init__(self, stdout: str, stderr: str, coverage_json: Dict):
+        self.coverage: TestCoverage = TestCoverage.from_coverage_file(coverage_json)
+        # self.coverage2 = TestCoverage.from_coverage_report(stdout)
+
+        self.total_tests = self._parse_total_tests(stdout)
+        self.failed, self.total_failed = self._parse_failed_tests(stdout)
+        self.stderr = stderr
+        # generated functions
+        self.gen_funcs = []
+
+    def to_dict(self) -> Dict:
+        return {"coverage": self.coverage.serialize(), "failed": self.failed}
+
+    def _parse_total_tests(self, stdout: str):
+        """
+        Parse total number of tests from pytest output
+        """
+        pattern = r"collected\s+(\d+)\s+items"
+        match = re.search(pattern, stdout)
+        if match:
+            return int(match.group(1))
+        return 0
+
+    # TODO: parse pytest errors as well as failure
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\coverage.py::16
+Filepath: cowboy-lib\coverage.py
+Content:
+class CoverageResult:
+    def _parse_failed_tests(
+        self, stdout: str
+    ) -> Tuple[List[Tuple[str, TestError]], int]:
+        """
+        Parse every failed test from pytest output
+        """
+        pattern = r"FAILED\s+(?:\S+?)::(\S+?)\s+-"
+        failed_modules = re.findall(pattern, stdout)
+
+        # NOTE: currently treating parameterized tests as single tests
+        total_failed = set()
+
+        # parse test_module names
+        for failed_test in failed_modules:
+            # logger.info(f"Failed tests: {failed_test}")
+
+            if "[" in failed_test:
+                failed_test = failed_test.split("[")[0]
+
+            if "::" in failed_test:
+                test_module = failed_test.split("::")[0]
+                failed_test = failed_test.split("::")[1]
+                total_failed.add(f"{test_module}.{failed_test}")
+
+            total_failed.add(failed_test)
+
+        logger.info(f"Total failed tests: {len(failed_modules)}")
+
+        # parse error info
+        pattern = r"_{2,}(\s+\b[\w\.]+)(?:\[\S+\])?\s+_{2,}\n(.*?)\n[_|-]"
+        test_info = re.findall(pattern, stdout, re.DOTALL)
+
+        return {f.strip(): error.rstrip() for f, error in test_info}, len(total_failed)
+
+    def get_failed(self, test_name):
+        """
+        Did test_name fail in this coverage run?
+        """
+        return self.failed.get(test_name, None)
+
+    def __bool__(self):
+        return bool(self.coverage)
+
+    def get_coverage(self):
+        return self.coverage
+
+    # actually parse out the stderr
+    def get_error(self):
+        if not self.stderr:
+            raise Exception("No error found")
+        return self.stderr
+--------------------------------------------------------------------------------
+Chunk ID: llm\__init__.py::1
+Filepath: cowboy-lib\llm\__init__.py
+Content:
+from .invoke_llm import invoke_llm_async
+--------------------------------------------------------------------------------
+Chunk ID: llm\invoke_llm.py::1
+Filepath: cowboy-lib\llm\invoke_llm.py
+Content:
+from typing import List, Tuple
+import asyncio
+
+from .models import BaseModel
+
+from .utils import (
+    # TurboModel,
+    extract_python_code,
+    extract_yaml_code,
+    extract_json_code,
+)
+
+
+async def invoke_llm_async(
+    prompt: str,
+    model: BaseModel,
+    n_times: int,
+    output: str = "str",
+) -> List[str]:
+    output = []
+
+    coroutines = []
+    for _ in range(n_times):
+        coroutines.append(model.query(prompt))
+
+    llm_outputs = await asyncio.gather(*coroutines)
+
+    # should add the other methods here
+    for out in llm_outputs:
+        if output == "yaml":
+            out = extract_yaml_code(out)
+        elif output == "json":
+            out = extract_json_code(out)
+        elif output == "code":
+            out = extract_python_code(out)
+
+    return llm_outputs
+--------------------------------------------------------------------------------
+Chunk ID: llm\models.py::1
+Filepath: cowboy-lib\llm\models.py
+Content:
+import logging
+
+# from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
+from dataclasses import dataclass, fields
+from openai import BadRequestError, OpenAI, AzureOpenAI
+from simple_parsing.helpers import FrozenSerializable, Serializable
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+    retry_if_not_exception_type,
+)
+
+# from typing import Optional
+
+from openai import AsyncOpenAI
+
+logger = logging.getLogger("test_results")
+
+
+@dataclass
+class ModelArguments(Serializable):
+    model_name: str
+    api_key: str
+    per_instance_cost_limit: float = 0.0
+    total_cost_limit: float = 0.0
+    temperature: float = 1.0
+    top_p: float = 1.0
+    replay_path: str = None
+    host_url: str = "localhost:11434"
+--------------------------------------------------------------------------------
+Chunk ID: llm\models.py::2
+Filepath: cowboy-lib\llm\models.py
+Content:
+@dataclass
+class APIStats(Serializable):
+    total_cost: float = 0
+    instance_cost: float = 0
+    tokens_sent: int = 0
+    tokens_received: int = 0
+    api_calls: int = 0
+
+    def __add__(self, other):
+        if not isinstance(other, APIStats):
+            raise TypeError("Can only add APIStats with APIStats")
+
+        return APIStats(
+            **{
+                field.name: getattr(self, field.name) + getattr(other, field.name)
+                for field in fields(self)
+            }
+        )
+
+    def replace(self, other):
+        if not isinstance(other, APIStats):
+            raise TypeError("Can only replace APIStats with APIStats")
+
+        return APIStats(
+            **{field.name: getattr(other, field.name) for field in fields(self)}
+        )
+
+
+class ContextWindowExceededError(Exception):
+    pass
+
+
+class CostLimitExceededError(Exception):
+    pass
+--------------------------------------------------------------------------------
+Chunk ID: llm\models.py::3
+Filepath: cowboy-lib\llm\models.py
+Content:
+class BaseModel:
+    MODELS = {}
+    SHORTCUTS = {}
+
+    def __init__(self, args: ModelArguments):
+        self.args = args
+        self.model_metadata = {}
+        self.stats = APIStats()
+
+        # Map `model_name` to API-compatible name `api_model`
+        self.api_model = (
+            self.SHORTCUTS[self.args.model_name]
+            if self.args.model_name in self.SHORTCUTS
+            else self.args.model_name
+        )
+
+        # Map model name to metadata (cost, context info)
+        MODELS = {
+            **{dest: self.MODELS[src] for dest, src in self.SHORTCUTS.items()},
+            **self.MODELS,
+        }
+        if args.model_name in MODELS:
+            self.model_metadata = MODELS[args.model_name]
+        else:
+            raise ValueError(
+                f"Unregistered model ({args.model_name}). Add model name to MODELS metadata to {self.__class__}"
+            )
+
+    def reset_stats(self, other: APIStats = None):
+        if other is None:
+            self.stats = APIStats(total_cost=self.stats.total_cost)
+            logger.info("Resetting model stats")
+        else:
+            self.stats = other
+--------------------------------------------------------------------------------
+Chunk ID: llm\models.py::4
+Filepath: cowboy-lib\llm\models.py
+Content:
+class BaseModel:
+
+    def update_stats(self, input_tokens, output_tokens):
+        """
+        Calculates the cost of a response from the openai API.
+
+        Args:
+        input_tokens (int): The number of tokens in the prompt.
+        output_tokens (int): The number of tokens in the response.
+
+        Returns:
+        float: The cost of the response.
+        """
+        # Calculate cost and update cost related fields
+        cost = (
+            self.model_metadata["cost_per_input_token"] * input_tokens
+            + self.model_metadata["cost_per_output_token"] * output_tokens
+        )
+        self.stats.total_cost += cost
+        self.stats.instance_cost += cost
+        self.stats.tokens_sent += input_tokens
+        self.stats.tokens_received += output_tokens
+        self.stats.api_calls += 1
+
+        # Log updated cost values to std. out.
+        logger.info(
+            f"input_tokens={input_tokens:_}, "
+            f"output_tokens={output_tokens:_}, "
+            f"instance_cost={self.stats.instance_cost:.2f}, "
+            f"cost={cost:.2f}"
+        )
+        logger.info(
+            f"total_tokens_sent={self.stats.tokens_sent:_}, "
+            f"total_tokens_received={self.stats.tokens_received:_}, "
+            f"total_cost={self.stats.total_cost:.2f}, "
+            f"total_api_calls={self.stats.api_calls:_}"
+        )
+
+        # Check whether total cost or instance cost limits have been exceeded
+        # if (
+        #     self.args.total_cost_limit > 0
+        #     and self.stats.total_cost >= self.args.total_cost_limit
+        # ):
+        #     logger.warning(
+        #         f"Cost {self.stats.total_cost:.2f} exceeds limit {self.args.total_cost_limit:.2f}"
+        #     )
+        #     raise CostLimitExceededError("Total cost limit exceeded")
+
+        # if (
+        #     self.args.per_instance_cost_limit > 0
+        #     and self.stats.instance_cost >= self.args.per_instance_cost_limit
+        # ):
+        #     logger.warning(
+        #         f"Cost {self.stats.instance_cost:.2f} exceeds limit {self.args.per_instance_cost_limit:.2f}"
+        #     )
+        #     raise CostLimitExceededError("Instance cost limit exceeded")
+        return cost
+
+    async def query(self, prompt: str) -> str:
+        raise NotImplementedError("Use a subclass of BaseModel")
+--------------------------------------------------------------------------------
+Chunk ID: llm\models.py::5
+Filepath: cowboy-lib\llm\models.py
+Content:
+class OpenAIModel(BaseModel):
+    MODELS = {
+        "gpt-3.5-turbo-0125": {
+            "max_context": 16_385,
+            "cost_per_input_token": 5e-07,
+            "cost_per_output_token": 1.5e-06,
+        },
+        "gpt-3.5-turbo-1106": {
+            "max_context": 16_385,
+            "cost_per_input_token": 1.5e-06,
+            "cost_per_output_token": 2e-06,
+        },
+        "gpt-3.5-turbo-16k-0613": {
+            "max_context": 16_385,
+            "cost_per_input_token": 1.5e-06,
+            "cost_per_output_token": 2e-06,
+        },
+        "gpt-4-32k-0613": {
+            "max_context": 32_768,
+            "cost_per_input_token": 6e-05,
+            "cost_per_output_token": 0.00012,
+        },
+        "gpt-4-0613": {
+            "max_context": 8_192,
+            "cost_per_input_token": 3e-05,
+            "cost_per_output_token": 6e-05,
+        },
+        "gpt-4-1106-preview": {
+            "max_context": 128_000,
+            "cost_per_input_token": 1e-05,
+            "cost_per_output_token": 3e-05,
+        },
+        "gpt-4-0125-preview": {
+            "max_context": 128_000,
+            "cost_per_input_token": 1e-05,
+            "cost_per_output_token": 3e-05,
+        },
+        # TODO: correct this
+        "deepseek-chat": {
+            "max_context": 128_000,
+            "cost_per_input_token": 1e-05,
+            "cost_per_output_token": 3e-05,
+        },
+    }
+
+    SHORTCUTS = {
+        "gpt3": "gpt-3.5-turbo-1106",
+        "gpt3-legacy": "gpt-3.5-turbo-16k-0613",
+        "gpt4": "gpt-4-1106-preview",
+        "gpt4-legacy": "gpt-4-0613",
+        "gpt4-0125": "gpt-4-0125-preview",
+        "gpt3-0125": "gpt-3.5-turbo-0125",
+        # deepseek, same API
+        "deepseek-chat": "deepseek-chat",
+    }
+
+    def __init__(self, args: ModelArguments):
+
+        super().__init__(args)
+
+        self.client = AsyncOpenAI(api_key=args.api_key)
+        # deepseek specific settings
+        if args.model_name == "deepseek-chat":
+            print(args.api_key)
+            print("Setting deepseek specific settings .....")
+            self.client.base_url = "https://api.deepseek.com"
+            # https://platform.deepseek.com/api-docs/#the-temperature-parameter
+            self.args.temperature = 0.0
+--------------------------------------------------------------------------------
+Chunk ID: llm\models.py::6
+Filepath: cowboy-lib\llm\models.py
+Content:
+class OpenAIModel(BaseModel):
+
+    def history_to_messages(
+        self, history: list[dict[str, str]], is_demonstration: bool = False
+    ) -> list[dict[str, str]]:
+        """
+        Create `messages` by filtering out all keys except for role/content per `history` turn
+        """
+        # Remove system messages if it is a demonstration
+        if is_demonstration:
+            history = [entry for entry in history if entry["role"] != "system"]
+            return "\n".join([entry["content"] for entry in history])
+        # Return history components with just role, content fields
+        return [
+            {k: v for k, v in entry.items() if k in ["role", "content"]}
+            for entry in history
+        ]
+--------------------------------------------------------------------------------
+Chunk ID: llm\models.py::7
+Filepath: cowboy-lib\llm\models.py
+Content:
+class OpenAIModel(BaseModel):
+
+    @retry(
+        wait=wait_random_exponential(min=1, max=15),
+        reraise=True,
+        stop=stop_after_attempt(3),
+        retry=retry_if_not_exception_type((CostLimitExceededError, RuntimeError)),
+    )
+    async def query(self, prompt: str) -> str:
+        """
+        Query the OpenAI API with the given `history` and return the response.
+        """
+
+        print("Querying MDOEL ....")
+        try:
+            # Perform OpenAI API call
+            response = await self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}], model=self.api_model
+            )
+
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            self.update_stats(input_tokens, output_tokens)
+            return response.choices[0].message.content
+
+        except BadRequestError as e:
+            raise CostLimitExceededError(
+                f"Context window ({self.model_metadata['max_context']} tokens) exceeded"
+            )
+--------------------------------------------------------------------------------
+Chunk ID: llm\utils.py::1
+Filepath: cowboy-lib\llm\utils.py
+Content:
+import re
+from typing import Tuple, List
+
+from dataclasses import dataclass
+
+
+@dataclass
+class LMModelSpec:
+    model: str
+    cost: float
+    ctxt_window: int
+
+
+def extract_yaml_code(llm_output: str) -> str:
+    try:
+        return re.search(r"```yaml\n(.*)```", llm_output, re.DOTALL).group(1)
+    except AttributeError:
+        return llm_output
+
+
+def extract_python_code(llm_output: str) -> str:
+    try:
+        return re.search(r"```python\n(.*)```", llm_output, re.DOTALL).group(1)
+    except AttributeError:
+        return llm_output
+
+
+def extract_json_code(llm_output: str) -> str:
+    try:
+        return re.search(r"```json\n(.*)```", llm_output, re.DOTALL).group(1)
+    except AttributeError:
+        return llm_output
+
+
+def extract_test_functions(llm_output: str) -> List[str]:
+    PYTHON_FUN_DEF = r"\+?\s*(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z_0-9]*)\s*\("
+
+    return re.findall(PYTHON_FUN_DEF, llm_output)
+--------------------------------------------------------------------------------
+Chunk ID: repo\__init__.py::1
+Filepath: cowboy-lib\repo\__init__.py
+Content:
+from .repository import (
+    GitRepo,
+    ResetLocalCommitContext,
+    PatchFile,
+    PatchFileContext,
+    PatchApplyExcepion,
+)
+from .source_repo import SourceRepo
+--------------------------------------------------------------------------------
+Chunk ID: repo\diff.py::1
+Filepath: cowboy-lib\repo\diff.py
+Content:
+from cowboy_lib.utils import find_substring
+
+from typing import List, Tuple, Optional, NewType, NamedTuple
+from pathlib import Path
+import re
+from enum import Enum
+
+SHA = NewType("SHA", str)
+
+
+class NoTestCtxtException(Exception):
+    pass
+
+
+class HunkChunk:
+    """
+    A hunk in a diff
+    """
+
+    def __init__(self, body: str):
+        self.body = body
+
+        lines = self.body.split("\n")
+        o_start, o_end, n_start, n_end = self._parse_hunk_header(lines[0])
+        self.old_range = (o_start, o_end)
+        self.new_range = (n_start, n_end)
+
+        self.plus_blob, self.minus_blob = self._parse_hunk_lines(body)
+        self.new_func = self._new_func_decl()
+
+    def _parse_hunk_lines(self, body: str) -> Tuple[List[str], List[str]]:
+        """
+        Parses a hunk in a diff
+        """
+        plus_lines = []
+        minus_lines = []
+        for line in body.split("\n"):
+            if line.startswith("+"):
+                plus_lines.append(line[1:])
+            elif line.startswith("-"):
+                minus_lines.append(line[1:])
+
+        return "\n".join(plus_lines), "\n".join(minus_lines)
+--------------------------------------------------------------------------------
+Chunk ID: repo\diff.py::2
+Filepath: cowboy-lib\repo\diff.py
+Content:
+class HunkChunk:
+
+    def _parse_hunk_header(self, line: str) -> Optional[Tuple[int, int]]:
+        """
+        Returns the line number of the hunk
+        """
+        pattern = r"@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@"
+
+        # Use regex to find matches in the hunk
+        match = re.search(pattern, line)
+
+        def convert_to_int(matched):
+            if matched:
+                return int(matched)
+            if matched is None:
+                return -1
+
+        if match:
+            old_start, old_count, new_start, new_count = map(
+                convert_to_int, match.groups()
+            )
+            return old_start, old_start + old_count, new_start, new_start + new_count
+
+        return None, None, None, None
+--------------------------------------------------------------------------------
+Chunk ID: repo\diff.py::3
+Filepath: cowboy-lib\repo\diff.py
+Content:
+class HunkChunk:
+
+    def _new_func_decl(self) -> str:
+        """
+        If the hunk declares a new test function, return it
+        """
+        # Hunk can be empty since we are only currently looking at + lines
+        # if len(self.lines) == 0:
+        #     return ""
+
+        PYTHON_FUN_DEF = r"\+?\s*(?:async\s+)?def\s+([a-zA-Z_][a-zA-Z_0-9]*)\s*\("
+        match = re.search(PYTHON_FUN_DEF, self.body)
+        if match:
+            return match.group(1)
+        else:
+            return ""
+
+
+class DiffMode(Enum):
+    MODIFIED = "modified"
+    DELETED = "deleted"
+    NEW = "new"
+    UNKNOWN = "unknown"
+
+
+class DiffAttr(NamedTuple):
+    a_path: str
+    b_path: Optional[str]
+    b_path_fallback: str  # have no idea wtf this thing is
+    mode: DiffMode
+--------------------------------------------------------------------------------
+Chunk ID: repo\diff.py::4
+Filepath: cowboy-lib\repo\diff.py
+Content:
+class Diff:
+    def __init__(self, body: str):
+        self.body = body
+        self.attrs: DiffAttr = self._parse_patch_attributes()
+        self.hunks: List[HunkChunk] = self._parse_hunks()
+        # lets assume this is the most reliable path, because it *should* account
+        # for new/renamed files
+        # remove b/ from begining
+        self.filepath: str = self._find_new_filepath()
+
+    def _find_new_filepath(self) -> str:
+        """
+        Finds the filepath of the b/file
+        """
+        if self.attrs:
+            return self.norm_path(self.attrs.b_path_fallback)
+
+        # look for the +++ line
+        for line in self.body.split("\n"):
+            if line.startswith("+++"):
+                return line[3:].strip()
+
+    def norm_path(self, path: str) -> str:
+        """
+        Removes the "a/" and "b/" prefixes
+        """
+        return path[2:]
+
+    def _parse_hunks(self) -> List[HunkChunk]:
+        hunks = []
+        hunk_starts = find_substring(self.body, "@@")
+
+        try:
+            start = hunk_starts.pop(0)
+        except IndexError:
+            return []
+
+        for end in hunk_starts:
+            hunk_body = self.body[start:end]
+            start = end
+            hunks.append(HunkChunk(hunk_body))
+        hunks.append(HunkChunk(self.body[start:]))  # last hunk
+
+        return hunks
+--------------------------------------------------------------------------------
+Chunk ID: repo\diff.py::5
+Filepath: cowboy-lib\repo\diff.py
+Content:
+class Diff:
+
+    def _parse_patch_attributes(self) -> DiffAttr:
+        """
+        Stolen from GitPython (properly attribute later)
+        """
+        re_header = re.compile(
+            rb"""
+                                    ^diff[ ]--git
+                                        [ ](?P<a_path_fallback>"?[ab]/.+?"?)[ ](?P<b_path_fallback>"?[ab]/.+?"?)\n
+                                    (?:^old[ ]mode[ ](?P<old_mode>\d+)\n
+                                    ^new[ ]mode[ ](?P<new_mode>\d+)(?:\n|$))?
+                                    (?:^similarity[ ]index[ ]\d+%\n
+                                    ^rename[ ]from[ ](?P<rename_from>.*)\n
+                                    ^rename[ ]to[ ](?P<rename_to>.*)(?:\n|$))?
+                                    (?:^new[ ]file[ ]mode[ ](?P<new_file_mode>.+)(?:\n|$))?
+                                    (?:^deleted[ ]file[ ]mode[ ](?P<deleted_file_mode>.+)(?:\n|$))?
+                                    (?:^similarity[ ]index[ ]\d+%\n
+                                    ^copy[ ]from[ ].*\n
+                                    ^copy[ ]to[ ](?P<copied_file_name>.*)(?:\n|$))?
+                                    (?:^index[ ](?P<a_blob_id>[0-9A-Fa-f]+)
+                                        \.\.(?P<b_blob_id>[0-9A-Fa-f]+)[ ]?(?P<b_mode>.+)?(?:\n|$))?
+                                    (?:^---[ ](?P<a_path>[^\t\n\r\f\v]*)[\t\r\f\v]*(?:\n|$))?
+                                    (?:^\+\+\+[ ](?P<b_path>[^\t\n\r\f\v]*)[\t\r\f\v]*(?:\n|$))?
+                                """,
+            re.VERBOSE | re.MULTILINE,
+        )
+
+        diff_attrs = []
+
+        try:
+            # Encode normally, expecting no surrogates
+            encoded_body = bytes(self.body, encoding="utf-8")
+        except UnicodeEncodeError:
+            # Handle the presence of surrogates explicitly
+            encoded_body = bytes(self.body, encoding="utf-8", errors="surrogateescape")
+
+        for _header in re_header.finditer(encoded_body):
+            (
+                a_path_fallback,
+                b_path_fallback,
+                old_mode,
+                new_mode,
+                rename_from,
+                rename_to,
+                new_file_mode,
+                deleted_file_mode,
+                copied_file_name,
+                a_blob_id,
+                b_blob_id,
+                b_mode,
+                a_path,
+                b_path,
+            ) = _header.groups()
+
+            a_path = self.norm_path(a_path) if a_path else b""
+            b_path = self.norm_path(b_path) if b_path else b""
+            file_mode = None
+
+            if new_file_mode:
+                file_mode = DiffMode.NEW
+            elif deleted_file_mode:
+                file_mode = DiffMode.DELETED
+            elif a_path and b_path and a_path == b_path:
+                file_mode = DiffMode.MODIFIED
+            else:
+                file_mode = DiffMode.UNKNOWN
+
+            diff_attrs.append(
+                DiffAttr(
+                    a_path.decode("utf-8"),
+                    b_path.decode("utf-8"),
+                    b_path_fallback.decode("utf-8") if b_path_fallback else "",
+                    file_mode,
+                )
+            )
+        # at this point we've already split the diff into sections
+        return diff_attrs[0] if len(diff_attrs) > 0 else []
+
+    def __str__(self):
+        return self.body
+--------------------------------------------------------------------------------
+Chunk ID: repo\diff.py::6
+Filepath: cowboy-lib\repo\diff.py
+Content:
+class DiffsNotFoundException(Exception):
+    pass
+
+
+# this class needs a rewrite ...
+# TODO: add file mode to each diff chunk
+class CommitDiff:
+    """
+    Class to represent a diff/patch
+
+    FYI patch is a diff that can be applied directly to a filepath
+    """
+
+    # TODO: Too much logic in the __init__ method, move inside methods instead
+    def __init__(
+        self,
+        patch: str,
+        timestamp: str = None,
+    ):
+        if not patch:
+            raise DiffsNotFoundException("Empty patch file argument")
+        try:
+            self.diffs = self._segment_diffs(patch)
+            self.files = [d.filepath for d in self.diffs]
+            self.hunks = [hunk for d in self.diffs for hunk in d.hunks]
+            self._timestamp = timestamp
+        except Exception as e:
+            print(f"Patch parsing error:\n{e}")
+            print(f"Patch:\n{patch}")
+
+    def code_diffs(self):
+        return [diff for diff in self.diffs if self.is_code_file(diff.filepath)]
+
+    def is_code_file(self, filename: str):
+        return "test" not in filename and filename.endswith(".py")
+
+    def is_test_file(self, filename: str):
+        return "test" in filename and filename.endswith(".py")
+
+    @property
+    def timestamp(self) -> str:
+        return getattr(self, "_timestamp", None)
+
+    def find_diff(self, filename: str) -> Optional[Diff]:
+        """
+        Returns a diff corresponding to the filename
+        """
+        for diff in self.diffs:
+            if Path(diff.filepath) == Path(filename):
+                return diff
+        return None
+
+    # @property
+    # def code_diff(self) -> str:
+    #     """
+    #     All diffs pertaining to non-test case files joined together
+    #     """
+    #     diff = "\n".join(
+    #         [diff.body for diff in self.diffs if diff.filepath not in self.test_files]
+    #     )
+    #     if diff:
+    #         return diff + "\n"
+    #     # not sure
+    #     else:
+    #         return ""
+
+    # @property
+    # def tests_diff(self) -> str:
+    #     """
+    #     All diffs pertaining to pytest unit test cases joined together
+    #     """
+    #     diff = "\n".join(
+    #         [diff.body for diff in self.diffs if diff.filepath in self.test_files]
+    #     )
+    #     if diff:
+    #         return diff + "\n"
+    #     else:
+    #         return ""
+
+    # def __str__(self):
+    #     return self.code_diff + "\n" + self.tests_diff
+
+    @property
+    def test_files(self) -> List[str]:
+        return [d.filepath for d in self.diffs if self.is_test_file(d.filepath)]
+
+    @property
+    def code_files(self) -> List[str]:
+        return [d.filepath for d in self.diffs if self.is_code_file(d.filepath)]
+--------------------------------------------------------------------------------
+Chunk ID: repo\diff.py::7
+Filepath: cowboy-lib\repo\diff.py
+Content:
+class CommitDiff:
+
+    def _segment_diffs(self, patch: str) -> List[Diff]:
+        """
+        Segments the patch into diffs, where each diff marks whether a file has been
+        modified, created anew, or deleted
+        """
+
+        diff_sections = []
+        diff_starts = find_substring(patch, "diff --git")
+        if not diff_starts:
+            diff_starts = find_substring(patch, "---")
+
+        try:
+            start = diff_starts.pop(0)
+        except IndexError:
+            raise DiffsNotFoundException("No diff sections found in patch")
+
+        for end in diff_starts:
+            diff_sections.append(patch[start:end])
+            start = end
+        diff_sections.append(patch[start:])
+
+        try:
+            return [Diff(lines) for lines in diff_sections]
+        except Exception as e:
+            import traceback
+
+            print(f"Error parsing diff:\n{e}")
+            traceback.print_exc()
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::1
+Filepath: cowboy-lib\repo\repository.py
+Content:
+from cowboy_lib.utils import gen_random_name
+from cowboy_lib.repo.diff import CommitDiff
+
+import os
+import tempfile
+import hashlib
+from pathlib import Path
+from logging import getLogger
+from git import Repo, GitCommandError
+from dataclasses import dataclass
+import shutil
+import random
+from typing import List, Union, Tuple
+from pydantic import BaseModel
+
+log = getLogger(__name__)
+
+
+class NoRemoteException(Exception):
+    pass
+
+
+class NoMainBranch(Exception):
+    pass
+
+
+def del_file(func, path, exc_info):
+    """
+    Error handler for ``shutil.rmtree``.
+
+    If the error is due to an access error (read only file)
+    it attempts to add write permission and then retries.
+
+    If the error is for another reason it re-raises the error.
+
+    Usage : ``shutil.rmtree(path, onerror=onerror)``
+    """
+    import stat
+
+    # Is the error an access error?
+    if not os.access(path, os.W_OK):
+        os.chmod(path, stat.S_IWUSR)
+        func(path)
+    else:
+        raise
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::2
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class GitRepo:
+    """
+    Used to manage git operations on a git repo
+    """
+
+    def __init__(self, repo_path: Path, remote: str = "origin", main: str = ""):
+        if not repo_path.exists():
+            # test suite may be renamed or deleted
+            raise Exception("GitRepo does not exist: ", repo_path)
+
+        # used for reversing patches
+        self.patched_files = {}
+        self.repo_folder = repo_path
+        self.repo = Repo(repo_path)
+        self.head = self.repo.head
+
+        if main:
+            if not self.branch_exists(main):
+                raise NoMainBranch(main)
+        else:
+            potential = ["master", "main"]
+            for branch in potential:
+                main = branch if self.branch_exists(branch) else ""
+                if main:
+                    break
+            if not main:
+                raise NoMainBranch(main)
+
+        self.main = main
+        try:
+            self.origin = self.repo.remotes.__getattr__(remote)
+        except AttributeError:
+            raise NoRemoteException(remote)
+
+        self.username = self.origin.url.split("/")[-2]
+        self.repo_name = self.origin.url.split("/")[-1]
+
+        self.branch_prefix = "cowboy_"
+
+    @classmethod
+    def clone_repo(cls, clone_dst: Path, url: str) -> Path:
+        """
+        Creates a clone of the repo locally
+        """
+        if not os.path.exists(clone_dst):
+            os.makedirs(clone_dst)  # Ensure the destination folder exists
+
+        Repo.clone_from(url, clone_dst)
+        return cls(clone_dst)
+
+    @classmethod
+    def delete_repo(cls, repo_dst: Path):
+        """
+        Deletes a repo from the db and all its cloned folders
+        """
+        import platform
+
+        if not repo_dst.exists():
+            return
+
+        if platform.system() == "Windows":
+            shutil.rmtree(repo_dst, onerror=del_file)
+        else:
+            shutil.rmtree(repo_dst)
+
+    def reset_to_commit(self, commit_sha, parent=None, head: int = 0):
+        """
+        Resets the index of the repository to a specific commit.
+        """
+        self.repo.git.reset(f"--hard", commit_sha)
+        return f"Successfully reset to commit {commit_sha}"
+
+    def reset_to_commit_head(self, head: int = 0):
+        head = f"HEAD~{str(head)}" if head else ""
+
+        self.repo.git.reset(f"--hard", head)
+        return f"Successfully reset to commit {head}"
+
+    def commit_exists(self, commit_sha: str) -> bool:
+        """
+        Checks if a commit exists in the repo
+        """
+        try:
+            self.repo.commit(commit_sha)
+            return True
+        except Exception:
+            return False
+
+    def get_curr_commit(self):
+        """
+        Returns the current commit sha
+        """
+        return self.head.commit.hexsha
+
+    def get_prev_commit(self, commit_sha):
+        """
+        Returns the previous commit of a given commit sha
+        """
+        return self.repo.commit(commit_sha).parents[0]
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::3
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class GitRepo:
+
+    def apply_patch(self, patch: str) -> None:
+        """
+        Applies a patch from a .diff file to a single file in the repository
+        """
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False) as patch_file:
+            patch_file.write(patch.encode("utf-8") + b"\n")
+            patch_file.flush()
+
+        patch_hash = hashlib.md5(patch.encode("utf-8")).hexdigest()
+        self.repo.git.apply(patch_file.name, whitespace="nowarn")
+        self.patched_files[patch_hash] = patch_file.name
+
+    def reverse_patch(self, patch: str) -> None:
+        """
+        Reverses a patch from a .diff
+        """
+        patch_hash = hashlib.md5(patch.encode()).hexdigest()
+        patch_file = self.patched_files[patch_hash]
+
+        self.repo.git.apply(patch_file, reverse=True)
+        self.patched_files.pop(patch_hash)
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::4
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class GitRepo:
+
+    def branch_exists(self, branch: str):
+        """
+        Checks if a branch exists in the repo
+        """
+        # print(f"Branch: {branch}")
+        # print(f"Branches {[str(br) for br in self.repo.heads]} in {self.repo_folder}")
+        if branch in [str(br) for br in self.repo.heads]:
+            print(
+                branch,
+                [str(br) for br in self.repo.heads],
+                branch in [str(br) for br in self.repo.heads],
+            )
+            return True
+
+        return False
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::5
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class GitRepo:
+
+    def checkout(self, branch_name: str, new=False):
+        """
+        Checks out an existing branch in the repo
+        """
+        if new:
+            branch = self.repo.create_head(branch_name)
+        else:
+            branch = self.repo.heads[branch_name]
+
+        print(f"Checking out: {branch}")
+        branch.checkout()
+
+    def clean_branches(self, branch_prefix: str):
+        """
+        Deletes all branches with a specific prefix
+        """
+        removed = []
+        for branch in self.repo.branches:
+            if branch.name.startswith(branch_prefix):
+                removed.append(branch.name)
+                self.repo.delete_head(branch)
+
+        return removed
+
+    @property
+    def remote_commit(self) -> str:
+        """
+        Gets the sha of latest commit on origin
+        """
+        self.repo.remotes.origin.fetch()
+        remote_sha = self.repo.remotes.origin.refs.__getattr__(self.main).commit.hexsha
+
+        return remote_sha
+
+    @property
+    def local_commit(self) -> str:
+        return self.repo.head.commit.hexsha
+
+    # TODO: move this into sync_repo
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::6
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class GitRepo:
+    def fetch_diffs(self) -> Tuple[CommitDiff, str]:
+        """
+        Diffs the remote with our local repo
+        """
+        try:
+            if self.local_commit == self.remote_commit:
+                print("No updates available.")
+                return None, None
+            else:
+                print("Updates found!")
+
+                # Get the diff between the old commit and the new HEAD
+                diff = self.repo.git.diff(self.local_commit, self.remote_commit)
+                commit_diff = CommitDiff(diff)
+
+                return commit_diff, self.remote_commit
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return None
+
+    def pull(self):
+        self.repo.remotes.origin.pull()
+
+    def add_n_commit(self, files: List[str], msg: str):
+        self.repo.index.add(files)
+        self.repo.index.commit(msg)
+
+    def push(self, branch_name: str = "", force: bool = False):
+        if not branch_name:
+            branch_name = self.main
+        self.origin.push(refspec=f"{branch_name}:{branch_name}", force=True)
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::7
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class GitRepo:
+
+    def checkout_and_push(
+        self,
+        name: str,
+        commit_message: str,
+        files_to_commit: list,
+    ):
+        """
+        Checks out a new branch, commits changes, and pushes to the remote. Returns the
+        URL for the merge request of our new branch against main
+
+        Args:
+        - name: The "suggested" name
+        - commit_message: The commit message to use.
+        - files_to_commit: List of file paths (relative to the repo root) to commit.
+
+        Returns:
+        - None
+        """
+        branch_name = name
+        if self.branch_exists(name):
+            branch_name = self.branch_prefix + name + "_" + gen_random_name()
+
+        # Check out a new branch
+        try:
+            new_branch = self.repo.create_head(branch_name)
+            new_branch.checkout()
+
+            # Add and commit changes
+            self.repo.index.add(files_to_commit)
+            self.repo.index.commit(commit_message)
+            self.push(branch_name=branch_name)
+            origin_url = self.origin.url.replace(".git", "")
+        except Exception as e:
+            log.error(f"Exception in {self.repo_name}: {str(e)}")
+            pass
+        finally:
+            self.checkout(self.main)
+            log.info(f"Resetting to branch {self.main}")
+
+        # url for branch merge request
+        return f"{origin_url}/compare/{self.main}...{self.username}:{self.repo_name}:{branch_name}?expand=1"
+
+
+class PatchApplyExcepion(Exception):
+    pass
+
+
+class IncompatibleCommit(Exception):
+    pass
+
+
+class PatchFile(BaseModel):
+    path: Path
+    patch: str
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::8
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class PatchFileContext:
+    """
+    Context manager for applying and reversing patches
+    """
+
+    def __init__(
+        self, repo: GitRepo, patch: Union[str, PatchFile], revert: bool = True
+    ):
+
+        self.repo = repo
+        self.patch = patch
+        # assume all cases repo and patch are both specified, or neither are
+        self.head_commit = self.repo.head.commit if self.patch else None
+        self.failed_id = random.randint(0, 1000000)
+        # for debugging
+        self.revert = revert
+
+    # def _write_broken_patch(self):
+    #     with open(
+    #         f"log/failed_patches/patch_{self.failed_id}.diff", "w+", encoding="utf-8"
+    #     ) as f:
+    #         f.write(self.patch)
+
+    def __enter__(self):
+        if not self.patch:
+            return
+
+        try:
+            if isinstance(self.patch, PatchFile):
+                with open(self.patch.path, "w", encoding="utf-8") as f:
+                    f.write(self.patch.patch)
+            elif isinstance(self.patch, str):
+                self.repo.apply_patch(self.patch)
+
+        except GitCommandError as e:
+            # self._write_broken_patch()
+            raise PatchApplyExcepion(e)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if not self.patch:
+            return
+
+        try:
+            if isinstance(self.patch, PatchFile) and self.revert:
+                self.repo.reset_to_commit(self.head_commit)
+            elif isinstance(self.patch, str) and self.revert:
+                self.repo.reverse_patch(self.patch)
+
+        except GitCommandError as e:
+            log.info(f"Error reversing patch")
+            raise PatchApplyExcepion(e)
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::9
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class ResetLocalCommitContext:
+    """
+    Resets the repository to a specific commit
+    """
+
+    def __init__(self, repo: GitRepo, fd_reset: bool = False, revert: bool = True):
+        self.repo = repo
+        self.revert = revert
+        self.fd_reset = fd_reset
+
+    def __enter__(self):
+        """
+        Saves the current commit hash when entering the context.
+        """
+        self.original_commit = self.repo.head.commit.hexsha
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Restores the repository to the original commit when exiting the context.
+        """
+        if exc_type is not None:
+            print(f"An exception occurred: {exc_type.__name__}: {exc_value}")
+            # Optionally, log the traceback here
+
+        if self.fd_reset:
+            self._add_files()
+
+        if self.original_commit and self.revert:
+            self.repo.reset_to_commit(self.original_commit)
+
+        # reset the patched files in GitRepo
+        self.repo.patched_files = {}
+
+    def _add_files(self):
+        """
+        Adds all files in repo so that they are tracked by git and can be resetted
+        when the context is exited
+        """
+        self.repo.repo.git.add(".")
+        print(self.repo.repo.git.status())
+
+    def reset_to_commit(self, commit_sha: str, parent=None):
+        """
+        Resets the index of the repository to a specific commit.
+        """
+        return self.repo.reset_to_commit(commit_sha, parent)
+--------------------------------------------------------------------------------
+Chunk ID: repo\repository.py::10
+Filepath: cowboy-lib\repo\repository.py
+Content:
+class ResetRemoteCommitContext:
+    """
+    Pushes a single commit to remote repo and then reverts it in the remote
+    by pushing HEAD~1. Used for unit tests
+    """
+
+    def __init__(self, repo: GitRepo):
+        self.repo = repo
+        self._called = False
+
+    def __enter__(self):
+        """
+        Saves the current commit hash when entering the context.
+        """
+        self.original_commit = self.repo.head.commit.hexsha
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Restores remote repo to HEAD~1
+        """
+        if not self._called:
+            # reset local repo state if we dont end up pushing
+            self.repo.reset_to_commit(self.original_commit)
+            print("Resetting to og state")
+            return
+
+        self.repo.reset_to_commit_head(head=1)
+        self.repo.push()
+
+    def add_commit_push(self, files: List[str], msg: str):
+        """
+        Adds a commit to the repo and pushes it to the remote
+        """
+        try:
+            self.repo.add_n_commit(files, msg)
+            self.repo.push()
+        except Exception as e:
+            print("Error adding commit")
+            self.repo.reset_to_commit(self.original_commit)
+            raise e
+        finally:
+            self._called = True
+--------------------------------------------------------------------------------
+Chunk ID: repo\runner.py::1
+Filepath: cowboy-lib\repo\runner.py
+Content:
+from abc import ABC, abstractmethod
+from cowboy_lib.api.runner.shared import RunTestTaskArgs
+from cowboy_lib.coverage import CoverageResult
+
+from typing import Tuple, List, Any
+
+
+class Runner(ABC):
+    """
+    Runs the lang/framework specific unit test
+    """
+
+    @abstractmethod
+    def run_test(self, args: RunTestTaskArgs) -> Tuple[CoverageResult, str, str]:
+        """
+        Run the test and return the coverage result
+        """
+        raise NotImplementedError
+
+    def _construct_cmd(
+        self,
+        repo_path,
+        selected_args_str: str = "",
+        deselected_args_str: str = "",
+    ):
+        """
+        Constructs the cmd for running the test via subprocess
+        """
+        raise NotImplementedError
+
+    def _get_include_tests_arg_str(self, include_tests: List[str] = []):
+        """
+        Constructs the arg string for selecting specific tests
+        """
+        raise NotImplementedError
+
+    def _get_exclude_tests_arg_str(self, exclude_tests: List[Any]):
+        """
+        Constructs the arg string for excluding specific tests
+        """
+        raise NotImplementedError
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_file.py::1
+Filepath: cowboy-lib\repo\source_file.py
+Content:
+from typing import List, Optional, Tuple
+from pathlib import Path
+from difflib import unified_diff
+
+from cowboy_lib.ast import Class, Function, ASTNode, NodeType
+from cowboy_lib.ast import PythonAST
+from cowboy_lib.utils import locate_python_interpreter
+
+from logging import getLogger
+from copy import deepcopy
+
+import subprocess
+
+
+logger = getLogger("test_results")
+longterm_logger = getLogger("longterm")
+
+
+class LintException(Exception):
+    pass
+
+
+class SameNodeException(Exception):
+    pass
+
+
+class NodeNotFound(Exception):
+    pass
+
+
+class SourceFile:
+    def __init__(
+        self,
+        lines: List[str],
+        path: Path,
+        language: str = "python",
+    ):
+        self._path = path
+        self._lang = language
+
+        self.functions: List[Function] = []
+        self.classes: List[Class] = []
+        self.lines: List[str] = []
+        # self.imports: List[str] = []
+
+        self.update_file_state(lines)
+
+    def clone(self) -> "SourceFile":
+        return deepcopy(self)
+
+    @property
+    def path(self):
+        return self._path
+
+    def update_file_state(self, lines: List[str]):
+        """
+        Updates instance variables
+        """
+        assert isinstance(lines, list)
+
+        # REFACTOR-AST: start here first, this is where we convert
+        # AST into our code-object representation of the src code
+        self.ast_parser = PythonAST("\n".join(lines))
+        self.functions, self.classes = self.ast_parser.parse()
+        self.lines = lines
+
+    def __repr__(self):
+        return f"{self.path}"
+
+    def diff(self, other: "SourceFile"):
+        if not isinstance(other, SourceFile):
+            raise TypeError("Can only diff SourceFile instances")
+
+        a = self.to_code().splitlines(keepends=True)
+        b = other.to_code().splitlines(keepends=True)
+        diff = "".join(unified_diff(a, b))
+
+        return diff
+
+    # this would be another easy test for modification in test_parsing
+    # commit: c58ded2
+    def find_class(self, class_name: str) -> Optional[Class]:
+        """
+        Finds a class by name
+        """
+        return self.find_by_nodetype(class_name, node_type=NodeType.Class)
+
+    def find_function(self, function_name: str) -> Optional[Function]:
+        """
+        Finds a function by name
+        """
+        return self.find_by_nodetype(function_name, node_type=NodeType.Function)
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_file.py::2
+Filepath: cowboy-lib\repo\source_file.py
+Content:
+class SourceFile:
+
+    def find_by_nodetype(
+        self, node_name: str, node_type: NodeType = NodeType.Function
+    ) -> Optional[List[ASTNode]]:
+        """
+        Finds a function or class by name
+        """
+        assert type(node_name) == str
+
+        all = [f for f in self.functions + self.classes if f.name == node_name]
+        filtered = [f for f in all if f.type == node_type]
+
+        if len(filtered) > 1:
+            raise SameNodeException(
+                "More than one node found with the same name: ", node_name
+            )
+        elif len(filtered) == 0:
+            raise NodeNotFound(
+                "No node found with the given name, did you forget to put NODETYPE param again you dumbass?: ",
+                node_name,
+                node_type,
+                self.path,
+            )
+
+        return filtered[0]
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_file.py::3
+Filepath: cowboy-lib\repo\source_file.py
+Content:
+class SourceFile:
+
+    def append(self, lines: str, class_name: Optional[str] = None) -> None:
+        """
+        Appends lines to the test file or to an existing class
+        """
+        if class_name:
+            node = self.find_by_nodetype(class_name, node_type=NodeType.Class)
+            _, end = node.range
+        else:
+            end = len(self.lines) - 1
+
+        lines = lines.split("\n")
+        lines = self.lines[: end + 1] + lines + self.lines[end + 1 :]
+        self.update_file_state(self.to_linted_code(lines).split("\n"))
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_file.py::4
+Filepath: cowboy-lib\repo\source_file.py
+Content:
+class SourceFile:
+
+    def delete(self, node_name: str, node_type: NodeType = NodeType.Function) -> None:
+        """
+        Deletes a new function or class to the file, and updates SourceFile instance accordingly without hitting file
+        """
+
+        node = self.find_by_nodetype(node_name, node_type=node_type)
+        start, end = node.range
+
+        longterm_logger.info(f"Deleting: {node.name} => {start} to {end}")
+
+        lines = self.lines[:start] + self.lines[end + 1 :]
+        self.update_file_state(self.to_linted_code(lines).split("\n"))
+
+    # TODO: specify other code linter here
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_file.py::5
+Filepath: cowboy-lib\repo\source_file.py
+Content:
+class SourceFile:
+    def to_linted_code(self, lines) -> str:
+        """
+        Lint generated code file
+        """
+        self.i = 0 if getattr(self, "i", None) is None else self.i + 1
+        interp = locate_python_interpreter()
+
+        black_cmd_str = f"{interp} -m black "
+        tmp_file = f"/tmp/test{str(self.i)}.py"
+        with open(tmp_file, mode="w+t", encoding="utf-8") as temp_file:
+            # temp_file_name = temp_file.name
+            temp_file.write("\n".join(lines))
+            temp_file.flush()
+
+            process = subprocess.Popen(
+                black_cmd_str + tmp_file,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            stdout, stderr = process.communicate()
+            if stderr:
+                stderr = stderr.decode("utf-8")
+                if "error:" in stderr:
+                    raise LintException(f"Error while linting: {stderr}")
+
+            with open(tmp_file, "r") as temp_file:
+                linted_code = temp_file.read()
+
+        return linted_code
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_file.py::6
+Filepath: cowboy-lib\repo\source_file.py
+Content:
+class SourceFile:
+
+    def map_line_to_node(
+        self, start: int, end: int
+    ) -> Optional[Tuple[ASTNode, ASTNode]]:
+        """
+        Finds the function and/or class that contains the line
+        """
+        for node in self.functions:
+            if node.range[0] <= start and end <= node.range[1]:
+                return node, node.scope
+        return None, None
+
+    def to_code(self) -> str:
+        """
+        Converts the sourcefile to code
+        """
+
+        return "\n".join(self.lines)
+
+    def to_num_lines(self) -> str:
+        return "\n".join([f"{i}: {line}" for i, line in enumerate(self.lines)])
+
+    def to_llm_repr(self) -> str:
+        repr_str = ""
+        repr_str += "\n".join([f.__str__() for f in self.functions if not f.scope])
+        repr_str += "\n"
+        repr_str += "\n".join([c.__str__() for c in self.classes])
+        return repr_str
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_file.py::7
+Filepath: cowboy-lib\repo\source_file.py
+Content:
+class TestFile(SourceFile):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @property
+    def test_nodes(self) -> List[ASTNode]:
+        return [n for n in self.functions + self.classes if n.is_test]
+
+    def test_funcs(self) -> List[Function]:
+        return [func for func in self.functions if func.is_test]
+
+    def test_classes(self) -> List[Class]:
+        return [c for c in self.classes if c.is_test]
+
+    def __repr__(self):
+        return f"{self.path}"
+
+    def new_test_funcs(self, new_file: "TestFile") -> List[Function]:
+        """
+        Returns a list of nodes that are in the new file but not in the current file
+        """
+        assert Path(self._path) == Path(new_file.path)
+
+        return [
+            f
+            for f in new_file.test_funcs()
+            if f.name not in [my_f.name for my_f in self.test_funcs()]
+        ]
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_repo.py::1
+Filepath: cowboy-lib\repo\source_repo.py
+Content:
+from cowboy_lib.repo.source_file import TestFile, SourceFile, Function, Class
+
+from pathlib import Path
+from functools import reduce
+from typing import List, Optional, Iterator, Tuple, TYPE_CHECKING
+
+from logging import getLogger
+
+logger = getLogger("test_results")
+longterm_logger = getLogger("longterm")
+
+
+# TODO: should we combine git/src_repo into one?
+class SourceRepo:
+    """
+    Used by the TestStrategy to access files and their contents
+    """
+
+    def __init__(self, repo_path: Path, files_list: List[str] = []):
+        self.repo_path = repo_path
+        self.files_list = files_list
+        self.source_files: List[SourceFile] = self._init_source_files(files_list)
+        # counter = Counter([f.path for f in self.source_files]).most_common()
+        # print(counter)
+
+    def get_rel_path(self, file_path: Path) -> str:
+        """
+        Get the path relative to the source repo
+        """
+        return file_path.relative_to(self.repo_path)
+
+    @property
+    def test_files(self) -> List[TestFile]:
+        return [f for f in self.source_files if isinstance(f, TestFile)]
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_repo.py::2
+Filepath: cowboy-lib\repo\source_repo.py
+Content:
+class SourceRepo:
+
+    def _init_source_files(self, files_list=[]) -> List[TestFile]:
+        """
+        Finds all test files in the repo
+        """
+        source_files = []
+        for path in self.repo_path.rglob("*"):
+            if path.is_file() and path.name.endswith(".py"):
+                if files_list:
+                    if path not in [self.repo_path / f for f in files_list]:
+                        continue
+                with open(path, "r", encoding="utf-8") as f:
+                    lines = f.read().split("\n")
+                try:
+                    rel_path = self.get_rel_path(path)
+                    source_file = (
+                        TestFile(lines, rel_path)
+                        if path.name.startswith("test_")
+                        else SourceFile(lines, rel_path)
+                    )
+                    source_files.append(source_file)
+                except SyntaxError as e:
+                    logger.error(f"AST Syntax error while parsing: {path}")
+
+        return source_files
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_repo.py::3
+Filepath: cowboy-lib\repo\source_repo.py
+Content:
+class SourceRepo:
+
+    def find_node(self, name: str, file: str, node_type: str) -> Optional[Function]:
+        """
+        Finds a function in a file. A node is uniquely identified by its name and filepath
+        (local scope)
+        """
+        for source_file in self.source_files:
+            # if str(source_file.path) == file: doesnt work for some reason
+            if source_file.path == Path(file):
+                for node in source_file.functions + source_file.classes:
+                    if node.name == name and node.node_type.value == node_type:
+                        return node
+
+        raise Exception(f"Node not found : {name} in {file}")
+--------------------------------------------------------------------------------
+Chunk ID: repo\source_repo.py::4
+Filepath: cowboy-lib\repo\source_repo.py
+Content:
+class SourceRepo:
+
+    def get_test_funcs(self) -> List[Function]:
+        return reduce(
+            lambda x, y: x + y,
+            [test_file.test_funcs() for test_file in self.test_files],
+            [],
+        )
+
+    def get_test_classes(self) -> List[Class]:
+        classes = reduce(
+            lambda x, y: x + y,
+            [test_file.test_classes() for test_file in self.test_files],
+            [],
+        )
+        return classes
+
+    def iter_tests(self) -> Iterator[Tuple[TestFile, Class]]:
+        for test_file in self.test_files:
+            for test_class in test_file.test_classes():
+                yield test_file, test_class
+
+    def find_file(self, file_path: str) -> Optional[SourceFile]:
+        """
+        Returns the file object
+        """
+        for file in self.source_files:
+            # NOTE: need path here to deal with consistent / and \ in windows
+            if Path(file.path) == Path(file_path):
+                return file
+
+    def write_file(self, file_path: str):
+        """
+        Writes the content of a SourceFile to its original file on disk.
+        Note that this API is implemented on SourceRepo because we want
+        to control all I/O interactions through this class
+        """
+        src_file = self.find_file(file_path)
+        with open(self.repo_path / file_path, "w") as f:
+            f.write(src_file.to_code())
+--------------------------------------------------------------------------------
+Chunk ID: test_modules\__init__.py::1
+Filepath: cowboy-lib\test_modules\__init__.py
+Content:
+from .test_module import TestModule
+from .target_code import TargetCode
+--------------------------------------------------------------------------------
+Chunk ID: test_modules\target_code.py::1
+Filepath: cowboy-lib\test_modules\target_code.py
+Content:
+from dataclasses import dataclass
+
+from typing import List, Optional, TYPE_CHECKING, Tuple
+from pathlib import Path
+
+from cowboy_lib.ast.code import ASTNode
+
+
+@dataclass
+class TargetCode:
+    """
+    A chunk of code that is covered by the lines in a TestModule
+    """
+
+    range: Tuple[int, int]
+    lines: List[str]
+    filepath: Path
+    func_scope: Optional[ASTNode]
+    class_scope: Optional[ASTNode]
+
+    def base_path(self) -> Path:
+        """
+        Returns the base path relative to the repo directory
+        """
+        return Path(*self.filepath.parts[2:])
+
+    def __post_init__(self):
+        if not isinstance(self.filepath, Path):
+            self.filepath = Path(self.filepath)
+
+    def __eq__(self, other: "TargetCode"):
+        return self.filepath == other.filepath and self.range == other.range
+
+    def __hash__(self):
+        return hash((self.filepath, self.range))
+
+    def to_lines(self):
+        repr = ""
+        for i, line in zip(range(self.range[0], self.range[1] + 1), self.lines):
+            repr += f"{i}. {line}\n"
+
+        return repr
+--------------------------------------------------------------------------------
+Chunk ID: test_modules\test_module.py::1
+Filepath: cowboy-lib\test_modules\test_module.py
+Content:
+from cowboy_lib.coverage import Coverage, get_full_path
+from cowboy_lib.repo.source_file import TestFile, ASTNode, NodeNotFound, NodeType
+from cowboy_lib.utils import get_current_git_commit
+
+from typing import List, Optional, TYPE_CHECKING, Tuple
+from pathlib import Path
+
+from cowboy_lib.repo.source_repo import SourceRepo
+from cowboy_lib.test_modules.target_code import TargetCode
+
+
+class IncompatibleCommit(Exception):
+    pass
+
+
+class TestModule:
+    """
+    A TestFile with a list of selected Tests
+    """
+
+    def __init__(
+        self,
+        test_file: TestFile,
+        nodes: List[ASTNode],
+        commit_sha: str,
+        # hack: to check if we are not desync'd from the repo
+        check_commit: bool = False,
+        chunks: List[TargetCode] = [],
+    ):
+        # wtf ...
+        test_folder = Path(*test_file.path.parts[:2])
+        if check_commit:
+            assert commit_sha == get_current_git_commit(test_folder)
+
+        self.commit_sha = commit_sha
+        self.test_file = test_file
+        self.chunks: List[TargetCode] = chunks
+        self.cov_diff = None
+
+        # class or test file
+        self.nodes = nodes
+        self._isclass = True if self.nodes[0].type is NodeType.Class else False
+        self.name = (
+            self.test_file.path.name if not self._isclass else self.nodes[0].name
+        )
+
+    def __eq__(self, other: "TestModule"):
+        return self.test_file.path + self.name == other.test_file.path + other.name
+
+    @property
+    def tests(self) -> List[ASTNode]:
+        return (
+            self.nodes
+            if not self._isclass
+            else [
+                func
+                for func in self.test_file.test_funcs()
+                if func.scope.name == self.name
+            ]
+        )
+
+    def targeted_files(self):
+        """
+        The list of files that the test module is testing
+        """
+        # kinda of a hack, but we always assume that base path is in the form
+        # repos/<repo_name> appended to the filepath
+        # fp = lambda p: base_path if base_path else Path(*p.parts[2:])
+
+        return list(set([c.filepath for c in self.chunks]))
+
+    @property
+    def path(self):
+        return self.test_file.path
+
+    def target_test_file(self) -> Path:
+        """
+        Returns the test file that will be modified by test strategy
+        to generate new tests
+        """
+        return self.test_file.path
+
+    def num_lines(self, filename: Optional[str] = ""):
+        if not filename:
+            chunks = self.chunks
+        else:
+            chunks = [c for c in self.chunks if c.filepath == filename]
+
+        return sum(
+            [c.range[1] - c.range[0] if c.range[1] - c.range[0] else 1 for c in chunks]
+        )
+--------------------------------------------------------------------------------
+Chunk ID: test_modules\test_module.py::2
+Filepath: cowboy-lib\test_modules\test_module.py
+Content:
+class TestModule:
+
+    def get_test_code(self, curr_commit: str):
+        """
+        We are purposely including curr_commit here so TestFile will stayed sync'd with fs
+        Lazily loads the test file just in case we want to setup GitRepo to match
+        commit_sha. Pass curr_commit as a parameter to double check
+        """
+        if curr_commit != self.commit_sha:
+            raise IncompatibleCommit(
+                f"curr_commit: {curr_commit} does not match {self.commit_sha}"
+            )
+
+        return "\n\n".join([test.to_code() for test in self.tests])
+--------------------------------------------------------------------------------
+Chunk ID: test_modules\test_module.py::3
+Filepath: cowboy-lib\test_modules\test_module.py
+Content:
+class TestModule:
+
+    def did_change(self, new_file: TestFile):
+        """
+        Compares the test file ranges
+        """
+        for n in new_file.test_nodes:
+            for test_node in self.tests:
+                if (
+                    n.name == test_node.name
+                    and n.range != test_node.range
+                    # NOTE: this takes into account line additions and deletions
+                    # but not modifications, we leaving that for later when the diff
+                    # parsing interface gets built
+                    and n.range[1] - n.range[0]
+                    != test_node.range[1] - test_node.range[0]
+                ):
+                    new_mods = n.range[1] - n.range[0]
+                    old_test = test_node.range[1] - test_node.range[0]
+                    if new_mods > old_test:
+                        print("Tests were added!")
+                    else:
+                        print("Tests were deleted!")
+                    return True
+        return False
+--------------------------------------------------------------------------------
+Chunk ID: test_modules\test_module.py::4
+Filepath: cowboy-lib\test_modules\test_module.py
+Content:
+class TestModule:
+
+    def set_chunks(
+        self,
+        changed_coverage: List[Coverage],
+        source_repo: "SourceRepo",
+        base_path: Path = None,
+    ):
+        """
+        Gets the missing/covered lines of each of the coverage differences
+        """
+        self.chunks = []
+        for cov in changed_coverage:
+            if cov.filename == "TOTAL":
+                raise Exception("TOTAL COVERAGE FILE FOUND")
+
+            cov.read_line_contents(base_path)
+            for l_group in cov.get_contiguous_lines():
+                start = l_group[0][0]
+                end = l_group[-1][0]
+                range = (start, end)
+
+                src_file = source_repo.find_file(cov.filename)
+                func, cls = src_file.map_line_to_node(start, end)
+
+                lines = [g[1] for g in l_group]
+
+                print("Setting chunk with filepath: ", str(cov.filename))
+
+                chunk = TargetCode(
+                    range=range,
+                    lines=lines,
+                    # could also just move the logic into TestModuleMixin
+                    filepath=str(cov.filename),
+                    func_scope=func if func else "",
+                    class_scope=cls if cls else "",
+                )
+                self.chunks.append(chunk)
+--------------------------------------------------------------------------------
+Chunk ID: test_modules\test_module.py::5
+Filepath: cowboy-lib\test_modules\test_module.py
+Content:
+class TestModule:
+
+    def delete_chunk(self, range, filepath):
+        for c in self.chunks[:]:
+            if c.range == range and c.filepath == filepath:
+                self.chunks.remove(c)
+
+    def diff_chunks(self, other: "TestModule"):
+        return [c for c in self.chunks if c not in other.chunks]
+
+    def print_chunks(self) -> str:
+        if not self.chunks:
+            return ""
+
+        repr = ""
+        repr += f"Test Module: {self.test_file.path}\n"
+        repr += f"File: {self.chunks[0].filepath.name}\n"
+
+        curr_file = self.chunks[0].filepath.name
+        for c in self.chunks:
+            if c.filepath.name != curr_file:
+                curr_file = c.filepath.name
+                repr += f"File: {c.filepath.name}\n"
+            repr += c.to_lines()
+        return repr
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\utils.py::1
+Filepath: cowboy-lib\utils.py
+Content:
+from pathlib import Path
+import subprocess
+import os
+import uuid
+import random
+import string
+import shutil
+
+
+def get_current_git_commit(repo_path: Path) -> str:
+    """
+    Uses subprocess to get the current git commit hash.
+
+    Returns:
+        str: The current git commit hash.
+    """
+    try:
+        commit_hash = (
+            subprocess.check_output(
+                ["cd", str(repo_path.resolve()), "&&", "git", "rev-parse", "HEAD"],
+                shell=True,
+            )
+            .strip()
+            .decode("utf-8")
+        )
+        return commit_hash
+    except subprocess.CalledProcessError as e:
+        print(f"Error getting current git commit: {e}")
+        return ""
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\utils.py::2
+Filepath: cowboy-lib\utils.py
+Content:
+def locate_python_interpreter():
+    possible_interpreters = ["python", "python3"]
+
+    for interpreter in possible_interpreters:
+        # Check if the interpreter is in PATH
+        path = shutil.which(interpreter)
+        if path:
+            return path
+
+    # Try manually common locations
+    common_locations = [
+        "/usr/bin/python",
+        "/usr/local/bin/python",
+        "/usr/bin/python3",
+        "/usr/local/bin/python3",
+        "/bin/python",
+        "/bin/python3",
+        "/usr/sbin/python",
+        "/usr/sbin/python3",
+    ]
+
+    for location in common_locations:
+        if os.path.isfile(location) and os.access(location, os.X_OK):
+            return location
+
+    # As a last resort, try running "python --version" and "python3 --version"
+    for interpreter in possible_interpreters:
+        try:
+            result = subprocess.run(
+                [interpreter, "--version"], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                return interpreter
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+
+    raise FileNotFoundError("Python interpreter not found on this host")
+--------------------------------------------------------------------------------
+Chunk ID: cowboy-lib\utils.py::3
+Filepath: cowboy-lib\utils.py
+Content:
+def testfiles_in_coverage(base_cov, src_repo) -> bool:
+    """
+    Check if the test files are accidentally included in the coverage
+    """
+    for test_file in src_repo.test_files:
+        for cov in base_cov.cov_list:
+            if cov.filename.split(os.sep)[-1] == test_file.path.name:
+                return True
+    return False
+
+
+def generate_id():
+    """
+    Generates a random UUID
+    """
+    return str(uuid.uuid4())
+
+
+def gen_random_name():
+    """
+    Generates a random name using ASCII, 8 characters in length
+    """
+
+    return "".join(random.choices(string.ascii_lowercase, k=8))
+
+
+def find_substring(string: str, substring: str):
+    indices = []
+    start = 0
+    while start < len(string):
+        start = string.find(substring, start)
+        if start == -1:  # No more occurrences
+            return indices
+        indices.append(start)
+        start += 1  # Move past the last found index to find subsequent matches
+
+    return indices
+--------------------------------------------------------------------------------
+Chunk ID: main.py::1
+Filepath: main.py
+Content:
+from typing import Optional, Final
+from contextvars import ContextVar
+
+from fastapi import FastAPI, status
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
+
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response, StreamingResponse
+
+from sqlalchemy.orm import sessionmaker
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+
+import uvicorn
+from logging import getLogger
+
+# from src.logger import configure_uvicorn_logger
+# from src.auth.service import get_current_user
+
+from src.queue.core import TaskQueue
+from src.auth.views import auth_router
+from src.repo.views import repo_router
+from src.queue.views import task_queue_router
+from src.health.views import health_router
+from src.exceptions import CowboyRunTimeException
+from src.database.core import engine
+
+from src.extensions import init_sentry
+from src.config import PORT
+
+import uuid
+
+log = getLogger(__name__)
+
+init_sentry()
+
+
+# def disable_uvicorn_logging():
+#     uvicorn_error = logging.getLogger("uvicorn.error")
+#     uvicorn_error.disabled = True
+#     uvicorn_access = logging.getLogger("uvicorn.access")
+#     uvicorn_access.disabled = True
+
+
+async def not_found(request, exc):
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": [{"msg": "Not Found."}]},
+    )
+
+
+exception_handlers = {404: not_found}
+
+
+app = FastAPI(exception_handlers=exception_handlers, openapi_url="/docs/openapi.json")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# def get_path_params_from_request(request: Request) -> str:
+#     path_params = {}
+#     for r in api_router.routes:
+#         path_regex, path_format, param_converters = compile_path(r.path)
+#         path = request["path"].removeprefix(
+#             "/api/v1"
+#         )  # remove the /api/v1 for matching
+#         match = path_regex.match(path)
+#         if match:
+#             path_params = match.groupdict()
+#     return path_params
+
+
+def get_path_template(request: Request) -> str:
+    if hasattr(request, "path"):
+        return ",".join(request.path.split("/")[1:])
+    return ".".join(request.url.path.split("/")[1:])
+
+
+REQUEST_ID_CTX_KEY: Final[str] = "request_id"
+_request_id_ctx_var: ContextVar[Optional[str]] = ContextVar(
+    REQUEST_ID_CTX_KEY, default=None
+)
+
+
+def get_request_id() -> Optional[str]:
+    return _request_id_ctx_var.get()
+
+
+# these paths do not require DB
+NO_DB_PATHS = ["/task/get"]
+--------------------------------------------------------------------------------
+Chunk ID: main.py::2
+Filepath: main.py
+Content:
+class ExceptionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> StreamingResponse:
+        try:
+            response = await call_next(request)
+        except ValidationError as e:
+            log.exception(e)
+            response = JSONResponse(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                content={"detail": e.errors(), "error": True},
+            )
+        except ValueError as e:
+            log.exception(e)
+            response = JSONResponse(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                content={
+                    "detail": [
+                        {"msg": "Unknown", "loc": ["Unknown"], "type": "Unknown"}
+                    ],
+                    "error": True,
+                },
+            )
+        except CowboyRunTimeException as e:
+            log.exception(e)
+            response = JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={
+                    "detail": [{"msg": f"Runtime error: {e.message}"}],
+                    "error": True,
+                },
+            )
+        except Exception as e:
+            log.exception(e)
+            response = JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={
+                    "detail": [
+                        {"msg": "Unknown", "loc": ["Unknown"], "type": "Unknown"}
+                    ],
+                    "error": True,
+                },
+            )
+
+        return response
+
+
+token_registry = set()
+--------------------------------------------------------------------------------
+Chunk ID: main.py::3
+Filepath: main.py
+Content:
+class DBMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # request_id = str(uuid1())
+
+        # we create a per-request id such that we can ensure that our session is scoped for a particular request.
+        # see: https://github.com/tiangolo/fastapi/issues/726
+        # ctx_token = _request_id_ctx_var.set(request_id)
+        # path_params = get_path_params_from_request(request)
+
+        # # if this call is organization specific set the correct search path
+        # organization_slug = path_params.get("organization", "default")
+        # request.state.organization = organization_slug
+
+        # # Find out more about
+        # schema = f"dispatch_organization_{organization_slug}"
+        # # validate slug exists
+        # schema_names = inspect(engine).get_schema_names()
+        # if schema in schema_names:
+        #     # add correct schema mapping depending on the request
+        #     schema_engine = engine.execution_options(
+        #         schema_translate_map={
+        #             None: schema,
+        #         }
+        #     )
+        # else:
+        #     return JSONResponse(
+        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        #         content={"detail": [{"msg": f"Unknown database schema name: {schema}"}]},
+        #     )
+
+        try:
+            request.state.session_id = str(uuid.uuid4())
+            # this is a very janky implementation to handle the fact that assigning a db session
+            # to every request blows up our db connection pool
+            task_auth_token = request.headers.get("x-task-auth", None)
+            if not task_auth_token or not task_auth_token in token_registry:
+                session = sessionmaker(bind=engine)
+                request.state.db = session()
+                request.state.db.id = str(uuid.uuid4())
+
+            response = await call_next(request)
+        except Exception as e:
+            raise e from None
+        finally:
+            db = getattr(request.state, "db", None)
+            if db:
+                db.close()
+
+        # _request_id_ctx_var.reset(ctx_token)
+        return response
+--------------------------------------------------------------------------------
+Chunk ID: main.py::4
+Filepath: main.py
+Content:
+# class LogfireLogUser(BaseHTTPMiddleware):
+#     async def dispatch(self, request: Request, call_next):
+#         try:
+#             # we have to skip requests with x-task-auth or else logfire will log an exception for this
+#             # request when it tries to acces request.state.db
+#             if not request.headers.get("x-task-auth", None):
+#                 with logfire.span("request"):
+#                     user = get_current_user(request)
+#                     logfire.info("{user}", user=user.email)
+#         except AttributeError as e:
+#             pass
+#         finally:
+#             response = await call_next(request)
+#             return response
+
+
+task_queue = TaskQueue()
+
+
+class AddTaskQueueMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        request.state.task_queue = task_queue
+        response = await call_next(request)
+        return response
+
+
+# app.add_middleware(LogfireLogUser)
+app.add_middleware(ExceptionMiddleware)
+app.add_middleware(DBMiddleware)
+app.add_middleware(AddTaskQueueMiddleware)
+
+app.include_router(auth_router)
+app.include_router(repo_router)
+app.include_router(task_queue_router)
+app.include_router(health_router)
+
+# logfire.configure(console=False)
+# logfire.instrument_fastapi(app, excluded_urls=["/task/get"])
+
+
+if __name__ == "__main__":
+    import argparse
+
+    # start the repo sync thread
+    # Session = sessionmaker(bind=engine)
+    # db_session = Session()
+    # start_sync_thread(db_session, task_queue)
+
+    # logfire.configure()
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=PORT,
+        # reload=True,
+        reload_excludes=["./repos"],
+        # log_config=config,
+    )
+--------------------------------------------------------------------------------
+Chunk ID: auth\models.py::1
+Filepath: src\auth\models.py
+Content:
+from src.config import COWBOY_JWT_ALG, COWBOY_JWT_EXP, COWBOY_JWT_SECRET
+from src.database.core import Base
+from src.models import TimeStampMixin, CowboyBase, PrimaryKey
+
+import string
+import secrets
+import bcrypt
+from jose import jwt
+from typing import Optional
+from pydantic import validator, Field, BaseModel
+from pydantic.networks import EmailStr
+from sqlalchemy import (
+    ForeignKey,
+    DateTime,
+    Column,
+    String,
+    LargeBinary,
+    Integer,
+    Boolean,
+)
+from sqlalchemy.orm import relationship
+from typing import List
+from datetime import datetime, timedelta
+
+
+def generate_token(email):
+    now = datetime.utcnow()
+    exp = (now + timedelta(seconds=COWBOY_JWT_EXP)).timestamp()
+    data = {
+        "exp": exp,
+        "email": email,
+    }
+    return jwt.encode(data, COWBOY_JWT_SECRET, algorithm=COWBOY_JWT_ALG)
+
+
+def generate_password():
+    """Generates a reasonable password if none is provided."""
+    alphanumeric = string.ascii_letters + string.digits
+    while True:
+        password = "".join(secrets.choice(alphanumeric) for i in range(10))
+        if (
+            any(c.islower() for c in password)
+            and any(c.isupper() for c in password)  # noqa
+            and sum(c.isdigit() for c in password) >= 3  # noqa
+        ):
+            break
+    return password
+
+
+def hash_password(password: str):
+    """Generates a hashed version of the provided password."""
+    pw = bytes(password, "utf-8")
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pw, salt)
+--------------------------------------------------------------------------------
+Chunk ID: auth\models.py::2
+Filepath: src\auth\models.py
+Content:
+class CowboyUser(Base, TimeStampMixin):
+    __tablename__ = "cowboy_user"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String, unique=True)
+    password = Column(LargeBinary, nullable=False)
+    last_mfa_time = Column(DateTime, nullable=True)
+    experimental_features = Column(Boolean, default=False)
+    admin = Column(Boolean, default=False)
+
+    repos = relationship(
+        "RepoConfig", backref="cowboy_user", cascade="all, delete-orphan"
+    )
+
+    # search_vector = Column(
+    #     TSVectorType("email", regconfig="pg_catalog.simple", weights={"email": "A"})
+    # )
+
+    def check_password(self, password):
+        return bcrypt.checkpw(password.encode("utf-8"), self.password)
+
+    @property
+    def token(self):
+        return generate_token(self.email)
+--------------------------------------------------------------------------------
+Chunk ID: auth\models.py::3
+Filepath: src\auth\models.py
+Content:
+class UserBase(CowboyBase):
+    email: EmailStr
+
+    @validator("email")
+    def email_required(cls, v):
+        if not v:
+            raise ValueError("Must not be empty string and must be a email")
+        return v
+
+
+class UserLogin(UserBase):
+    password: str
+
+    @validator("password")
+    def password_required(cls, v):
+        if not v:
+            raise ValueError("Must not be empty string")
+        return v
+
+
+class UserRegister(UserLogin):
+    openai_api_key: str
+    password: Optional[str] = Field(None, nullable=True)
+
+    @validator("password", pre=True, always=True)
+    def password_required(cls, v):
+        # we generate a password for those that don't have one
+        password = v or generate_password()
+        return hash_password(password)
+
+
+class UserLoginResponse(CowboyBase):
+    token: Optional[str] = Field(None, nullable=True)
+
+
+class UserRead(UserBase):
+    id: PrimaryKey
+    role: Optional[str] = Field(None, nullable=True)
+    experimental_features: Optional[bool]
+
+
+class UserUpdate(CowboyBase):
+    id: PrimaryKey
+    password: Optional[str] = Field(None, nullable=True)
+
+    @validator("password", pre=True)
+    def hash(cls, v):
+        return hash_password(str(v))
+
+
+class UserCreate(CowboyBase):
+    email: EmailStr
+    password: Optional[str] = Field(None, nullable=True)
+
+    @validator("password", pre=True)
+    def hash(cls, v):
+        return hash_password(str(v))
+
+
+class UserRegisterResponse(CowboyBase):
+    token: Optional[str] = Field(None, nullable=True)
+
+
+class UpdateOAIKey(BaseModel):
+    openai_api_key: str
+--------------------------------------------------------------------------------
+Chunk ID: auth\permissions.py::1
+Filepath: src\auth\permissions.py
+Content:
+from starlette.requests import Request
+
+import logging
+from abc import ABC, abstractmethod
+
+from fastapi import HTTPException
+from starlette.requests import Request
+from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
+
+from .service import get_current_user
+
+
+class BasePermission(ABC):
+    """
+    Abstract permission that all other Permissions must be inherited from.
+
+    Defines basic error message, status & error codes.
+
+    Upon initialization, calls abstract method  `has_required_permissions`
+    which will be specific to concrete implementation of Permission class.
+
+    You would write your permissions like this:
+
+    .. code-block:: python
+
+        class TeapotUserAgentPermission(BasePermission):
+
+            def has_required_permissions(self, request: Request) -> bool:
+                return request.headers.get('User-Agent') == "Teapot v1.0"
+
+    """
+
+    user_error_msg = [{"msg": "User not found"}]
+    user_error_code = HTTP_404_NOT_FOUND
+
+    role = None
+
+    # @abstractmethod
+    # def has_required_permissions(self, request: Request) -> bool: ...
+
+    def __init__(self, request: Request):
+        user = get_current_user(request=request)
+        if not user:
+            raise HTTPException(
+                status_code=self.user_error_code, detail=self.user_error_msg
+            )
+
+        # if not self.has_required_permissions(request):
+        #     raise HTTPException(
+        #         status_code=self.user_role_error_code, detail=self.user_role_error_msg
+        #     )
+#     """
+--------------------------------------------------------------------------------
+Chunk ID: auth\permissions.py::2
+Filepath: src\auth\permissions.py
+Content:
+class PermissionsDependency(object):
+    """
+    Permission dependency that is used to define and check all the permission
+    classes from one place inside route definition.
+
+    Use it as an argument to FastAPI's `Depends` as follows:
+
+    .. code-block:: python
+
+        app = FastAPI()
+
+        @app.get(
+            "/teapot/",
+            dependencies=[Depends(
+                PermissionsDependency([TeapotUserAgentPermission]))]
+        )
+        async def teapot() -> dict:
+            return {"teapot": True}
+    """
+
+    def __init__(self, permissions_classes: list):
+        self.permissions_classes = permissions_classes
+
+    def __call__(self, request: Request):
+        for permission_class in self.permissions_classes:
+            permission_class(request=request)
+--------------------------------------------------------------------------------
+Chunk ID: auth\permissions.py::3
+Filepath: src\auth\permissions.py
+Content:
+from starlette.requests import Request
+
+
+# class InternalClientPermissions(BasePermission):
+#     """
+#     Permissions used by our internal client to get ahold of user JWT tokens
+#     for testing and other purposes
+#     """
+
+#     def __init__(self, request: Request):
+#         user = get_current_user(request=request)
+#         if not user:
+#             raise HTTPException(
+#                 status_code=self.user_error_code, detail=self.user_error_msg
+#             )
+
+#         if not user.is_admin:
+#             raise HTTPException(
+#                 status_code=HTTP_403_FORBIDDEN, detail="User is not an admin"
+#             )
+--------------------------------------------------------------------------------
+Chunk ID: auth\service.py::1
+Filepath: src\auth\service.py
+Content:
+import logging
+
+from typing import Optional
+
+from fastapi import HTTPException
+from fastapi.security.utils import get_authorization_scheme_param
+from jose import JWTError, jwt
+from jose.exceptions import JWKError
+from starlette.requests import Request
+from starlette.status import HTTP_401_UNAUTHORIZED
+
+from src.config import COWBOY_JWT_SECRET
+from src.database.core import DBNotSetException, get_db
+
+from .models import generate_token
+
+
+log = logging.getLogger(__name__)
+
+from .sm import SecretManager
+from .models import CowboyUser, UserRegister, UserCreate
+
+InvalidCredentialException = HTTPException(
+    status_code=HTTP_401_UNAUTHORIZED,
+    detail=[{"msg": "Could not validate credentials"}],
+)
+
+
+def get(*, db_session, user_id: int) -> Optional[CowboyUser]:
+    """Returns a user based on the given user id."""
+    return db_session.query(CowboyUser).filter(CowboyUser.id == user_id).one_or_none()
+
+
+def get_by_email(*, db_session, email: str) -> Optional[CowboyUser]:
+    """Returns a user object based on user email."""
+    return db_session.query(CowboyUser).filter(CowboyUser.email == email).one_or_none()
+--------------------------------------------------------------------------------
+Chunk ID: auth\service.py::2
+Filepath: src\auth\service.py
+Content:
+def create(*, db_session, user_in: UserRegister | UserCreate) -> CowboyUser:
+    """Creates a new dispatch user."""
+    # pydantic forces a string password, but we really want bytes
+    password = bytes(user_in.password, "utf-8")
+
+    # create the user
+    user = CowboyUser(
+        **user_in.dict(exclude={"password", "openai_api_key"}),
+        password=password,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    print("Token: ", user.token)
+    # create the credentials
+    store_oai_key(user_in.openai_api_key, user.id)
+
+    return user
+
+
+def get_user_token(*, db_session, user_id):
+    user = get(db_session=db_session, user_id=user_id)
+    return generate_token(user.email)
+--------------------------------------------------------------------------------
+Chunk ID: auth\service.py::3
+Filepath: src\auth\service.py
+Content:
+def extract_user_email_jwt(request: Request, **kwargs):
+    try:
+        authorization: str = request.headers.get("Authorization")
+        scheme, param = get_authorization_scheme_param(authorization)
+        if not authorization or scheme.lower() != "bearer":
+            log.exception(
+                f"Malformed authorization header. Scheme: {scheme} Param: {param} Authorization: {authorization}"
+            )
+            return
+
+        token = authorization.split()[1]
+        data = jwt.decode(token, COWBOY_JWT_SECRET)
+    except (JWKError, JWTError, IndexError, KeyError):
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail=[{"msg": "Could not validate credentials"}],
+        ) from None
+    return data["email"]
+--------------------------------------------------------------------------------
+Chunk ID: auth\service.py::4
+Filepath: src\auth\service.py
+Content:
+# def get_current_user(request: Request) -> CowboyUser:
+#     user_email = extract_user_email_jwt(request=request)
+
+#     if not user_email:
+#         log.exception(f"Failed to extract user email")
+#         raise InvalidCredentialException
+
+#     # kinda of strange ... if user exists, we generate a random password
+#     # for the user here ...
+#     return get_or_create(
+#         db_session=request.state.db,
+#         user_in=UserRegister(email=user_email),
+#     )
+
+
+def get_current_user(request: Request) -> CowboyUser:
+    user_email = extract_user_email_jwt(request=request)
+
+    if not user_email:
+        log.exception(f"Failed to extract user email")
+        raise InvalidCredentialException
+
+    # kinda of strange ... if user exists, we generate a random password
+    # for the user here ...
+    try:
+        user = get_by_email(
+            db_session=get_db(request),
+            email=user_email,
+        )
+    # this is special case for requests polling the /task/get endpoint
+    # where we are not passed a db session, and we want to proceed with the rest
+    # of endpoint logic
+    except DBNotSetException:
+        print("No db set")
+        return None
+
+    # generic case for user not existing
+    if not user:
+        print("No user")
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED, detail=[{"msg": "User not found"}]
+        )
+
+    return user
+
+
+def store_oai_key(api_key, user_id):
+    sm = SecretManager()
+    sm.store_parameter("OAI_KEY_" + str(user_id), api_key)
+
+
+def retrieve_oai_key(user_id):
+    sm = SecretManager()
+    return sm.retrieve_parameter("OAI_KEY_" + str(user_id))
+--------------------------------------------------------------------------------
+Chunk ID: auth\sm.py::1
+Filepath: src\auth\sm.py
+Content:
+import boto3
+from botocore.exceptions import ClientError
+
+from src.config import AWS_REGION
+
+
+class SecretManager:
+    def __init__(self, region_name=AWS_REGION):
+        """Initialize the ParameterManager with a specific AWS region."""
+        self.client = boto3.client("ssm", region_name=region_name)
+
+    def store_parameter(self, name, value, description="", key_id=None):
+        """
+        Store a parameter in AWS Parameter Store.
+
+        :param name: Name of the parameter.
+        :param value: Value of the parameter.
+        :param description: Description of the parameter.
+        :param key_id: The ID of the KMS key to use for encryption. If None, the default KMS key is used.
+        :return: Response from the put_parameter call.
+        """
+        try:
+            params = {
+                "Name": name,
+                "Value": value,
+                "Type": "SecureString" if key_id else "String",
+                "Description": description,
+                "Overwrite": True,
+            }
+            if key_id:
+                params["KeyId"] = key_id
+
+            response = self.client.put_parameter(**params)
+            return response
+        except ClientError as e:
+            print(f"An error occurred: {e}")
+            return None
+--------------------------------------------------------------------------------
+Chunk ID: auth\sm.py::2
+Filepath: src\auth\sm.py
+Content:
+class SecretManager:
+
+    def retrieve_parameter(self, name, with_decryption=True):
+        """
+        Retrieve a parameter from AWS Parameter Store.
+
+        :param name: Name of the parameter.
+        :param with_decryption: Whether to decrypt the parameter value.
+        :return: The parameter value.
+        """
+        try:
+            response = self.client.get_parameter(
+                Name=name, WithDecryption=with_decryption
+            )
+            return response["Parameter"]["Value"]
+        except ClientError as e:
+            print(f"An error occurred: {e}")
+            return None
+--------------------------------------------------------------------------------
+Chunk ID: auth\sm.py::3
+Filepath: src\auth\sm.py
+Content:
+# Example usage:
+if __name__ == "__main__":
+    region = "us-east-2"
+    param_manager = SecretManager(region_name=region)
+
+    # Store a parameter
+    param_name = "MySecret"
+    param_value = "SuperSecretValue"
+    response = param_manager.store_parameter(
+        name=param_name, value=param_value, description="A test secret parameter"
+    )
+    if response:
+        print(f"Parameter {param_name} stored successfully.")
+
+    # Retrieve a parameter
+    retrieved_value = param_manager.retrieve_parameter(name=param_name)
+    if retrieved_value:
+        print(f"Retrieved value: {retrieved_value}")
+--------------------------------------------------------------------------------
+Chunk ID: auth\views.py::1
+Filepath: src\auth\views.py
+Content:
+from src.database.core import get_db
+from src.auth.models import CowboyUser
+from src.models import HTTPSuccess
+
+from src.runner.service import RunServiceArgs, shutdown_client
+from src.queue.core import get_queue, TaskQueue
+
+from .service import get_current_user, get, get_by_email, create, store_oai_key
+from .models import UserLoginResponse, UserRegister, UpdateOAIKey
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+import logfire
+
+auth_router = APIRouter()
+--------------------------------------------------------------------------------
+Chunk ID: auth\views.py::2
+Filepath: src\auth\views.py
+Content:
+@auth_router.post("/user/register", response_model=UserLoginResponse)
+def register_user(
+    user_in: UserRegister,
+    db_session: Session = Depends(get_db),
+):
+    user = get_by_email(db_session=db_session, email=user_in.email)
+    if user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email already exists.",
+        )
+
+    user = create(db_session=db_session, user_in=user_in)
+
+    logfire.info("User registered", user=user.email)
+
+    return user
+--------------------------------------------------------------------------------
+Chunk ID: auth\views.py::3
+Filepath: src\auth\views.py
+Content:
+@auth_router.get("/user/delete")
+async def delete_user(
+    curr_user: CowboyUser = Depends(get_current_user),
+    db_session: Session = Depends(get_db),
+    task_queue: TaskQueue = Depends(get_queue),
+):
+    user = get(db_session=db_session, user_id=curr_user.id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # resets the client to get it to sync with the deleted user
+    args = RunServiceArgs(user_id=user.id, task_queue=task_queue)
+    await shutdown_client(args)
+
+    db_session.delete(user)
+    db_session.commit()
+
+    return HTTPSuccess()
+--------------------------------------------------------------------------------
+Chunk ID: auth\views.py::4
+Filepath: src\auth\views.py
+Content:
+@auth_router.post("/user/update/openai-key")
+def update_oai_key(
+    request: UpdateOAIKey,
+    curr_user: CowboyUser = Depends(get_current_user),
+    db_session: Session = Depends(get_db),
+):
+    user = get(db_session=db_session, user_id=curr_user.id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    store_oai_key(user_id=user.id, api_key=request.openai_api_key)
+
+    return HTTPSuccess()
+--------------------------------------------------------------------------------
+Chunk ID: aws\sm.py::1
+Filepath: src\aws\sm.py
+Content:
+import boto3
+from botocore.exceptions import ClientError
+
+from src.config import AWS_REGION
+
+
+class SecretManager:
+    def __init__(self, region_name=AWS_REGION):
+        """Initialize the ParameterManager with a specific AWS region."""
+        self.client = boto3.client("ssm", region_name=region_name)
+
+    def store_parameter(self, name, value, description="", key_id=None):
+        """
+        Store a parameter in AWS Parameter Store.
+
+        :param name: Name of the parameter.
+        :param value: Value of the parameter.
+        :param description: Description of the parameter.
+        :param key_id: The ID of the KMS key to use for encryption. If None, the default KMS key is used.
+        :return: Response from the put_parameter call.
+        """
+        try:
+            params = {
+                "Name": name,
+                "Value": value,
+                "Type": "SecureString" if key_id else "String",
+                "Description": description,
+                "Overwrite": True,
+            }
+            if key_id:
+                params["KeyId"] = key_id
+
+            response = self.client.put_parameter(**params)
+            return response
+        except ClientError as e:
+            print(f"An error occurred: {e}")
+            return None
+--------------------------------------------------------------------------------
+Chunk ID: aws\sm.py::2
+Filepath: src\aws\sm.py
+Content:
+class SecretManager:
+
+    def retrieve_parameter(self, name, with_decryption=True):
+        """
+        Retrieve a parameter from AWS Parameter Store.
+
+        :param name: Name of the parameter.
+        :param with_decryption: Whether to decrypt the parameter value.
+        :return: The parameter value.
+        """
+        try:
+            response = self.client.get_parameter(
+                Name=name, WithDecryption=with_decryption
+            )
+            return response["Parameter"]["Value"]
+        except ClientError as e:
+            print(f"An error occurred: {e}")
+            return None
+--------------------------------------------------------------------------------
+Chunk ID: aws\sm.py::3
+Filepath: src\aws\sm.py
+Content:
+# Example usage:
+if __name__ == "__main__":
+    region = "us-east-2"
+    param_manager = SecretManager(region_name=region)
+
+    # Store a parameter
+    param_name = "MySecret"
+    param_value = "SuperSecretValue"
+    response = param_manager.store_parameter(
+        name=param_name, value=param_value, description="A test secret parameter"
+    )
+    if response:
+        print(f"Parameter {param_name} stored successfully.")
+
+    # Retrieve a parameter
+    retrieved_value = param_manager.retrieve_parameter(name=param_name)
+    if retrieved_value:
+        print(f"Retrieved value: {retrieved_value}")
+--------------------------------------------------------------------------------
+Chunk ID: src\config.py::1
+Filepath: src\config.py
+Content:
+from starlette.config import Config
+
+from enum import Enum
+
+config = Config(".env")
+
+ENV = config("ENV", default="dev")
+PORT = 3000 if ENV == "release" else 3001
+API_ENDPOINT = "http://18.223.150.134:" + PORT
+
+# JWT settings
+COWBOY_JWT_SECRET = config("DISPATCH_JWT_SECRET", default="")
+COWBOY_JWT_ALG = config("DISPATCH_JWT_ALG", default="HS256")
+COWBOY_JWT_EXP = config("DISPATCH_JWT_EXP", cast=int, default=308790000)  # Seconds
+
+COWBOY_OPENAI_API_KEY = config("OPENAI_API_KEY")
+
+DB_PASS = config("DB_PASS")
+SQLALCHEMY_DATABASE_URI = (
+    f"postgresql://cowboyuser2:{DB_PASS}@127.0.0.1:5432/cowboytestdb"
+)
+SQLALCHEMY_ENGINE_POOL_SIZE = 50
+
+ALEMBIC_INI_PATH = "."
+ALEMBIC_CORE_REVISION_PATH = "alembic"
+
+# LLM settings and test gen settings
+AUGMENT_ROUNDS = 4 if ENV == "release" else 1
+LLM_RETRIES = 3
+AUTO_GEN_SIZE = 7
+LOG_DIR = "log"
+REPOS_ROOT = "repos"
+AWS_REGION = "us-east-2"
+
+
+class Language(str, Enum):
+    """
+    Currently supported languages
+    """
+
+    python = "python"
+--------------------------------------------------------------------------------
+Chunk ID: database\core.py::1
+Filepath: src\database\core.py
+Content:
+import functools
+import re
+
+from sqlalchemy import create_engine, inspect
+from sqlalchemy.ext.declarative import declarative_base
+from starlette.requests import Request
+
+import src.config as config
+
+engine = create_engine(
+    config.SQLALCHEMY_DATABASE_URI,
+    # pool_size=config.SQLALCHEMY_ENGINE_POOL_SIZE,
+    # max_overflow=config.DATABASE_ENGINE_MAX_OVERFLOW,
+    # pool_pre_ping=config.DATABASE_ENGINE_POOL_PING,
+)
+
+
+def resolve_table_name(name):
+    """Resolves table names to their mapped names."""
+    names = re.split("(?=[A-Z])", name)
+    return "_".join([x.lower() for x in names if x])
+
+
+# nested level get() function
+def resolve_attr(obj, attr, default=None):
+    """Attempts to access attr via dotted notation, returns none if attr does not exist."""
+    try:
+        return functools.reduce(getattr, attr.split("."), obj)
+    except AttributeError:
+        return default
+--------------------------------------------------------------------------------
+Chunk ID: database\core.py::2
+Filepath: src\database\core.py
+Content:
+class CustomBase:
+    __repr_attrs__ = []
+    __repr_max_length__ = 15
+
+    # @declared_attr
+    # def __tablename__(self):
+    #     return resolve_table_name(self.__name__)
+
+    def dict(self):
+        """Returns a dict representation of a model."""
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+    def update(self, obj):
+        """Updates a model with values from another model."""
+        for key, value in obj.dict().items():
+            if key in self.dict():
+                setattr(self, key, value)
+
+    @property
+    def _id_str(self):
+        ids = inspect(self).identity
+        if ids:
+            return "-".join([str(x) for x in ids]) if len(ids) > 1 else str(ids[0])
+        else:
+            return "None"
+--------------------------------------------------------------------------------
+Chunk ID: database\core.py::3
+Filepath: src\database\core.py
+Content:
+class CustomBase:
+
+    @property
+    def _repr_attrs_str(self):
+        max_length = self.__repr_max_length__
+
+        values = []
+        single = len(self.__repr_attrs__) == 1
+        for key in self.__repr_attrs__:
+            if not hasattr(self, key):
+                raise KeyError(
+                    "{} has incorrect attribute '{}' in "
+                    "__repr__attrs__".format(self.__class__, key)
+                )
+            value = getattr(self, key)
+            wrap_in_quote = isinstance(value, str)
+
+            value = str(value)
+            if len(value) > max_length:
+                value = value[:max_length] + "..."
+
+            if wrap_in_quote:
+                value = "'{}'".format(value)
+            values.append(value if single else "{}:{}".format(key, value))
+
+        return " ".join(values)
+
+    def __repr__(self):
+        # get id like '#123'
+        id_str = ("#" + self._id_str) if self._id_str else ""
+        # join class name, id and repr_attrs
+        return "<{} {}{}>".format(
+            self.__class__.__name__,
+            id_str,
+            " " + self._repr_attrs_str if self._repr_attrs_str else "",
+        )
+
+
+Base = declarative_base(cls=CustomBase)
+
+
+class DBNotSetException(Exception):
+    pass
+
+
+def get_db(request: Request):
+    try:
+        return request.state.db
+    except AttributeError:
+        raise DBNotSetException("Database not set on request.")
+
+
+# Triggers initial response field validation error
+# DbSession = Annotated[Session, Depends(get_db)]
+--------------------------------------------------------------------------------
+Chunk ID: database\manage.py::1
+Filepath: src\database\manage.py
+Content:
+import os
+import logging
+
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+
+from sqlalchemy import text
+from sqlalchemy.schema import CreateSchema
+from sqlalchemy_utils import create_database, database_exists
+
+import src.config as config
+
+from .core import Base, sessionmaker
+
+
+log = logging.getLogger(__file__)
+
+
+def version_schema(script_location: str):
+    """Applies alembic versioning to schema."""
+
+    # add it to alembic table
+    alembic_cfg = AlembicConfig(config.ALEMBIC_INI_PATH)
+    alembic_cfg.set_main_option("script_location", script_location)
+    alembic_command.stamp(alembic_cfg, "head")
+
+
+def get_core_tables():
+    """Fetches tables that belong to the 'dispatch_core' schema."""
+    core_tables = []
+    for _, table in Base.metadata.tables.items():
+        if table.schema == "dispatch_core":
+            core_tables.append(table)
+    return core_tables
+
+
+def get_tenant_tables():
+    """Fetches tables that belong to their own tenant tables."""
+    tenant_tables = []
+    for _, table in Base.metadata.tables.items():
+        if not table.schema:
+            tenant_tables.append(table)
+    return tenant_tables
+--------------------------------------------------------------------------------
+Chunk ID: database\manage.py::2
+Filepath: src\database\manage.py
+Content:
+def init_database(engine):
+    """Initializes the database."""
+
+    print(engine.__dict__)
+
+    if not database_exists(str(config.SQLALCHEMY_DATABASE_URI)):
+        create_database(str(config.SQLALCHEMY_DATABASE_URI))
+
+    # schema_name = "dispatch_core"
+    # if not engine.dialect.has_schema(engine, schema_name):
+    #     with engine.connect() as connection:
+    #         connection.execute(CreateSchema(schema_name))
+
+    tables = get_core_tables()
+
+    print(tables)
+
+    # Base.metadata.create_all(engine, tables=tables)
+
+    # version_schema(script_location=config.ALEMBIC_CORE_REVISION_PATH)
+    # setup_fulltext_search(engine, tables)
+
+    # # setup an required database functions
+    # session = sessionmaker(bind=engine)
+    # db_session = session()
+
+    # # we create the default organization if it doesn't exist
+    # organization = (
+    #     db_session.query(Organization)
+    #     .filter(Organization.name == "default")
+    #     .one_or_none()
+    # )
+    # if not organization:
+    #     print("Creating default organization...")
+    #     organization = Organization(
+    #         name="default",
+    #         slug="default",
+    #         default=True,
+    #         description="Default Dispatch organization.",
+    #     )
+
+    #     db_session.add(organization)
+    #     db_session.commit()
+
+    # # we initialize the database schema
+    # init_schema(engine=engine, organization=organization)
+
+    # # we install all plugins
+    # from dispatch.common.utils.cli import install_plugins
+    # from dispatch.plugins.base import plugins
+
+    # install_plugins()
+
+    # for p in plugins.all():
+    #     plugin = Plugin(
+    #         title=p.title,
+    #         slug=p.slug,
+    #         type=p.type,
+    #         version=p.version,
+--------------------------------------------------------------------------------
+Chunk ID: database\manage.py::3
+Filepath: src\database\manage.py
+Content:
+# def init_schema(*, engine, organization: Organization):
+#     """Initializes a new schema."""
+#     schema_name = f"test_schema"
+
+#     if not engine.dialect.has_schema(engine, schema_name):
+#         with engine.connect() as connection:
+#             connection.execute(CreateSchema(schema_name))
+
+#     # set the schema for table creation
+#     tables = get_tenant_tables()
+
+#     schema_engine = engine.execution_options(
+#         schema_translate_map={
+#             None: schema_name,
+#         }
+#     )
+
+#     Base.metadata.create_all(schema_engine, tables=tables)
+
+#     # put schema under version control
+#     version_schema(script_location=config.ALEMBIC_TENANT_REVISION_PATH)
+
+#     with engine.connect() as connection:
+#         # we need to map this for full text search as it uses sql literal strings
+#         # and schema translate map does not apply
+#         for t in tables:
+#             t.schema = schema_name
+
+#         setup_fulltext_search(connection, tables)
+
+#     session = sessionmaker(bind=schema_engine)
+#     db_session = session()
+
+#     organization = db_session.merge(organization)
+#     db_session.add(organization)
+#     db_session.commit()
+#     return organization
+
+
+# def setup_fulltext_search(connection, tables):
+#     """Syncs any required fulltext table triggers and functions."""
+#     # parsing functions
+#     function_path = os.path.join(
+#         os.path.dirname(os.path.abspath(fulltext.__file__)), "expressions.sql"
+#     )
+#     connection.execute(text(open(function_path).read()))
+
+#     for table in tables:
+#         table_triggers = []
+#         for column in table.columns:
+#             if column.name.endswith("search_vector"):
+#                 if hasattr(column.type, "columns"):
+#                     table_triggers.append(
+#                         {
+#                             "conn": connection,
+#                             "table": table,
+#                             "tsvector_column": "search_vector",
+#                             "indexed_columns": column.type.columns,
+#                         }
+#                     )
+#                 else:
+#                     log.warning(
+#                         f"Column search_vector defined but no index columns found. Table: {table.name}"
+#                     )
+
+#         for trigger in table_triggers:
+#             sync_trigger(**trigger)
+--------------------------------------------------------------------------------
+Chunk ID: src\exceptions.py::1
+Filepath: src\exceptions.py
+Content:
+from pydantic.errors import PydanticUserError
+
+
+class CowboyRunTimeException(Exception):
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+--------------------------------------------------------------------------------
+Chunk ID: extensions\__init__.py::1
+Filepath: src\extensions\__init__.py
+Content:
+from .sentry import init_sentry
+--------------------------------------------------------------------------------
+Chunk ID: extensions\sentry.py::1
+Filepath: src\extensions\sentry.py
+Content:
+import sentry_sdk
+
+
+def init_sentry():
+    sentry_sdk.init(
+        dsn="https://0de14048c02d4d10a00dafb70966c33c@o4507195649294336.ingest.us.sentry.io/4507195650736128",
+        # Set traces_sample_rate to 1.0 to capture 100%
+        # of transactions for performance monitoring.
+        traces_sample_rate=1.0,
+        # Set profiles_sample_rate to 1.0 to profile 100%
+        # of sampled transactions.
+        # We recommend adjusting this value in production.
+        profiles_sample_rate=1.0,
+    )
+--------------------------------------------------------------------------------
+Chunk ID: health\views.py::1
+Filepath: src\health\views.py
+Content:
+from fastapi import APIRouter, Depends
+from src.models import HTTPSuccess
+from src.auth.service import get_current_user
+from src.auth.models import CowboyUser
+
+
+health_router = APIRouter()
+
+
+@health_router.get("/health")
+async def health():
+    return HTTPSuccess()
+--------------------------------------------------------------------------------
+Chunk ID: src\logger.py::1
+Filepath: src\logger.py
+Content:
+from src.config import LOG_DIR
+
+import logging
+import os
+from datetime import datetime
+import pytz
+import logfire
+
+
+def converter(timestamp):
+    dt = datetime.fromtimestamp(timestamp, tz=pytz.utc)
+    return dt.astimezone(pytz.timezone("US/Eastern")).timetuple()
+
+
+formatter = logging.Formatter(
+    "%(asctime)s - %(name)s:%(levelname)s: %(filename)s:%(lineno)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+formatter.converter = converter
+
+
+def get_file_handler(log_dir=LOG_DIR, file_prefix: str = ""):
+    """
+    Returns a file handler for logging.
+    """
+    os.makedirs(log_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    file_name = f"{file_prefix}_{timestamp}.log"
+    file_handler = logging.FileHandler(os.path.join(log_dir, file_name))
+    file_handler.setFormatter(formatter)
+    return file_handler
+
+
+def get_console_handler():
+    """
+    Returns a console handler for logging.
+    """
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    return console_handler
+
+
+testgen_logger = logging.getLogger("testgen_logger")
+testgen_logger.setLevel(logging.INFO)
+testgen_logger.addHandler(get_file_handler(file_prefix="testgen"))
+testgen_logger.addHandler(get_console_handler())
+
+sync_repo = logging.getLogger("sync_repo")
+sync_repo.setLevel(logging.INFO)
+sync_repo.addHandler(get_file_handler(file_prefix="syncrepo"))
+sync_repo.addHandler(get_console_handler())
+
+loggers = [testgen_logger, sync_repo]
+
+
+def set_log_level(level=logging.INFO):
+    """
+    Sets the logging level for all defined loggers.
+    """
+    for logger in loggers:
+        logger.setLevel(level)
+        for handler in logger.handlers:
+            handler.setLevel(level)
+
+
+def configure_uvicorn_logger():
+    uvicorn_error_logger = logging.getLogger("uvicorn.error")
+    uvicorn_error_logger.addHandler(get_file_handler())
+    uvicorn_error_logger.addHandler(get_console_handler())
+
+
+# LOGFIRE METRICS
+# accepted_count = logfire.metric_counter("accepted_tests", unit="1")
+# failed_count = logfire.metric_counter("failed_tests", unit="1")
+# total_count = logfire.metric_counter("total_tests", unit="1")
+--------------------------------------------------------------------------------
+Chunk ID: src\models.py::1
+Filepath: src\models.py
+Content:
+from datetime import datetime
+from sqlalchemy import Column, DateTime, event
+from pydantic import BaseModel, Field
+from pydantic.types import SecretStr
+
+from typing import Annotated
+
+PrimaryKey = Annotated[int, Field(gt=0, lt=2147483647)]
+NameStr = Annotated[
+    str, Field(pattern=r"^(?!\s*$).+", strip_whitespace=True, min_length=3)
+]
+
+
+class TimeStampMixin(object):
+    """Timestamping mixin"""
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at._creation_order = 9998
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at._creation_order = 9998
+
+    @staticmethod
+    def _updated_at(mapper, connection, target):
+        target.updated_at = datetime.utcnow()
+
+    @classmethod
+    def __declare_last__(cls):
+        event.listen(cls, "before_update", cls._updated_at)
+
+
+class CowboyBase(BaseModel):
+    class Config:
+        from_attributes = True
+        validate_assignment = True
+        arbitrary_types_allowed = True
+        str_strip_whitespace = True
+
+        json_encoders = {
+            # custom output conversion for datetime
+            datetime: lambda v: v.strftime("%Y-%m-%dT%H:%M:%SZ") if v else None,
+            SecretStr: lambda v: v.get_secret_value() if v else None,
+        }
+
+
+class HTTPSuccess(BaseModel):
+    msg: str = "Success"
+--------------------------------------------------------------------------------
+Chunk ID: queue\core.py::1
+Filepath: src\queue\core.py
+Content:
+from cowboy_lib.api.runner.shared import Task, TaskStatus
+
+from fastapi import Request
+from threading import Lock
+from collections import defaultdict
+from typing import List, Dict
+from asyncio import Event, wait_for
+
+
+class TaskEvent:
+    def __init__(self, task: Task):
+        self.event = Event()
+        self.task = task
+        self.result = None
+
+    async def wait(self, timeout: float = None):
+        try:
+            if timeout:
+                await wait_for(self.event.wait(), timeout)
+            else:
+                await self.event.wait()
+        except TimeoutError:
+            return None
+
+        return self.result
+
+    def complete(self, result):
+        """
+        Complete with result and signal event to wake up
+        """
+        self.result = result
+        self.event.set()
+
+    @property
+    def task_id(self):
+        return self.task.task_id
+
+    def __eq__(self, other):
+        return self.task_id == other.task_id
+
+    # def __hash__(self):
+    #     return sum([ord(c) for c in self.task_id])
+--------------------------------------------------------------------------------
+Chunk ID: queue\core.py::2
+Filepath: src\queue\core.py
+Content:
+class TaskQueue:
+    """
+    A set of queues separated by user_id
+    """
+
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not isinstance(cls._instance, cls):
+            print("Creating new TaskQueue instance")
+            cls._instance = super(TaskQueue, cls).__new__(cls, *args, **kwargs)
+            cls._instance._initialized = False
+
+        return cls._instance
+
+    def __init__(self):
+        if not self._initialized:
+            # Initialize instance variables only once
+            self.queue: Dict[str, List[TaskEvent]] = defaultdict(list)
+            self.locks = defaultdict(list)
+            self._initialized = True  # Mark as initialized
+
+    def _acquire_lock(self, user_id: int):
+        if self.locks.get(user_id, None) is None:
+            self.locks[user_id] = Lock()
+        return self.locks.get(user_id)
+
+    def put(self, user_id: int, task: str) -> TaskEvent:
+        with self._acquire_lock(user_id):
+            t = TaskEvent(task)
+            self.queue[user_id].append(t)
+
+            return t
+
+    def complete(self, user_id: int, task_id: str, res):
+        with self._acquire_lock(user_id):
+            for i in range(len(self.queue[user_id])):
+                if self.queue[user_id][i].task_id == task_id:
+                    t = self.queue[user_id].pop(i)
+                    t.complete(res)
+                    break
+
+    # def get(self, user_id: int) -> Task:
+    #     """
+    #     Returns the first PENDING task and changes its status to STARTED
+    #     """
+    #     with self._acquire_lock(user_id):
+    #         if len(self.queue[user_id]) == 0:
+    #             return None
+
+    #         return self.queue[user_id].pop()
+
+    def get_all(self, user_id: int) -> List[Task]:
+        with self._acquire_lock(user_id):
+            if len(self.queue[user_id]) == 0:
+                return []
+
+            tasks = []
+            for t in filter(
+                lambda t: t.task.status == TaskStatus.PENDING.value, self.queue[user_id]
+            ):
+                t.task.status = TaskStatus.STARTED.value
+                tasks.append(t.task)
+
+            return tasks
+
+    def peak(self, user_id: int, n: int) -> List[Task]:
+        """
+        Get the first n tasks in queue without removing
+        """
+        with self._acquire_lock(user_id):
+            if len(self.queue[user_id]) == 0:
+                return []
+
+            return [t.task for t in self.queue[user_id][:n]]
+
+
+def get_queue(request: Request):
+    return request.state.task_queue
+
+
+def get_token_registry(request: Request):
+    from main import token_registry
+
+    return token_registry
+
+
+def get_token(request: Request):
+    """
+    Returns the user id
+    """
+    token = request.headers.get("x-task-auth", None)
+    # need this or else we end up converting None to "None" **shakes fist @ python moment"
+    return str(token) if token else None
+--------------------------------------------------------------------------------
+Chunk ID: queue\models.py::1
+Filepath: src\queue\models.py
+Content:
+from cowboy_lib.api.runner.shared import Task
+
+
+class CompleteTaskRequest(Task):
+    pass
+
+
+class GetTaskResponse(Task):
+    pass
+--------------------------------------------------------------------------------
+Chunk ID: queue\permissions.py::1
+Filepath: src\queue\permissions.py
+Content:
+from src.auth.permissions import BasePermission
+from src.auth.service import get_current_user
+
+from fastapi import HTTPException
+
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+class TaskGetPermissions(BasePermission):
+    def __init__(self, request: Request):
+        try:
+            user = get_current_user(request=request)
+            if not user:
+                raise HTTPException(
+                    status_code=self.user_error_code, detail=self.user_error_msg
+                )
+
+        # this happens when the db is not set
+        except AttributeError:
+            pass
+--------------------------------------------------------------------------------
+Chunk ID: queue\service.py::1
+Filepath: src\queue\service.py
+Content:
+from cowboy_lib.api.runner.shared import Task
+
+from typing import Optional, List, Dict
+
+from src.queue.core import TaskQueue
+
+
+def list_tasks(*, task_queue: TaskQueue, user_id: int, n: int) -> Optional[List[Task]]:
+    """List all tasks in the queue."""
+
+    return task_queue.peak(user_id, n)
+
+
+def dequeue_task(*, task_queue: TaskQueue, user_id: int) -> Optional[List[Task]]:
+    """Dequeue the first task in the queue: retrieve and delete it."""
+
+    return task_queue.get_all(user_id)
+
+
+def complete_task(
+    *, task_queue: TaskQueue, user_id: int, task_id: str, result: Dict
+) -> None:
+    """Mark a task as completed."""
+    task_queue.complete(user_id, task_id, result)
+
+
+def enqueue_task_and_wait(*, task_queue: TaskQueue, task: Task, user_id: int):
+    """Enqueue a task to the specified queue."""
+
+    f = task_queue.put(user_id, task)
+    return f
+--------------------------------------------------------------------------------
+Chunk ID: queue\views.py::1
+Filepath: src\queue\views.py
+Content:
+from cowboy_lib.api.runner.shared import Task
+
+from .service import list_tasks, dequeue_task, complete_task
+from .models import CompleteTaskRequest
+from .core import TaskQueue, get_queue, get_token_registry, get_token
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+
+from src.database.core import get_db
+from src.auth.service import get_current_user
+from src.auth.models import CowboyUser
+
+from typing import List, Set
+
+task_queue_router = APIRouter()
+
+
+@task_queue_router.get("/task/list", response_model=List[Task])
+def list(
+    task_queue: TaskQueue = Depends(get_queue),
+    curr_user: CowboyUser = Depends(get_current_user),
+):
+    tasks = list_tasks(task_queue=task_queue, user_id=curr_user.id, n=3)
+    return tasks
+--------------------------------------------------------------------------------
+Chunk ID: queue\views.py::2
+Filepath: src\queue\views.py
+Content:
+# incredibly hacky, basically, to prevent db connections from being used up
+# we exclude db connections for this endpoint, we do the following:
+# 1. First request actually does get a db sess, which we use to auth the user
+# 2. Grab user id and add it into a in-mem token_registry list
+# 3. Return user id as "set-x-task-auth" header
+# 4. When the client puts user id into x-task-auth header
+# 5. Our DBMiddleware will check the header, and if token is in registry, will not
+# add a db session to the request
+@task_queue_router.get("/task/get", response_model=List[Task])
+def get(
+    response: Response,
+    task_queue: TaskQueue = Depends(get_queue),
+    # don't try to do anything with curr_user because most of the time
+    # we only have user_token to work with
+    curr_user: CowboyUser = Depends(get_current_user),
+    token_registry: Set[str] = Depends(get_token_registry),
+    user_token: str = Depends(get_token),
+    # perms: str = Depends(PermissionsDependency([TaskGetPermissions])),
+):
+    # at this point we have passed db user auth; test
+    # catches if user sets random token
+    if user_token and user_token not in token_registry:
+        raise HTTPException(
+            status_code=401,
+            detail="Token not in registry, cannot proceed. \
+            Are you sure you are logged in on the client?",
+        )
+    # issue token if it does not exist
+    elif not user_token:
+        print("Setting new token ..")
+        response.headers["set-x-task-auth"] = str(curr_user.id)
+        token_registry.add(str(curr_user.id))
+
+    tasks = dequeue_task(
+        task_queue=task_queue, user_id=curr_user.id if curr_user else int(user_token)
+    )
+    return tasks
+
+
+@task_queue_router.post("/task/complete", response_model=CompleteTaskRequest)
+def complete(
+    task: CompleteTaskRequest,
+    task_queue: TaskQueue = Depends(get_queue),
+    curr_user: CowboyUser = Depends(get_current_user),
+):
+
+    task_queue = complete_task(
+        task_queue=task_queue,
+        user_id=curr_user.id,
+        task_id=task.task_id,
+        result=task.result,
+    )
+    return task
+--------------------------------------------------------------------------------
+Chunk ID: repo\models.py::1
+Filepath: src\repo\models.py
+Content:
+from cowboy_lib.coverage import TestCoverage
+
+from sqlalchemy import Column, Integer, String, JSON, ForeignKey, Boolean
+from sqlalchemy.orm import relationship
+from pydantic import Field
+
+from src.models import CowboyBase
+from src.database.core import Base
+from src.config import Language
+
+from typing import List, Any, Dict, Optional
+
+
+class RepoConfig(Base):
+    """
+    Stores configuration for a repository
+    """
+
+    __tablename__ = "repo_config"
+
+    id = Column(Integer, primary_key=True)
+    repo_name = Column(String)
+    url = Column(String)
+    source_folder = Column(String)
+    cloned_folders = Column(String)
+    # git remote and git main branch (to merge into)
+    remote = Column(String)
+    main = Column(String)
+    language = Column(String)
+
+    # keep this argument fluid, may change
+    python_conf = Column(JSON)
+    user_id = Column(Integer, ForeignKey("cowboy_user.id"))
+    is_experiment = Column(Boolean)
+
+    # relations
+    test_modules = relationship(
+        "TestModuleModel", backref="repo_config", cascade="all, delete-orphan"
+    )
+    nodes = relationship(
+        "NodeModel", backref="repo_config", cascade="all, delete-orphan"
+    )
+    cov_list = relationship(
+        "CoverageModel", backref="repo_config", cascade="all, delete-orphan"
+    )
+    stats = relationship("RepoStats", uselist=False, cascade="all, delete-orphan")
+
+    def __init__(
+        self,
+        repo_name,
+        url,
+        source_folder,
+        cloned_folders,
+        python_conf,
+        user_id,
+        remote,  # origin
+        main,
+        language,
+        is_experiment=False,
+    ):
+        self.repo_name = repo_name
+        self.url = url
+        self.source_folder = source_folder
+        self.cloned_folders = ",".join(cloned_folders)
+        self.python_conf = python_conf
+        self.user_id = user_id
+        self.remote = remote
+        self.main = main
+        self.language = language
+        self.is_experiment = is_experiment
+
+    def to_dict(self):
+        return {
+            "repo_name": self.repo_name,
+            "url": self.url,
+            "source_folder": self.source_folder,
+            "cloned_folders": self.cloned_folders.split(","),
+            "python_conf": self.python_conf,
+            "user_id": self.user_id,
+            "remote": self.remote,
+            "main": self.main,
+            "language": self.language,
+            "is_experiment": self.is_experiment,
+        }
+
+    @property
+    def base_cov(self) -> TestCoverage:
+        return TestCoverage([cov.deserialize() for cov in self.cov_list])
+--------------------------------------------------------------------------------
+Chunk ID: repo\models.py::2
+Filepath: src\repo\models.py
+Content:
+class LangConf(CowboyBase):
+    """
+    Holds the language/framework specific settings
+    for a repo
+    """
+
+    # currently I expect only an interpreter/compiler path that points
+    # to the runtime for the targeted repo
+    interp: str
+
+
+class PythonConf(LangConf):
+    language: str = "python"
+    cov_folders: List[str]
+    test_folder: str
+    interp: str
+    pythonpath: str
+
+    def get(self, __name: str, default: Any = None) -> Any:
+        return self.dict().get(__name, default)
+
+
+class RepoConfigBase(CowboyBase):
+    repo_name: str
+    url: str
+    source_folder: str
+    cloned_folders: List[str]
+    python_conf: PythonConf
+
+    language: Optional[Language] = Field(default="python")
+    is_experiment: Optional[bool] = Field(default=False)
+    main: Optional[str] = Field(default="main")
+    remote: Optional[str] = Field(default="origin")
+
+
+class RepoConfigGet(RepoConfigBase):
+    pass
+
+
+class RepoConfigCreate(RepoConfigBase):
+    repo_name: str
+
+
+class RepoConfigList(CowboyBase):
+    repo_list: List[RepoConfigBase]
+
+
+class RepoConfigRemoteCommit(CowboyBase):
+    sha: str
+
+
+# class RepoConfigDelete(BaseModel):
+#     repo_name: str
+--------------------------------------------------------------------------------
+Chunk ID: repo\service.py::1
+Filepath: src\repo\service.py
+Content:
+from cowboy_lib.repo import GitRepo, SourceRepo
+
+from src.utils import gen_random_name
+from src.auth.models import CowboyUser
+from src.config import REPOS_ROOT
+from src.queue.core import TaskQueue
+
+from .models import RepoConfig, RepoConfigCreate
+
+from pathlib import Path
+from logging import getLogger
+from fastapi import HTTPException
+
+
+logger = getLogger(__name__)
+
+
+def get(*, db_session, curr_user: CowboyUser, repo_name: str) -> RepoConfig:
+    """Returns a repo based on the given repo name."""
+    return (
+        db_session.query(RepoConfig)
+        .filter(RepoConfig.repo_name == repo_name, RepoConfig.user_id == curr_user.id)
+        .one_or_none()
+    )
+--------------------------------------------------------------------------------
+Chunk ID: repo\service.py::2
+Filepath: src\repo\service.py
+Content:
+def get_or_raise(*, db_session, curr_user: CowboyUser, repo_name: str) -> RepoConfig:
+    """Returns a repo based on the given repo name."""
+    repo = (
+        db_session.query(RepoConfig)
+        .filter(
+            RepoConfig.repo_name == repo_name,
+            RepoConfig.user_id == curr_user.id,
+        )
+        .one_or_none()
+    )
+    # TODO: consider raising pydantic Validation error here instead
+    # seems to be what dispatch does
+    if not repo:
+        raise HTTPException(status_code=400, detail=f"Repo {repo_name} not found")
+
+    return repo
+--------------------------------------------------------------------------------
+Chunk ID: repo\service.py::3
+Filepath: src\repo\service.py
+Content:
+def get_all(*, db_session) -> list[RepoConfig]:
+    """Returns all repos."""
+    return db_session.query(RepoConfig).all()
+
+
+def get_by_id_or_raise(
+    *, db_session, curr_user: CowboyUser, repo_id: int
+) -> RepoConfig:
+    """Returns a repo based on the given repo id."""
+    repo = (
+        db_session.query(RepoConfig)
+        .filter(RepoConfig.id == repo_id, RepoConfig.user_id == curr_user.id)
+        .one_or_none()
+    )
+    if not repo:
+        raise HTTPException(status_code=400, detail=f"Repo {repo_id} not found")
+
+    return repo
+--------------------------------------------------------------------------------
+Chunk ID: repo\service.py::4
+Filepath: src\repo\service.py
+Content:
+def get_experiment(*, db_session, curr_user: CowboyUser, repo_name: str) -> RepoConfig:
+    """Returns a repo based on the given repo name."""
+
+    return (
+        db_session.query(RepoConfig)
+        .filter(
+            RepoConfig.repo_name == repo_name,
+            RepoConfig.user_id == curr_user.id,
+            RepoConfig.is_experiment == True,
+        )
+        .one_or_none()
+    )
+
+
+def delete(*, db_session, curr_user: CowboyUser, repo_name: str) -> RepoConfig:
+    """Deletes a repo based on the given repo name."""
+
+    repo = get(db_session=db_session, curr_user=curr_user, repo_name=repo_name)
+    if repo:
+        db_session.delete(repo)
+        db_session.commit()
+
+        GitRepo.delete_repo(Path(repo.source_folder))
+        return repo
+
+    return None
+
+
+def clean(*, db_session, curr_user: CowboyUser, repo_name: str) -> RepoConfig:
+    """Cleans repo branches."""
+
+    repo = get(db_session=db_session, curr_user=curr_user, repo_name=repo_name)
+    if repo:
+        GitRepo.clean_branches(Path(repo.source_folder))
+        return repo
+
+    return None
+--------------------------------------------------------------------------------
+Chunk ID: repo\service.py::5
+Filepath: src\repo\service.py
+Content:
+async def create(
+    *,
+    db_session,
+    curr_user: CowboyUser,
+    repo_in: RepoConfigCreate,
+    task_queue: TaskQueue,
+) -> RepoConfig:
+    """Creates a new repo."""
+
+    repo_dst = None
+    try:
+        repo = RepoConfig(
+            **repo_in.dict(),
+            user_id=curr_user.id,
+        )
+
+        repo_dst = Path(REPOS_ROOT) / repo.repo_name / gen_random_name()
+        GitRepo.clone_repo(repo_dst, repo.url)
+
+        src_repo = SourceRepo(repo_dst)
+        repo.source_folder = str(repo_dst)
+        db_session.add(repo)
+        # have to commit here or because run_test depends on existing RepoConfig
+        db_session.commit()
+
+        return repo
+
+    except Exception as e:
+        db_session.rollback()
+        if repo:
+            delete(db_session=db_session, curr_user=curr_user, repo_name=repo.repo_name)
+
+        if repo_dst:
+            GitRepo.delete_repo(repo_dst)
+
+        logger.error(f"Failed to create repo configuration: {e}")
+        raise
+--------------------------------------------------------------------------------
+Chunk ID: repo\service.py::6
+Filepath: src\repo\service.py
+Content:
+def update(
+    *, db_session, curr_user: CowboyUser, repo_name: int, repo_in: RepoConfigCreate
+) -> RepoConfig:
+    """Updates a repo."""
+
+    repo = get(db_session=db_session, curr_user=curr_user, repo_name=repo_name)
+    if not repo:
+        return None
+
+    repo.update(repo_in)
+    db_session.commit()
+
+    return repo
+
+
+async def create_or_update(
+    *,
+    db_session,
+    curr_user: CowboyUser,
+    repo_in: RepoConfigCreate,
+    task_queue: TaskQueue,
+) -> RepoConfig:
+    """Create or update a repo"""
+    repo_conf = get(
+        db_session=db_session, curr_user=curr_user, repo_name=repo_in.repo_name
+    )
+
+    if not repo_conf:
+        return await create(
+            db_session=db_session,
+            curr_user=curr_user,
+            repo_in=repo_in,
+            task_queue=task_queue,
+        )
+
+    return update(
+        db_session=db_session,
+        curr_user=curr_user,
+        repo_name=repo_in.repo_name,
+        repo_in=repo_in,
+    )
+
+
+def list(*, db_session, curr_user: CowboyUser) -> RepoConfig:
+    """Lists all repos for a user."""
+
+    return db_session.query(RepoConfig).filter(RepoConfig.user_id == curr_user.id).all()
+--------------------------------------------------------------------------------
+Chunk ID: repo\views.py::1
+Filepath: src\repo\views.py
+Content:
+from cowboy_lib.repo import GitRepo
+
+from src.database.core import get_db
+from src.models import HTTPSuccess
+from src.auth.service import get_current_user, CowboyUser
+from src.queue.core import get_queue, TaskQueue
+from src.runner.service import RunServiceArgs, shutdown_client
+
+from .service import create_or_update, get, delete, list, clean
+from .models import (
+    RepoConfigCreate,
+    RepoConfigList,
+    RepoConfigGet,
+    RepoConfigRemoteCommit,
+)
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pathlib import Path
+
+
+repo_router = APIRouter()
+--------------------------------------------------------------------------------
+Chunk ID: repo\views.py::2
+Filepath: src\repo\views.py
+Content:
+@repo_router.post("/repo/create", response_model=RepoConfigCreate)
+async def create_repo(
+    repo_in: RepoConfigCreate,
+    db_session: Session = Depends(get_db),
+    current_user: CowboyUser = Depends(get_current_user),
+    task_queue: TaskQueue = Depends(get_queue),
+):
+    repo = get(
+        db_session=db_session, repo_name=repo_in.repo_name, curr_user=current_user
+    )
+    if repo:
+        raise HTTPException(
+            status_code=400, detail="A repo with this name already exists."
+        )
+
+    repo_config = await create_or_update(
+        db_session=db_session,
+        repo_in=repo_in,
+        curr_user=current_user,
+        task_queue=task_queue,
+    )
+    # need as_dict to convert cloned_folders to list
+    return repo_config.to_dict()
+--------------------------------------------------------------------------------
+Chunk ID: repo\views.py::3
+Filepath: src\repo\views.py
+Content:
+# @repo_router.delete("/repo/delete/{repo_name}", response_model=HTTPSuccess)
+# async def delete_repo(
+#     repo_name: str,
+#     db_session: Session = Depends(get_db),
+#     current_user: CowboyUser = Depends(get_current_user),
+#     task_queue: TaskQueue = Depends(get_queue),
+# ):
+#     deleted = delete(db_session=db_session, repo_name=repo_name, curr_user=current_user)
+#     if not deleted:
+#         raise HTTPException(
+#             status_code=400, detail="A repo with this name does not exists."
+#         )
+
+#     # need this to shut down the client after a repo is deleted, or else
+#     # it will use old cloned_folders to execute the runner
+#     args = RunServiceArgs(user_id=current_user.id, task_queue=task_queue)
+#     await shutdown_client(args)
+
+#     return HTTPSuccess()
+
+
+# @repo_router.delete("/repo/clean/{repo_name}", response_model=HTTPSuccess)
+# def clean_repo(
+#     repo_name: str,
+#     db_session: Session = Depends(get_db),
+#     current_user: CowboyUser = Depends(get_current_user),
+# ):
+#     cleaned = clean(db_session=db_session, repo_name=repo_name, curr_user=current_user)
+
+#     if not cleaned:
+#         raise HTTPException(
+#             status_code=400, detail="A repo with this name does not exists."
+#         )
+#     return HTTPSuccess()
+
+
+# @repo_router.get("/repo/get/{repo_name}", response_model=RepoConfigGet)
+# def get_repo(
+#     repo_name: str,
+#     db_session: Session = Depends(get_db),
+#     current_user: CowboyUser = Depends(get_current_user),
+# ):
+#     repo = get(db_session=db_session, repo_name=repo_name, curr_user=current_user)
+#     if not repo:
+#         raise HTTPException(
+#             status_code=400, detail="A repo with this name does not exists."
+#         )
+#     return repo.to_dict()
+
+
+# @repo_router.get("/repo/list", response_model=RepoConfigList)
+# def list_repos(
+#     db_session: Session = Depends(get_db),
+#     current_user: CowboyUser = Depends(get_current_user),
+# ):
+#     repos = list(db_session=db_session, curr_user=current_user)
+#     return RepoConfigList(repo_list=repos)
+
+
+# # TODO: this should return HEAD of repo.source_folder rather than the remote repo
+# # once we finish our task refactor
+# @repo_router.get("/repo/get_head/{repo_name}", response_model=RepoConfigRemoteCommit)
+# def get_head(
+#     repo_name: str,
+#     db_session: Session = Depends(get_db),
+#     current_user: CowboyUser = Depends(get_current_user),
+# ):
+#     repo = get(db_session=db_session, repo_name=repo_name, curr_user=current_user)
+#     if not repo:
+#         raise HTTPException(
+#             status_code=400, detail="A repo with this name does not exists."
+#         )
+
+#     git_repo = GitRepo(Path(repo.source_folder))
+
+#     # return RepoConfigRemoteCommit(sha=git_repo.local_commit)
+#     return RepoConfigRemoteCommit(sha=git_repo.remote_commit)
+--------------------------------------------------------------------------------
+Chunk ID: scripts\drop_db.py::1
+Filepath: src\scripts\drop_db.py
+Content:
+import src.config as config
+import click
+from src.database.core import engine
+
+
+@click.group()
+def cowboy_database():
+    pass
+
+
+@cowboy_database.command("drop")
+def drop_database():
+    """Drops all data in database."""
+    from sqlalchemy_utils import database_exists, drop_database
+
+    if database_exists(str(config.SQLALCHEMY_DATABASE_URI)):
+        drop_database(str(config.SQLALCHEMY_DATABASE_URI))
+
+
+drop_database()
+--------------------------------------------------------------------------------
+Chunk ID: scripts\neuter_repo.py::1
+Filepath: src\scripts\neuter_repo.py
+Content:
+from src.test_modules.iter_tms import iter_test_modules
+from cowboy_lib.repo import SourceRepo
+from cowboy_lib.test_modules import TestModule
+from cowboy_lib.ast import NodeType
+
+from typing import List
+
+import sys
+from pathlib import Path
+
+
+def num_delete(tm: TestModule, to_keep: int = 1, to_delete: int = 1) -> int:
+    if to_keep and to_delete:
+        raise Exception("Cannot have both values > 0")
+
+    # always leave at least one test
+    if to_keep:
+        num_to_del = max(0, len(tm.tests) - to_keep)
+        return num_to_del
+    elif to_delete:
+        num_to_del = min(len(tm.tests) - 1, to_delete)
+        return num_to_del
+    else:
+        raise Exception("Must provide either to_keep or to_delete value")
+--------------------------------------------------------------------------------
+Chunk ID: scripts\neuter_repo.py::2
+Filepath: src\scripts\neuter_repo.py
+Content:
+def neuter_tests(
+    test_modules: List[TestModule], src_repo: SourceRepo, to_keep, to_delete=0
+):
+    total_deleted = 0
+    failed_mod = 0
+    for tm in test_modules:
+        try:
+            print("Deleting tm: ", tm.name)
+            to_exclude = []
+            # BUG: tm.tests gets modified somehow
+            num_to_del = num_delete(tm, to_keep=to_keep, to_delete=to_delete)
+            total_tests = len(tm.tests)
+
+            for func in tm.tests[:num_to_del]:
+                to_exclude.append((func, tm.test_file.path))
+                # CARE: this operation has changes state of src_repo,
+                # which is then propagated to strategy below
+                src_repo.find_file(tm.path).delete(
+                    func.name, node_type=NodeType.Function
+                )
+                # tm.test_file.delete(func.name, node_type=NodeType.Function)
+
+                with open(src_repo.repo_path / tm.test_file.path, "w") as f:
+                    # print(tm.test_file.to_code())
+                    f.write(src_repo.find_file(tm.path).to_code())
+
+                total_deleted += 1
+        except Exception as e:
+            failed_mod += 1
+
+    print("Total failed:", failed_mod)
+
+
+if __name__ == "__main__":
+    """
+    python -m neuter_repo <repo_path>
+    """
+    repo = Path(sys.argv[1])
+    if not repo.exists():
+        print("Repo does not exist")
+        sys.exit()
+
+    src_repo = SourceRepo(repo)
+    test_modules = iter_test_modules(src_repo)
+
+    neuter_tests(test_modules, src_repo, to_keep=2, to_delete=0)
+--------------------------------------------------------------------------------
+Chunk ID: scripts\show_tables.py::1
+Filepath: src\scripts\show_tables.py
+Content:
+from cowboy_lib.repo.source_repo import SourceRepo
+from src.test_modules.iter_tms import iter_test_modules
+from src.test_modules.models import TestModuleModel
+from pathlib import Path
+
+from sqlalchemy.sql import text
+
+
+from src.database.core import engine
+from sqlalchemy.orm import sessionmaker
+
+Session = sessionmaker(bind=engine)
+query = text(
+    """
+    SELECT schema_name FROM information_schema.schemata
+    WHERE schema_name NOT IN ('pg_catalog', 'information_schema')
+    AND schema_name NOT LIKE 'pg_toast%'
+    AND schema_name NOT LIKE 'pg_temp_%'
+"""
+)
+
+# Execute the query
+with engine.connect() as connection:
+    # Query to get all tables from the public schema
+    table_query = text(
+        """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+    """
+    )
+
+    # Execute the query to get all table names
+    with engine.connect() as connection:
+        tables = connection.execute(table_query).fetchall()
+
+        # Iterate through each table and get its schema details
+        for table in tables:
+            table_name = table[0]
+            print(f"\nSchema for table '{table_name}':")
+
+            # Query to get schema details for each table
+            schema_query = text(
+                f"""
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = :table_name
+                ORDER BY ordinal_position
+            """
+            )
+
+            # Fetch and print the schema details for each table
+            schema_details = connection.execute(
+                schema_query, {"table_name": table_name}
+            ).fetchall()
+            for detail in schema_details:
+                print(detail)
+                # print(f"Column Name: {detail['column_name']}, "
+                #       f"Type: {detail['data_type']}, "
+                #       f"Nullable: {detail['is_nullable']}, "
+                #       f"Default: {detail['column_default']}")
+--------------------------------------------------------------------------------
+Chunk ID: src\utils.py::1
+Filepath: src\utils.py
+Content:
+import functools
+import random
+import string
+import uuid
+import time
+import functools
+from src.logger import testgen_logger
+
+
+# nested level get() function
+def resolve_attr(obj, attr, default=None):
+    """Attempts to access attr via dotted notation, returns none if attr does not exist."""
+    try:
+        return functools.reduce(getattr, attr.split("."), obj)
+    except AttributeError:
+        return default
+
+
+def gen_random_name():
+    """
+    Generates a random name using ASCII, 8 characters in length
+    """
+
+    return "".join(random.choices(string.ascii_lowercase, k=8))
+
+
+def generate_id():
+    """
+    Generates a random UUID
+    """
+    return str(uuid.uuid4())
+
+
+def async_timed(func):
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = await func(*args, **kwargs)
+        end_time = time.time()
+        testgen_logger.info(
+            f"[PARALLEL] Function {func.__name__} took {end_time - start_time:.4f} seconds"
+        )
+        return result
+
+    return wrapper
+--------------------------------------------------------------------------------
+Chunk ID: test.py::1
+Filepath: test.py
+Content:
+# import sys
+
+# sys.path.append("/home/ubuntu/cowboy-server-good")
+
+from cowboy_lib.repo import SourceRepo
+from src.test_modules.service import get_tm_by_name, get_all_tms
+
+from src.database.core import engine
+
+from sqlalchemy.orm import sessionmaker
+from pathlib import Path
+
+
+repo_path = "/home/ubuntu/cowboy-server-good/repos/test2/qrjmnlxt"
+src_repo = SourceRepo(Path(repo_path))
+Session = sessionmaker(bind=engine)
+db_session = Session()
+
+
+# tm_model = get_tm_by_name(db_session=db_session, repo_id=17, tm_name="TestWoodpecker")
+# tm = tm_model.serialize(src_repo)
+
+tm_models = get_all_tms(db_session=db_session, repo_id=17)
+tm_models = sorted(tm_models, key=lambda tm: tm.agg_score(src_repo), reverse=True)
+
+for tm in tm_models:
+    print(tm.name, tm.agg_score(src_repo))
+--------------------------------------------------------------------------------
