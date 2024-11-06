@@ -28,77 +28,6 @@ from moatless.types import MoatlessChunkID
 def get_cluster_id():
     return random.randint(1, 10000000)
 
-
-@dataclass(kw_only=True)
-class SummarizedChunk:
-    id: str
-    og_id: str
-    file_path: str
-    start_line: int
-    end_line: int
-
-
-@dataclass(kw_only=True)
-class SummarizedCluster:
-    id: str
-    title: str
-    key_variables: List[str]
-    summary: str
-    chunks: List[SummarizedChunk]
-    children: List["SummarizedCluster"]
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "title": self.title,
-            "key_variables": self.key_variables,
-            "summary": self.summary,
-            "chunks": [chunk.__dict__ for chunk in self.chunks],
-            "children": [child.to_dict() for child in self.children],
-        }
-    
-    @classmethod
-    def from_json(cls, data: Dict):
-        # Control flags
-        has_valid_fields = all(field in data for field in ["id", "title", "key_variables", "summary", "chunks", "children"])
-        should_process = has_valid_fields
-        
-        # Process chunks
-        processed_chunks = []
-        if should_process:
-            processed_chunks = [
-                SummarizedChunk(
-                    id=chunk["id"],
-                    og_id=chunk["og_id"], 
-                    file_path=chunk["file_path"],
-                    start_line=chunk["start_line"],
-                    end_line=chunk["end_line"]
-                )
-                for chunk in data["chunks"]
-            ]
-        
-        # Process children recursively 
-        processed_children = []
-        if should_process:
-            processed_children = [
-                SummarizedCluster.from_json(child) 
-                for child in data["children"]
-            ]
-
-        # Create instance
-        result = None
-        if should_process:
-            result = cls(
-                id=data["id"],
-                title=data["title"],
-                key_variables=data["key_variables"],
-                summary=data["summary"],
-                chunks=processed_chunks,
-                children=processed_children
-            )
-
-        return result
-
 class Summarizer:
     def __init__(self, graph: ClusterGraph):
         self._model = LLMModel(
@@ -228,6 +157,9 @@ class Summarizer:
                 ]
             )
             yield (cluster, child_content)
+
+    def get_output(self):
+        return self.graph.get_clusters()
 
     def _clusters_to_yaml(self, cluster_nodes: List[ClusterNode]):
         clusters_json = self.graph.clusters(cluster_nodes)

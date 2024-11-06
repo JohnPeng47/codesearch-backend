@@ -113,7 +113,7 @@ class ClusterGraph(CodeGraph):
     ) -> List[Dict | Cluster]:
         """
         Returns a list of clusters and their child chunk nodes. Returns either
-        JSON or as SummarizedCluster
+        JSON or as Cluster
         """
 
         def dfs_cluster(cluster_node: ClusterNode) -> Cluster:

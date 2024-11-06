@@ -34,7 +34,8 @@ from .tasks import InitIndexGraphTask, IndexGraphResponse
 from .graph import get_or_create_chunk_graph
 from .utils import get_repo_size, http_to_ssh, get_repo_main_language
 
-from rtfs.summarize.summarize import Summarizer, SummarizedCluster
+from rtfs.summarize.summarize import Summarizer
+from rtfs.cluster.graph import Cluster
 
 import json
 from fastapi import APIRouter, Depends, HTTPException
@@ -223,7 +224,7 @@ async def summarize_repo(
         with open(summary_path, "r") as f:
             summarized_clusters = json.loads(f.read())
             return SummarizedClusterResponse(
-                summarized_clusters=[SummarizedCluster.from_json(s) for s in summarized_clusters]
+                summarized_clusters=[Cluster.from_json(s) for s in summarized_clusters]
             )
 
     print("Summarizing ...")

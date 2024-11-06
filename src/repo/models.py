@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, ARRAY
 from sqlalchemy.orm import relationship
 from pydantic import BaseModel, field_validator, model_validator, Field
 
-from rtfs.summarize.summarize import SummarizedCluster
+from rtfs.cluster.graph import Cluster
 
 from src.models import RTFSBase
 from src.database.core import Base
@@ -127,7 +127,7 @@ class RepoSummaryRequest(RepoGetRequest):
 
 
 class SummarizedClusterResponse(BaseModel):
-    summarized_clusters: List[SummarizedCluster]
+    summarized_clusters: List[Cluster]
 
 
 class RepoListResponse(RTFSBase):
