@@ -18,10 +18,6 @@ from src.config import (
     GITHUB_API_TOKEN,
     REPO_MAX_SIZE_MB
 )
-from rtfs.summarize.summarize import Summarizer, SummarizedCluster
-from rtfs.transforms.cluster import cluster
-from rtfs.cluster.graph import ClusterGraph
-
 from .service import list_repos, delete, get_repo
 from .repository import GitRepo, PrivateRepoError, RepoSizeExceededError
 from .models import (
@@ -37,6 +33,8 @@ from .models import (
 from .tasks import InitIndexGraphTask, IndexGraphResponse
 from .graph import get_or_create_chunk_graph
 from .utils import get_repo_size, http_to_ssh, get_repo_main_language
+
+from rtfs.summarize.summarize import Summarizer, SummarizedCluster
 
 import json
 from fastapi import APIRouter, Depends, HTTPException
@@ -117,7 +115,7 @@ async def create_repo(
         repo_result: IndexGraphResponse = result.result
 
         cg = repo_result.cg
-        cluster(cg)
+        cg.cluster()
 
         # TODO: should maybe turn this into task as well
         # would need asyncSession to perform db_updates though
@@ -234,17 +232,12 @@ async def summarize_repo(
     cg = get_or_create_chunk_graph(
         code_index, repo.file_path, repo.graph_path, request.graph_type
     )
-    cluster(cg)
+    cg.cluster()
 
+    # should definitely flip the order of this
     summarizer = Summarizer(cg)
-
     summarizer.summarize()
     summarizer.gen_categories()
-    # TODO: figure out how to handle
-    # except ContextLengthExceeded as e:
-    #     raise HTTPException(status_code=400, detail=str(e))
-    # except Exception as e:
-    #     raise HTTPException(status_code=500, detail=str(e))
 
     logger.info(
         f"Summarizing stats: {request.graph_type} for {repo.file_path}: \n{cg.get_stats()}"

@@ -7,10 +7,9 @@ from moatless.index import CodeIndex
 
 from src.index.service import get_or_create_index
 from rtfs.summarize.summarize import Summarizer
-from rtfs.cluster.cluster import cluster
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.aider_graph.aider_graph import AiderGraph
-from rtfs.cluster.graph import ClusterGraph
+from rtfs.cluster.cluster_graph import ClusterGraph
 from src.utils import rm_tree
 
 from logging import getLogger

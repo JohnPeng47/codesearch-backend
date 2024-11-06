@@ -17,7 +17,7 @@ from .lmp import (
 )
 from .lmp import ClusterList
 
-from rtfs.cluster.graph import ClusterGraph
+from rtfs.cluster.cluster_graph import ClusterGraph
 from rtfs.utils import VerboseSafeDumper
 from rtfs.exceptions import LLMValidationError
 
@@ -148,6 +148,7 @@ class Summarizer:
         )
         while retries > 0:
             try:
+                # TODO: redo this logic here
                 generated_clusters: ClusterList = (
                     recategorize_llm(self._model, cluster_yaml)
                     if retries == 3
@@ -156,7 +157,6 @@ class Summarizer:
                 generated_child_clusters = []
                 for category in generated_clusters.clusters:
                     # why do I still get empty clusters?
-                    # useless ...
                     if not category.children:
                         continue
 
@@ -172,7 +172,6 @@ class Summarizer:
                         self.graph.add_node(cluster_node)
 
                     for child in category.children:
-                        # TODO: consider moving this function from chunkGraph to here
                         child_node = self.graph.find_node(
                             {"kind": NodeKind.Cluster, "title": child}
                         )
@@ -180,7 +179,6 @@ class Summarizer:
                             print("Childnode not found: ", child)
                             continue
 
-                        # TODO: should really be using self.graph.add_edge
                         self.graph._graph.add_edge(
                             child_node.id,
                             cluster_node.id,

@@ -105,13 +105,10 @@ class ClusterGraph(CodeGraph):
             )
             self.add_edge(cluster_edge)
 
-        return cluster_dict
-
-
     def clusters(
         self, 
         cluster_nodes: List[ClusterNode], 
-        return_content: bool,
+        return_content: bool = False,
         return_type: str = "json"
     ) -> List[Dict | Cluster]:
         """
@@ -213,6 +210,34 @@ class ClusterGraph(CodeGraph):
                             )
                         )
 
+    def get_longest_path(self, num_paths: int = 10):
+        """
+        Returns the num_paths longest paths between clusters connected by reference edges.
+        Each path is a list of cluster IDs.
+        """
+        # Get subgraph of only cluster nodes and their reference edges
+        cluster_nodes = [
+            node.id for node in self.filter_nodes({"kind": NodeKind.Cluster})
+        ]
+        cluster_subgraph = self._graph.subgraph(cluster_nodes)
+
+        # Find all simple paths between all pairs of nodes
+        all_paths = []
+        for src in cluster_nodes:
+            for dst in cluster_nodes:
+                if src != dst:
+                    # Get all simple paths between src and dst
+                    paths = list(nx.all_simple_paths(cluster_subgraph, src, dst))
+                    all_paths.extend(paths)
+
+        # Sort paths by length in descending order and return top num_paths
+        all_paths.sort(key=len, reverse=True)
+        
+        # Convert paths to use titles instead of IDs
+        all_paths = [
+            [self.get_node(node).title for node in path] for path in all_paths
+        ]
+        return all_paths[:num_paths]
 
 
     # Utility methods

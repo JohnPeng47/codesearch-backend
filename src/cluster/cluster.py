@@ -4,7 +4,7 @@ import ell
 
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from rtfs.aider_graph.aider_graph import AiderGraph
-from rtfs.transforms.cluster import cluster as cluster_cg
+from rtfs.cluster.infomap import cluster as cluster_cg
 from src.index.service import get_or_create_index
 
 from .types import (

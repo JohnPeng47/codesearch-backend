@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from rtfs.chunk_resolution import ChunkGraph
 from rtfs.summarize.summarize import Summarizer
-from rtfs.transforms.cluster import cluster
+from rtfs.cluster.infomap import cluster
 
 TEST_GRAPH = "tests/data/graphs/JohnPeng47_CrashOffsetFinder.git"
 TEST_REPO = "tests/data/repo/JohnPeng47_CrashOffsetFinder.git"

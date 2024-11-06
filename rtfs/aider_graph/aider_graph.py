@@ -4,7 +4,7 @@ from llama_index.core.schema import BaseNode
 
 from rtfs.chunk_resolution.graph import ChunkMetadata
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
-from rtfs.cluster.graph import ClusterGraph
+from rtfs.cluster.cluster_graph import ClusterGraph
 
 import networkx as nx
 

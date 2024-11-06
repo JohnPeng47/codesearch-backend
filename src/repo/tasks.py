@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 from src.queue.models import Task, TaskType
 from src.index.service import get_or_create_index
-from rtfs.cluster.graph import ClusterGraph
+from rtfs.cluster.cluster_graph import ClusterGraph
 
 from .repository import GitRepo
 from .graph import get_or_create_chunk_graph, GraphType
