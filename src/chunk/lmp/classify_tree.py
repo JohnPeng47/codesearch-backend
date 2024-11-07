@@ -1,17 +1,15 @@
-from typing import List, Tuple
-import ell
+from llm import LLMModel
 from ..models import ClassifiedFilesList, FILE_CLASSIFICATIONS_DICT
 
-@ell.complex(model="gpt-4o-2024-08-06", response_format=ClassifiedFilesList)
-def classify_tree(file_tree: str) -> ClassifiedFilesList:
+def classify_tree(model: LLMModel, file_tree: str) -> ClassifiedFilesList:
     categories = "".join([f"{category} : {description}\n" 
                           for category, description in FILE_CLASSIFICATIONS_DICT.items()])
 
-    CLASSIFY_TREE = """
+    prompt = f"""
 Given the directory tree, classify each filepath into the following categories:
 {categories} 
 
 Here is the directory tree:
-{tree}
+{file_tree}
 """
-    return CLASSIFY_TREE.format(tree=file_tree, categories=categories)
+    return model.invoke(prompt, response_format=ClassifiedFilesList)

@@ -30,8 +30,8 @@ def get_cluster_id():
 class Summarizer:
     def __init__(self, graph: ClusterGraph):
         self._model = LLMModel(
-            provider=MODEL_CONFIG["provider"],
-            model_name=MODEL_CONFIG["model"]
+            provider=MODEL_CONFIG["ClusterSummarizer"]["provider"],
+            model_name=MODEL_CONFIG["ClusterSummarizer"]["model"]
         )
         self.graph = graph
 

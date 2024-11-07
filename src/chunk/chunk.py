@@ -10,7 +10,7 @@ from enum import Enum
 import random
 
 from src.llm.invoke_mt import invoke_multithread
-from rtfs.chunk_resolution.chunk_graph import ChunkGraph
+# from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 # from rtfs.transforms.cluster import cluster as cluster_cg
 
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
@@ -24,9 +24,11 @@ from src.index.service import get_or_create_index
 from src.config import GRAPH_ROOT, MODEL_CONFIG
 from src.utils import num_tokens_from_string
 
-from .lmp import summarize_chunk
+from .summarizer import summarize
 from .models import CodeChunk, ClusterInputType, SummaryChunk, FILE_CLASSIFICATIONS
 from .classify_files import classify_files
+
+from llm import LLMModel
 
 # Default exclusions
 DEFAULT_EXCLUSIONS = [
@@ -121,10 +123,18 @@ def get_chunk_ctxt_nodes(chunks: List[BaseNode]):
 
 class ChunkStrategy:
     """Base class for chunking strategies"""
-    def __init__(self, repo_dir: Path, exclusions: List[str] = DEFAULT_EXCLUSIONS):
+    def __init__(self, 
+                 repo_dir: Path, 
+                 exclusions: List[str] = DEFAULT_EXCLUSIONS,
+                 summarize: bool = False):
         self.repo_dir = repo_dir
         self.exclusions = exclusions
-        
+        self.model = LLMModel(
+            provider=MODEL_CONFIG["ChunkSummarizer"]["provider"], 
+            model_name=MODEL_CONFIG["ChunkSummarizer"]["model"]
+        )
+        self.summarize = summarize
+    
     def chunk(self) -> List[CodeChunk]:
         """Execute the chunking strategy"""
         raise NotImplementedError
@@ -160,6 +170,10 @@ class ChunkStrategy:
                     filepath=chunk_node.metadata["file_path"],
                 )
             )
+
+        if self.summarize:
+            cluster_input = summarize(self.model, cluster_input)
+
         return cluster_input
 
 class VanillaStrategy(ChunkStrategy):
@@ -204,31 +218,31 @@ class BatchStrategy(ChunkStrategy):
         
         return batched_chunks
 
-class HybridStrategy(ChunkStrategy):
-    def chunk(self) -> List[CodeChunk]:
-        chunks = self._get_vanilla_chunks()
-        ell_json = json.loads(open(GRAPH_ROOT / "MadcowD_ell_standard.json", "r").read())
-        cg = ChunkGraph.from_json(self.repo_dir, ell_json)
+# class HybridStrategy(ChunkStrategy):
+#     def chunk(self) -> List[CodeChunk]:
+#         chunks = self._get_vanilla_chunks()
+#         ell_json = json.loads(open(GRAPH_ROOT / "MadcowD_ell_standard.json", "r").read())
+#         cg = ChunkGraph.from_json(self.repo_dir, ell_json)
 
-        cluster_cg(cg)
+#         cluster_cg(cg)
 
-        graph_chunks = [
-            CodeChunk(
-                id=chunk.og_id,
-                content=chunk.content,
-                filepath=chunk.file_path,
-                input_type=ClusterInputType.CHUNK
-            )
-            for cluster in cg.get_clusters() 
-            for chunk in cluster.chunks
-        ]
-        left_chunks = [chunk for chunk in chunks if chunk not in graph_chunks]
+#         graph_chunks = [
+#             CodeChunk(
+#                 id=chunk.og_id,
+#                 content=chunk.content,
+#                 filepath=chunk.file_path,
+#                 input_type=ClusterInputType.CHUNK
+#             )
+#             for cluster in cg.get_clusters() 
+#             for chunk in cluster.chunks
+#         ]
+#         left_chunks = [chunk for chunk in chunks if chunk not in graph_chunks]
 
-        for i, c in enumerate(graph_chunks):
-            print(f"Chunk {i}:")
-            print(c.id)
+#         for i, c in enumerate(graph_chunks):
+#             print(f"Chunk {i}:")
+#             print(c.id)
 
-        return graph_chunks + left_chunks
+#         return graph_chunks + left_chunks
 
 class RandomStrategy(ChunkStrategy):
     def chunk(self) -> List[CodeChunk]:
@@ -266,7 +280,7 @@ class ChunkStrat(str, Enum):
     def get_strategy_class(cls, strat_type: 'ChunkStrat') -> Type[ChunkStrategy]:
         strategy_map: Dict[ChunkStrat, Type[ChunkStrategy]] = {
             cls.VANILLA: VanillaStrategy,
-            cls.HYBRID: HybridStrategy,
+            # cls.HYBRID: HybridStrategy,
             cls.RANDOM: RandomStrategy,
             cls.SUMMARY: SummaryStrategy,
             cls.BATCH: BatchStrategy
@@ -276,6 +290,7 @@ class ChunkStrat(str, Enum):
 def chunk_repo(repo_dir: Path, 
                chunk_strat: ChunkStrat,
                exclusions=DEFAULT_EXCLUSIONS,
+               summarize=False,
                split_files=False) -> List[CodeChunk]:
     if split_files:
         files, unclassified = classify_files(repo_dir, exclusions=exclusions)
@@ -284,7 +299,7 @@ def chunk_repo(repo_dir: Path,
         print(f"Excluded {len(exclude_noncore)} non-core files")
 
     strategy_class = ChunkStrat.get_strategy_class(chunk_strat)
-    strategy = strategy_class(repo_dir, exclusions)
+    strategy = strategy_class(repo_dir, exclusions, summarize=summarize)
     return strategy.chunk()
 
 if __name__ == "__main__":

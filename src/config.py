@@ -6,7 +6,7 @@ from pathlib import Path
 from enum import Enum
 
 config = Config(".env")
-ROOT_DIR = Path(__file__).parent
+ROOT_DIR = Path(__file__).parent.parent
 
 ## TODO: clean up this config file
 ENV = config("ENV", default="dev")

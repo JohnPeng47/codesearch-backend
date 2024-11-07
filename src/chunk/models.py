@@ -3,8 +3,10 @@ from typing import List, Optional
 from enum import Enum
 from abc import ABC, abstractmethod
 
+from .lmp.summarize import CodeSummary
 from rtfs.chunk_resolution.graph import ChunkMetadata
 from moatless.types import MoatlessChunkID
+
 
 class ClusterInput(ABC):
     @abstractmethod
@@ -31,7 +33,7 @@ class CodeChunk(BaseModel, ClusterInput):
     id: MoatlessChunkID 
     input_type: ClusterInputType
     content: str
-    summary: Optional[str] = ""
+    summary: Optional[CodeSummary] = None
     filepath: Optional[str] = None
 
     # for backwards compat with BaseNode

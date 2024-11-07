@@ -10,10 +10,10 @@ repo_path = Path(r"C:\Users\jpeng\Documents\projects\codesearch-backend\src\clus
 graph_path = GRAPH_ROOT / "aorwall_moatless-tools"
 chunks = chunk_repo(repo_path, ChunkStrat.VANILLA)
 
-graph_json = json.loads(open(graph_path, "r").read())
+# graph_json = json.loads(open(graph_path, "r").read())
 
-# cg = ChunkGraph.from_chunks(repo_path, chunks)
-cg = ChunkGraph.from_json(repo_path, graph_json)
+# # cg = ChunkGraph.from_chunks(repo_path, chunks)
+# cg = ChunkGraph.from_json(repo_path, graph_json)
 
-paths = cg.get_longest_path()
-print(paths[0].to_str())
+# paths = cg.get_longest_path()
+# print(paths[0].to_str())
