@@ -24,7 +24,9 @@ class Node(DictMixin):
 
     def __hash__(self):
         return hash(self.id)
-
+    
+    def __eq__(self, other: "Node"):
+        return self.id == other.id
 
 @dataclass
 class Edge(DictMixin):

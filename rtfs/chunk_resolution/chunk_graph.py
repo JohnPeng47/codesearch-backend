@@ -1,6 +1,5 @@
 from networkx import MultiDiGraph, node_link_graph, node_link_data, DiGraph
 from pathlib import Path
-from llama_index.core.schema import BaseNode
 from typing import List, Tuple, Dict
 import os
 from collections import deque
@@ -14,6 +13,10 @@ from rtfs.utils import TextRange
 
 from rtfs.models import OpenAIModel, BaseModel
 from rtfs.cluster.cluster_graph import ClusterGraph
+
+# Note: ideally we probably want to either move rtfs into src.graph
+# or chunk out of src
+from src.chunk.chunk import CodeChunk
 
 from .graph import (
     ChunkMetadata,
@@ -53,7 +56,7 @@ class ChunkGraph(ClusterGraph):
     # turn import => export mapping into a function
     # implement tqdm for chunk by chunk processing
     @classmethod
-    def from_chunks(cls, repo_path: Path, chunks: List[BaseNode], skip_tests=True) -> "ChunkGraph":
+    def from_chunks(cls, repo_path: Path, chunks: List[CodeChunk], skip_tests=True) -> "ChunkGraph":
         """
         Build chunk (import) to chunk (export) mapping by associating a chunk with
         the list of scopes, and then using the scope -> scope mapping provided in RepoGraph
@@ -68,18 +71,8 @@ class ChunkGraph(ClusterGraph):
         skipped_chunks = 0
 
         for i, chunk in enumerate(chunks, start=1):
-            # print("Repopath: ", repo_path)
-            # print("Metadata fullpath: ", chunk.metadata["file_path"])
-            # print(
-            #     "Metadata relpath: ",
-            #     os.path.relpath(repo_path, chunk.metadata["file_path"]),
-            # )
-            # chunk.metadata["file_path"] = os.path.relpath(
-            #     chunk.metadata["file_path"], repo_path
-            # )
             try:
                 metadata = chunk.metadata
-                # metadata = chunk.metadata
             except TypeError as e:
                 print(f"Chunk error, skipping..: {e}")
                 continue
@@ -92,7 +85,8 @@ class ChunkGraph(ClusterGraph):
                 id=chunk.node_id,
                 og_id=chunk.node_id,
                 metadata=metadata,
-                content=chunk.get_content(),
+                summary=chunk.summary,
+                content=chunk.content,
             )
             chunk_names.add(chunk_node.id)
             cg.add_node(chunk_node)
@@ -203,7 +197,7 @@ class ChunkGraph(ClusterGraph):
 
         return chunks_attached_to_clusters
 
-    def _chunk_short_name(self, chunk_node: BaseNode, i: int) -> str:
+    def _chunk_short_name(self, chunk_node: CodeChunk, i: int) -> str:
         # take out the root path and only last two subdirectories
         filename = "/".join(chunk_node.metadata["file_path"].split(os.sep)[1:-2])
         size = chunk_node.metadata["end_line"] - chunk_node.metadata["start_line"]

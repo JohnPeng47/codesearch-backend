@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Type
 from llama_index.core.schema import BaseNode
 from dataclasses import field, dataclass
 import tempfile
@@ -21,7 +21,7 @@ from rtfs.chunk_resolution.graph import (
     ImportEdge as RefToEdge,
 )
 from src.index.service import get_or_create_index
-from src.config import GRAPH_ROOT
+from src.config import GRAPH_ROOT, MODEL_CONFIG
 from src.utils import num_tokens_from_string
 
 from .lmp import summarize_chunk
@@ -119,6 +119,142 @@ def get_chunk_ctxt_nodes(chunks: List[BaseNode]):
 
         yield chunk, [module_ctxt] + class_ctxts
 
+class ChunkStrategy:
+    """Base class for chunking strategies"""
+    def __init__(self, repo_dir: Path, exclusions: List[str] = DEFAULT_EXCLUSIONS):
+        self.repo_dir = repo_dir
+        self.exclusions = exclusions
+        
+    def chunk(self) -> List[CodeChunk]:
+        """Execute the chunking strategy"""
+        raise NotImplementedError
+    
+    def _get_vanilla_chunks(self, index_dir=None) -> List[CodeChunk]:
+        """Common method to get vanilla chunks used by multiple strategies"""
+        cluster_input = []
+        index_dir = index_dir if index_dir else temp_index_dir(self.repo_dir.name)
+        chunk_index = get_or_create_index(str(self.repo_dir), str(index_dir), exclusions=self.exclusions)
+        chunk_nodes = chunk_index._docstore.docs.values()
+
+        print(f"[Chunker]: {len(chunk_nodes)} chunks used")
+
+        chunk_fp, chunk_i = list(chunk_nodes)[0].metadata["file_path"], 1
+
+        for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes):
+            chunk_node, ctxt_list = chunk_ctxt
+            if chunk_fp == chunk_node.metadata["file_path"]:
+                chunk_i += 1
+            else:
+                chunk_fp = chunk_node.metadata["file_path"]
+                chunk_i = 1
+
+            short_name = f"/".join(chunk_fp.split(os.path.sep)[-2:])
+            node_id = f"{short_name}::{chunk_i}"
+            cluster_input.append(
+                CodeChunk(
+                    id=node_id,
+                    metadata=chunk_node.metadata,
+                    node_id=node_id,
+                    input_type=ClusterInputType.FILE,
+                    content=chunk_node.get_content().replace("\r\n", "\n"),
+                    filepath=chunk_node.metadata["file_path"],
+                )
+            )
+        return cluster_input
+
+class VanillaStrategy(ChunkStrategy):
+    def chunk(self) -> List[CodeChunk]:
+        return self._get_vanilla_chunks()
+
+class BatchStrategy(ChunkStrategy):
+    def __init__(self, repo_dir: Path, exclusions: List[str] = DEFAULT_EXCLUSIONS, batch_size: int = 6000):
+        super().__init__(repo_dir, exclusions)
+        self.batch_size = batch_size
+
+    def chunk(self) -> List[CodeChunk]:
+        chunks = self._get_vanilla_chunks()
+        remaining_chunks = chunks.copy()
+        current_batch = []
+        current_size = 0
+        batches = []
+
+        while remaining_chunks:
+            chunk = remaining_chunks.pop(0)
+            chunk_size = len(chunk.get_content())
+            
+            should_add = current_size + chunk_size <= self.batch_size
+            should_start_new = not should_add and current_batch
+            
+            if should_add:
+                current_batch.append(chunk)
+                current_size += chunk_size
+            
+            if should_start_new:
+                batches.append(current_batch)
+                current_batch = [chunk]
+                current_size = chunk_size
+                
+        if current_batch:
+            batches.append(current_batch)
+            
+        random.shuffle(batches)
+        batched_chunks = [chunk for batch in batches for chunk in batch]
+        batch_size = len(batched_chunks) / len(batches)
+        print("Avg batch size: ", batch_size)
+        
+        return batched_chunks
+
+class HybridStrategy(ChunkStrategy):
+    def chunk(self) -> List[CodeChunk]:
+        chunks = self._get_vanilla_chunks()
+        ell_json = json.loads(open(GRAPH_ROOT / "MadcowD_ell_standard.json", "r").read())
+        cg = ChunkGraph.from_json(self.repo_dir, ell_json)
+
+        cluster_cg(cg)
+
+        graph_chunks = [
+            CodeChunk(
+                id=chunk.og_id,
+                content=chunk.content,
+                filepath=chunk.file_path,
+                input_type=ClusterInputType.CHUNK
+            )
+            for cluster in cg.get_clusters() 
+            for chunk in cluster.chunks
+        ]
+        left_chunks = [chunk for chunk in chunks if chunk not in graph_chunks]
+
+        for i, c in enumerate(graph_chunks):
+            print(f"Chunk {i}:")
+            print(c.id)
+
+        return graph_chunks + left_chunks
+
+class RandomStrategy(ChunkStrategy):
+    def chunk(self) -> List[CodeChunk]:
+        chunks = self._get_vanilla_chunks()
+        random.shuffle(chunks)
+        return chunks
+
+class SummaryStrategy(ChunkStrategy):
+    def chunk(self) -> List[CodeChunk]:
+        chunks = self._get_vanilla_chunks()
+        results = invoke_multithread(chunks, summarize_chunk)
+        summary_chunks = [
+            SummaryChunk.from_chunk(chunk, summed.parsed) 
+            for chunk, summed in zip(chunks, results["results"]) 
+            if summed
+        ]
+
+        summary_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in summary_chunks]))
+        code_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in chunks]))
+
+        print(f"Summary tokens: {summary_tokens}, "
+              f"Code tokens: {code_tokens}, "
+              f"Ratio: {summary_tokens / code_tokens}")
+
+        return summary_chunks
+
 class ChunkStrat(str, Enum):
     VANILLA = "vanilla"
     HYBRID = "hybrid"
@@ -126,128 +262,16 @@ class ChunkStrat(str, Enum):
     SUMMARY = "summary"
     BATCH = "batch"
 
-def chunk_vanilla(repo_dir: Path, index_dir = None, exclusions=[]) -> List[CodeChunk]:
-    cluster_input = []
-    index_dir = index_dir if index_dir else temp_index_dir(repo_dir.name)
-    chunk_index = get_or_create_index(str(repo_dir), str(index_dir), exclusions=exclusions)
-    chunk_nodes = chunk_index._docstore.docs.values()
-
-    print(f"[Chunker]: {len(chunk_nodes)} chunks used")
-
-    chunk_fp, chunk_i = list(chunk_nodes)[0].metadata["file_path"], 1
-
-    # TODO: not making use of the ctxt right now but we should use it for functions
-    for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes):
-        chunk_node, ctxt_list = chunk_ctxt
-        if chunk_fp == chunk_node.metadata["file_path"]:
-            chunk_i += 1
-        else:
-            chunk_fp = chunk_node.metadata["file_path"]
-            chunk_i = 1
-
-        short_name = f"/".join(chunk_fp.split(os.path.sep)[-2:])
-        node_id = f"{short_name}::{chunk_i}"
-        cluster_input.append(
-            CodeChunk(
-                id= node_id,
-                metadata=chunk_node.metadata,
-                node_id=node_id,
-                input_type=ClusterInputType.FILE, 
-                content=chunk_node.get_content().replace("\r\n", "\n"),
-                # ctxt_str="\n".join([str(ctxt) for ctxt in ctxt_list]) + "\n",
-                filepath=chunk_node.metadata["file_path"],
-            )
-        )            
-    return cluster_input
-
-def chunk_batch(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
-    BATCH_SIZE = 6000
-
-    chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
-    remaining_chunks = chunks.copy()
-    current_batch = []
-    current_size = 0
-    batched_chunks = []
-    batches = []
-
-    # Create batches
-    while remaining_chunks:
-        chunk = remaining_chunks.pop(0)
-        chunk_size = len(chunk.get_content())
-        
-        should_add = current_size + chunk_size <= BATCH_SIZE
-        should_start_new = not should_add and current_batch
-        
-        if should_add:
-            current_batch.append(chunk)
-            current_size += chunk_size
-        
-        if should_start_new:
-            batches.append(current_batch)
-            current_batch = [chunk]
-            current_size = chunk_size
-            
-    # Handle final batch
-    if current_batch:
-        batches.append(current_batch)
-        
-    # Shuffle and flatten batches
-    random.shuffle(batches)
-    batched_chunks = [chunk for batch in batches for chunk in batch]
-    batch_size = len(batched_chunks) / len(batches)
-
-    print("Avg batch size: ", batch_size)
-    
-    return batched_chunks
-    
-
-def chunk_hybrid(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
-    chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
-    ell_json = json.loads(open(GRAPH_ROOT / "MadcowD_ell_standard.json", "r").read())
-    cg = ChunkGraph.from_json(repo_dir, ell_json)
-
-    cluster_cg(cg)
-
-    graph_chunks = [
-        CodeChunk(
-            id=chunk.og_id,
-            content=chunk.content,
-            filepath=chunk.file_path,
-            input_type=ClusterInputType.CHUNK
-        )
-        for cluster 
-        in cg.get_clusters() for chunk in cluster.chunks
-    ]
-    left_chunks = [chunk for chunk in chunks if chunk not in graph_chunks]
-
-    for i, c in enumerate(graph_chunks):
-        print(f"Chunk {i}:")
-        print(c.id)
-
-    return graph_chunks + left_chunks
-
-def chunk_random(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
-    chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
-    random.shuffle(chunks)
-    return chunks
-
-def chunk_summary(repo_dir: Path, exclusions=[]) -> List[CodeChunk]:
-    chunks = chunk_vanilla(repo_dir, exclusions=exclusions)
-    results = invoke_multithread(chunks, summarize_chunk)
-    # TODO: handle context too long
-    errors = results["errors"]
-    summary_chunks  = [SummaryChunk.from_chunk(chunk, summed.parsed) for chunk, summed in 
-                    zip(chunks, results["results"]) if summed]
-
-    summary_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in summary_chunks]))
-    code_tokens = num_tokens_from_string("".join([chunk.get_content() for chunk in chunks]))
-
-    print(f"Summary tokens: {summary_tokens}, \
-        Code tokens: {code_tokens}, \
-        Ratio: {summary_tokens / code_tokens}")
-
-    return summary_chunks 
-
+    @classmethod
+    def get_strategy_class(cls, strat_type: 'ChunkStrat') -> Type[ChunkStrategy]:
+        strategy_map: Dict[ChunkStrat, Type[ChunkStrategy]] = {
+            cls.VANILLA: VanillaStrategy,
+            cls.HYBRID: HybridStrategy,
+            cls.RANDOM: RandomStrategy,
+            cls.SUMMARY: SummaryStrategy,
+            cls.BATCH: BatchStrategy
+        }
+        return strategy_map[strat_type]
 
 def chunk_repo(repo_dir: Path, 
                chunk_strat: ChunkStrat,
@@ -257,21 +281,11 @@ def chunk_repo(repo_dir: Path,
         files, unclassified = classify_files(repo_dir, exclusions=exclusions)
         exclude_noncore = [f.fp for f in files if f.classification != FILE_CLASSIFICATIONS.CORE]
         exclusions += exclude_noncore
-
         print(f"Excluded {len(exclude_noncore)} non-core files")
 
-    if chunk_strat == ChunkStrat.VANILLA:
-        return chunk_vanilla(repo_dir, exclusions=exclusions)
-    elif chunk_strat == ChunkStrat.HYBRID:
-        return chunk_hybrid(repo_dir, exclusions=exclusions)
-    elif chunk_strat == ChunkStrat.RANDOM:
-        return chunk_random(repo_dir, exclusions=exclusions)
-    elif chunk_strat == ChunkStrat.SUMMARY:
-        return chunk_summary(repo_dir, exclusions=exclusions)
-    elif chunk_strat == ChunkStrat.BATCH:
-        return chunk_batch(repo_dir, exclusions=exclusions)
-    else:
-        raise ValueError(f"Invalid chunking strategy: {chunk_strat}")
+    strategy_class = ChunkStrat.get_strategy_class(chunk_strat)
+    strategy = strategy_class(repo_dir, exclusions)
+    return strategy.chunk()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

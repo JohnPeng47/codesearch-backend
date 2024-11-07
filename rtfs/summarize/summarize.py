@@ -3,6 +3,7 @@ from typing import Dict, List
 import random
 from dataclasses import dataclass
 
+from src.config import MODEL_CONFIG
 from ..chunk_resolution.graph import (
     ClusterNode,
     NodeKind,
@@ -29,9 +30,8 @@ def get_cluster_id():
 class Summarizer:
     def __init__(self, graph: ClusterGraph):
         self._model = LLMModel(
-            provider="openai",
-            model_name="gpt-4o-2024-08-06",
-            temperature=0
+            provider=MODEL_CONFIG["provider"],
+            model_name=MODEL_CONFIG["model"]
         )
         self.graph = graph
 

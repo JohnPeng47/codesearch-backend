@@ -1,0 +1,49 @@
+# LLM model configurations
+# models:
+#   gpt-4:
+#     provider: openai
+#     max_tokens: 4096
+#     temperature: 0.7
+#     top_p: 1.0
+#     presence_penalty: 0.0
+#     frequency_penalty: 0.0
+#     cost_per_1k_tokens: 0.03
+    
+#   gpt-3.5-turbo:
+#     provider: openai 
+#     max_tokens: 4096
+#     temperature: 0.8
+#     top_p: 1.0
+#     presence_penalty: 0.0
+#     frequency_penalty: 0.0
+#     cost_per_1k_tokens: 0.002
+
+#   claude-2:
+#     provider: anthropic
+#     max_tokens: 100000
+#     temperature: 0.7
+#     top_p: 1.0
+#     presence_penalty: 0.0
+#     frequency_penalty: 0.0
+#     cost_per_1k_tokens: 0.01
+
+# # Default model to use if none specified
+# default_model: gpt-3.5-turbo
+
+# # Global settings
+# max_retries: 3
+# request_timeout: 300  # seconds
+# batch_size: 20
+
+# # Logging configuration  
+# logging:
+#   level: INFO
+#   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+ChunkSummarizer:
+  provider: openai
+  model: gpt-4o-2024-08-06
+
+ClusterSummarizer:
+  provider: openai
+  model: gpt-4o-2024-08-06

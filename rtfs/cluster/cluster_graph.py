@@ -101,7 +101,7 @@ class ClusterGraph(CodeGraph):
             cluster_edge = ClusterEdge(
                 src=chunk_node, dst=cluster, kind=EdgeKind.ChunkToCluster
             )
-            print("Adding chunk to cluster edge: ", cluster_edge)
+            # print("Adding chunk to cluster edge: ", cluster_edge)
             self.add_edge(cluster_edge)
 
         # cluster the clusters
@@ -238,7 +238,7 @@ class ClusterGraph(CodeGraph):
             node.id
             for node in self.filter_nodes({"kind": NodeKind.Cluster})
             # looking for top-level parent clusters
-            if len(self.parents(node.id)) == 0
+            # if len(self.parents(node.id)) == 0
         ]
 
         return self.clusters(cluster_nodes, return_content, return_type="obj")
@@ -272,14 +272,14 @@ class ClusterGraph(CodeGraph):
                                 continue
                             
                             # add up all the chunk segments between two clusters
-                            chunk_segments = []
+                            chunk_segments = set()
                             for edge_data in edge_datas:
                                 src_chunk = self.node_to_chunk(edge_data["src_node"])
                                 dst_chunk = self.node_to_chunk(edge_data["dst_node"])
 
                                 # add all paths between source and target
                                 ref = edge_data["ref"]
-                                chunk_segments.append(ChunkPathSegment(src_chunk, ref, dst_chunk))
+                                chunk_segments.add(ChunkPathSegment(src_chunk, ref, dst_chunk))
                             cluster_path.add_segment((src_cluster, dst_cluster, chunk_segments))
                         all_paths.append(cluster_path)
 

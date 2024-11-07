@@ -29,7 +29,7 @@ class LLMModel:
     
     # Anthropic with specific temperature
     model = LLMModel(
-        provider="anthropic", 
+        provider="anthropic",
         model_name="claude-3-opus-20240229", 
         temperature=0.7
     )
@@ -46,6 +46,7 @@ class LLMModel:
         self,
         provider: str,
         model_name: str,
+        temperature: int = 0,
         **kwargs: Any
     ) -> None:
         """

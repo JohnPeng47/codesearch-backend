@@ -112,6 +112,7 @@ class ChunkNode(Node):
     og_id: MoatlessChunkID  # original ID on the BaseNode
     metadata: ChunkMetadata
     content: str
+    summary: Optional[str] = ""
     ctxt_list: List[ChunkContext] = field(default_factory=list)
     references: List[str] = field(default_factory=list)
     definitions: List[str] = field(default_factory=list)
@@ -135,14 +136,6 @@ class ChunkNode(Node):
 
     def __str__(self):
         return f"{self.id}"
-
-    def to_node(self):
-        return CodeNode(
-            id=self.id,
-            text=self.content,
-            metadata=self.metadata.__dict__,
-            content=self.content,
-        )
 
     def get_content(self):
         return self.content

@@ -1,6 +1,6 @@
 from .graph import Cluster, ClusterChunk
 
-from typing import List, Tuple
+from typing import List, Tuple, Set
 from dataclasses import dataclass
 
 
@@ -18,6 +18,9 @@ class ChunkPathSegment:
 
     def __str__(self):
         return f"[{self.src_chunk.id} ] --{self.ref}--> [{self.dst_chunk.id}]"
+    
+    def __hash__(self):
+        return hash((self.src_chunk.id, self.ref, self.dst_chunk.id))
 
 class ClusterPathSegment:
     """
@@ -26,7 +29,7 @@ class ClusterPathSegment:
     def __init__(self, 
                  src_cluster: Cluster,
                  dst_cluster: Cluster,
-                 paths: List[ChunkPathSegment]):
+                 paths: Set[ChunkPathSegment]):
         self.src_cluster = src_cluster
         self.dst_cluster = dst_cluster
         self.paths = paths

@@ -1,12 +1,14 @@
 from starlette.config import Config
 from urllib.parse import urljoin
-import os
+import yaml
 from pathlib import Path
 
 from enum import Enum
 
 config = Config(".env")
+ROOT_DIR = Path(__file__).parent
 
+## TODO: clean up this config file
 ENV = config("ENV", default="dev")
 CODESEARCH_DIR = (
     "/home/ubuntu/codesearch-data"
@@ -60,6 +62,8 @@ ELL_STORAGE = "./logdir"
 AWS_REGION = "us-east-2"
 ANON_LOGIN = True
 
+with open(ROOT_DIR / "llm_config.yaml", "r") as f:
+    MODEL_CONFIG = yaml.safe_load(f)
 
 class Language(str, Enum):
     """
