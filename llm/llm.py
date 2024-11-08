@@ -45,9 +45,6 @@ class LLMModel:
     def __init__(
         self,
         provider: str,
-        model_name: str,
-        temperature: int = 0,
-        **kwargs: Any
     ) -> None:
         """
         Initialize the LLM model with the specified provider and configuration.
@@ -67,29 +64,24 @@ class LLMModel:
             )
         
         self.provider = provider
-        self.model_name = model_name
-        self.model_class = self.PROVIDER_MAP[provider]
         
-        # Initialize the model with the provided configuration
-        self.model = self.model_class(
+    def use_model(self, model_name: str, temperature: int = 0, **kwargs: Any):
+        model_class = self.PROVIDER_MAP[self.provider]
+
+        return model_class(
             model=model_name,
             **kwargs
         )
-    
-    @property
-    def base_model(self) -> Union[BaseChatModel, BaseLLM]:
-        """
-        Get the underlying LangChain model instance.
         
-        Returns:
-            The LangChain model instance
-        """
-        return self.model
-    
+    # TODO: Defining 
     def invoke(
         self,
         prompt: str,
+        temperature: int = 0,
+        *,
+        model_name: str,
         response_format: Optional[Type[BaseModel]] = None,
+        **kwargs,
     ) -> Any:
         """
         Invoke the model with the given prompt and configuration.
@@ -105,47 +97,18 @@ class LLMModel:
         Raises:
             ValueError: If response_format is provided for a non-OpenAI provider
         """
-        lm = self.model
-
+        lm = self.use_model(model_name, temperature=temperature, **kwargs)
         if response_format is not None:
             if self.provider != "openai":
                 raise ValueError(
                     f"response_format is only supported for OpenAI models, "
                     f"but was provided for {self.provider}"
                 )
-            lm = self.model.with_structured_output(response_format, strict=True)
-                        
-        return lm.invoke(prompt)
-    
-    def update_config(
-        self,
-        **kwargs: Any
-    ) -> None:
-        """
-        Update the model's configuration with new parameters.
-        
-        Args:
-            **kwargs: New configuration parameters to update
-        """
+            lm = lm.with_structured_output(response_format, strict=True)
 
-        print("Model kwargs: ", self.model.model_kwargs)
-
-        # Create a new model instance with updated parameters
-        self.model = self.model_class(
-            model=self.model_name,
-            **{**self.model.model_kwargs, **kwargs}  # Merge existing and new kwargs
-        )
-    
-    def get_config(self) -> Dict[str, Any]:
-        """
-        Get the current model configuration.
-        
-        Returns:
-            Dict containing the current model configuration
-        """
-        config = {
-            "provider": self.provider,
-            "model_name": self.model_name,
-        }
-            
-        return {**config, **self.model.model_kwargs}
+        # TODO: build adapter here to support other models
+        res = lm.invoke(prompt)        
+        if isinstance(res, BaseModel):
+            return res
+        else:
+            return res.content

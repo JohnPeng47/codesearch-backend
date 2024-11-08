@@ -22,6 +22,13 @@ class ChunkPathSegment:
     def __hash__(self):
         return hash((self.src_chunk.id, self.ref, self.dst_chunk.id))
 
+    def __eq__(self, other):
+        if not isinstance(other, ChunkPathSegment):
+            return False
+        return (self.src_chunk.id == other.src_chunk.id and
+                self.ref == other.ref and
+                self.dst_chunk.id == other.dst_chunk.id)
+
 class ClusterPathSegment:
     """
     Represents multiple paths from src_cluster to dst_cluster via the ref list
@@ -37,12 +44,27 @@ class ClusterPathSegment:
     def __len__(self):
         return len(self.paths)
     
+    def __hash__(self):
+        """
+        Hash based on cluster IDs and frozen set of paths
+        """
+        return hash((self.src_cluster.id, 
+                    self.dst_cluster.id, 
+                    frozenset(self.paths)))
+    
+    def __eq__(self, other):
+        if not isinstance(other, ClusterPathSegment):
+            return False
+        return (self.src_cluster.id == other.src_cluster.id and
+                self.dst_cluster.id == other.dst_cluster.id and
+                self.paths == other.paths)
+
 class ClusterPath:
     def __init__(self, segments: List[ClusterPathSegment] = None):
-        self.segments: List[ClusterPathSegment] = segments if segments else []
+        self.segments = set(segments) if segments else set()
 
     def add_segment(self, segment: Tuple):
-        self.segments.append(ClusterPathSegment(*segment))
+        self.segments.add(ClusterPathSegment(*segment))
 
     def find_cluster(self, name):
         for segment in self.segments:
@@ -55,14 +77,22 @@ class ClusterPath:
     def __len__(self):
         return sum([len(seg) for seg in self.segments])
 
+    def __hash__(self):
+        return hash(frozenset(self.segments))
+    
+    def __eq__(self, other):
+        if not isinstance(other, ClusterPath):
+            return False
+        return self.segments == other.segments
+
     def to_str(self):
         path_str = ""
         if not self.segments:
             return path_str
             
         # Add first source cluster and its chunk paths
-        path_str += self.segments[0].src_cluster.title
-        chunk_paths = "\n".join([str(path) for path in self.segments[0].paths])
+        path_str += list(self.segments)[0].src_cluster.title
+        chunk_paths = "\n".join([str(path) for path in list(self.segments)[0].paths])
         path_str += "\n" + chunk_paths
 
         # Add each subsequent segment

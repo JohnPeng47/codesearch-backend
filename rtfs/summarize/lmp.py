@@ -1,6 +1,7 @@
 from typing import List
 from pydantic import BaseModel
 
+
 from llm import LLMModel
 
 class CodeSummary(BaseModel):
@@ -9,7 +10,7 @@ class CodeSummary(BaseModel):
     key_variables: str
 
 
-def summarize(model: LLMModel, child_content) -> CodeSummary:
+def summarize(model: LLMModel, child_content, previous_names) -> CodeSummary:
     SUMMARY_PROMPT = """
 The following chunks of code are grouped into the same feature.
 I want you to respond with a structured output using the following steps: 
@@ -20,10 +21,13 @@ play in the overall codebase.
 
 Here is the code:
 {code}
-""".format(code=child_content)
+
+When coming up with the name of the cluster, don't use any of the names that have been used previously:
+{previous_names}
+""".format(code=child_content, previous_names="\n".join(previous_names))
 
     try:
-        response = model.invoke(SUMMARY_PROMPT, response_format=CodeSummary)
+        response = model.invoke(SUMMARY_PROMPT, model_name="gpt-4o", response_format=CodeSummary)
         return response
     except Exception as e:
         raise e

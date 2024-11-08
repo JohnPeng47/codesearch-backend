@@ -65,6 +65,18 @@ class CodeGraph:
     def add_edge(self, edge: Edge):
         self._graph.add_edge(edge.src, edge.dst, **edge.dict())
 
+    def remove_edge(self, src: str, dst: str):
+        self._graph.remove_edge(src, dst)
+
+    def remove_node(self, node_id: str):
+        edges_in = list(self._graph.in_edges(node_id))
+        edges_out = list(self._graph.edges(node_id))
+        
+        for src, dst in edges_in + edges_out:
+            self._graph.remove_edge(src, dst)
+
+        self._graph.remove_node(node_id)
+
     def get_node(self, node_id: str) -> Node:
         try:
             node_data = self._graph.nodes[node_id]

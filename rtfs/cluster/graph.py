@@ -5,6 +5,8 @@ from typing import List, Dict, Optional, Literal
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 
+from src.chunk.lmp.summarize import CodeSummary
+
 from rtfs.graph import Edge, Node, EdgeKind, NodeKind
 
 @dataclass(kw_only=True)
@@ -40,17 +42,29 @@ class ClusterChunk:
     file_path: str
     start_line: int
     end_line: int
+    summary: CodeSummary
     content: Optional[str] = ""
 
     # @property
     # def name(self) -> str:
     #     return f"/".join(self.file_path.split(os.path.sep)[-2:])
 
-    def to_str(self, return_content: bool = False) -> str:
+    def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
+        print("return_content", return_content)
+        print("content: ", self.content)
         s = f"Chunk: {self.id}"
+        s += f"\nSummary: {self.summary.short_description}" if return_summaries else ""
         if return_content and self.content:
             s += f"\n{self.content}"
         return s
+
+    def __hash__(self):
+        return hash(self.id)
+
+    def __eq__(self, other):
+        return self.id == other.id
+
+    
 @dataclass
 class Cluster:
     id: int
@@ -60,18 +74,20 @@ class Cluster:
     chunks: List[ClusterChunk]
     children: List["Cluster"]
 
-    def to_str(self, return_content: bool = False) -> str:
+    def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
         s = f"Cluster {self.id}: {self.title}\n"
-        s += f"Summary: {self.summary}\n"
-        s += f"Chunks ({len(self.chunks)}):\n"
+        s += f"Summary: {self.summary}\n" if self.summary and return_summaries else ""
+        
         for chunk in self.chunks:
             chunk_str = chunk.to_str(return_content)
             s += "  " + chunk_str.replace("\n", "\n  ") + "\n"
+
         if self.children:
             s += f"Children ({len(self.children)}):\n"
             for child in self.children:
                 child_str = child.to_str(return_content)
                 s += "  " + child_str.replace("\n", "\n  ") + "\n"
+
         return s
 
     def to_dict(self):
@@ -125,7 +141,17 @@ class Cluster:
                 children=processed_children
             )
 
-        return result    
+        return result   
+    
+    def __hash__(self):
+        return self.id
+    
+    def __eq__(self, other):
+        if len(self.chunks) != len(other.chunks):
+            return False
+        
+        chunks_equal = all([chunk == other_chunk for chunk, other_chunk in zip(self.chunks, other.chunks)])
+        return self.id == other.id and chunks_equal
 
 class ClusterGStats(BaseModel):
     num_clusters: int

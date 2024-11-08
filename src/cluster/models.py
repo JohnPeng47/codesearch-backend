@@ -6,6 +6,7 @@ from src.database.core import Base
 from src.chunk.models import CodeChunk
 from src.utils import DELIMETER
 
+# TODO: deprecate this
 class ClusteredTopic(BaseModel):
     """Output of the clustering algorithm"""
     name: str

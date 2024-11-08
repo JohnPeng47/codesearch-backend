@@ -129,10 +129,6 @@ class ChunkStrategy:
                  summarize: bool = False):
         self.repo_dir = repo_dir
         self.exclusions = exclusions
-        self.model = LLMModel(
-            provider=MODEL_CONFIG["ChunkSummarizer"]["provider"], 
-            model_name=MODEL_CONFIG["ChunkSummarizer"]["model"]
-        )
         self.summarize = summarize
     
     def chunk(self) -> List[CodeChunk]:
@@ -172,7 +168,7 @@ class ChunkStrategy:
             )
 
         if self.summarize:
-            cluster_input = summarize(self.model, cluster_input)
+            cluster_input = summarize(cluster_input)
 
         return cluster_input
 

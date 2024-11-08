@@ -17,6 +17,7 @@ from rtfs.cluster.graph import (
     ClusterChunk,
     ClusterGStats
 )
+from .lmp import regroup_clusters
     
 class ClusterGraph(CodeGraph):
     def __init__(
@@ -85,7 +86,8 @@ class ClusterGraph(CodeGraph):
 
         return graph_dict
         
-    def cluster(self, alg="infomap"):
+    # TODO: we have two control flags, use_summaries and reutrn_content
+    def cluster(self, use_summaries=True, alg="infomap"):
         """
         Performs the actual clustering operation on the graph
         """
@@ -101,11 +103,44 @@ class ClusterGraph(CodeGraph):
             cluster_edge = ClusterEdge(
                 src=chunk_node, dst=cluster, kind=EdgeKind.ChunkToCluster
             )
-            # print("Adding chunk to cluster edge: ", cluster_edge)
             self.add_edge(cluster_edge)
+
+        # regroup clusters
+        clusters = self.get_clusters(return_content=True)
+        _, moves = regroup_clusters(clusters, use_summaries=use_summaries)
+        valid_moves = 0
+
+        for move in moves:
+            src_cluster = self.get_node(move.src_cluster)
+            dst_cluster = self.get_node(move.dst_cluster)
+            chunk_node = self.get_node(move.chunk)
+
+            # node hallucination ...
+            if not src_cluster or not dst_cluster or not chunk_node:
+                continue
+            
+            # also edge hallucination??
+            # maybe hallucinate edge but we still consider it a valid move
+            if self._graph.has_edge(chunk_node.id, dst_cluster.id):
+                self.remove_edge(chunk_node.id, src_cluster.id)
+            
+            self.add_edge(ClusterEdge(
+                src=chunk_node.id,
+                dst=dst_cluster.id,
+                kind=EdgeKind.ChunkToCluster
+            ))
+
+            if self.children(src_cluster.id, edge_types=[EdgeKind.ChunkToCluster]) == 0:
+                self.remove_node(src_cluster.id)
+                print("Removing cluster: ", src_cluster.id)
+
+            valid_moves += 1
+
+        print("Valid moves: ", valid_moves)
 
         # cluster the clusters
         self._build_cluster_edges()
+        self._clustered = True
 
     def _build_cluster_edges(self):
         """
@@ -171,7 +206,7 @@ class ClusterGraph(CodeGraph):
                     return_content = False) -> Cluster:
         """
         Converts graph ClusterNode to Cluster by node ID
-    """
+        """
         cluster_node: ClusterNode = self.get_node(cluster_id)
         if not cluster_node or cluster_node.kind != NodeKind.Cluster:
             raise ValueError(f"Node {cluster_node} is the wrong input type")
@@ -182,12 +217,13 @@ class ClusterGraph(CodeGraph):
                                                            EdgeKind.ClusterToCluster]):
             if child == cluster_id:
                 raise ValueError(f"Cluster {cluster_id} has a self-reference")
+
             child_node: ChunkNode = self.get_node(child)
             if child_node.kind == NodeKind.Chunk:
                 chunk_info = self.node_to_chunk(child, return_content=return_content)
                 chunks.append(chunk_info)
             elif child_node.kind == NodeKind.Cluster:
-                children.append(self.node_to_cluster(child))
+                children.append(self.node_to_cluster(child, return_content=return_content))
 
         return Cluster(
             id=cluster_node.id,
@@ -214,23 +250,25 @@ class ClusterGraph(CodeGraph):
             file_path=chunk_node.metadata.file_path,
             start_line=chunk_node.range.line_range()[0] + 1,
             end_line=chunk_node.range.line_range()[1] + 1,
+            summary=chunk_node.summary,
             content=chunk_node.content if return_content else "",
         )
 
     def clusters(
         self, 
         cluster_nodes: List[ClusterNode], 
-        return_content: bool = False,
-        return_type: str = "json"
+        return_type: str = "json",
+        *,
+        return_content: bool = False
     ) -> List[Dict | Cluster]:
         """
         Returns a list of clusters and their child chunk nodes. Returns either
         JSON or as Cluster
         """
         if return_type == "json":
-            return [self.node_to_cluster(node).to_dict() for node in cluster_nodes]
+            return [self.node_to_cluster(node, return_content=return_content).to_dict() for node in cluster_nodes]
         else:
-            return [self.node_to_cluster(node) for node in cluster_nodes]
+            return [self.node_to_cluster(node, return_content=return_content) for node in cluster_nodes]
 
 
     def get_clusters(self, return_content: bool = False) -> List[Cluster]:
@@ -241,7 +279,7 @@ class ClusterGraph(CodeGraph):
             # if len(self.parents(node.id)) == 0
         ]
 
-        return self.clusters(cluster_nodes, return_content, return_type="obj")
+        return self.clusters(cluster_nodes, return_type="obj", return_content=return_content)
     
     def get_longest_path(self, num_paths: int = 10) -> List[ClusterPath]:
         """
@@ -257,34 +295,36 @@ class ClusterGraph(CodeGraph):
 
         # Find all simple paths between all pairs of nodes
         all_paths = []
-        for src in cluster_nodes:
-            for dst in cluster_nodes:
-                if src != dst:
-                    # Get all simple paths between src and dstu
-                    for path in nx.all_simple_paths(cluster_subgraph, src, dst):
-                        cluster_path = ClusterPath()
-                        for i in range(len(path) - 1):
-                            src_cluster = self.node_to_cluster(path[i])
-                            dst_cluster = self.node_to_cluster(path[i + 1])
-                            # TODO: figure why this returning only single edgeData value
-                            edge_datas = cluster_subgraph.get_edge_data(src_cluster.id, dst_cluster.id).values()
-                            if any(edge_data["kind"] != EdgeKind.ClusterRef for edge_data in edge_datas):
-                                continue
-                            
-                            # add up all the chunk segments between two clusters
-                            chunk_segments = set()
-                            for edge_data in edge_datas:
-                                src_chunk = self.node_to_chunk(edge_data["src_node"])
-                                dst_chunk = self.node_to_chunk(edge_data["dst_node"])
-
-                                # add all paths between source and target
-                                ref = edge_data["ref"]
-                                chunk_segments.add(ChunkPathSegment(src_chunk, ref, dst_chunk))
-                            cluster_path.add_segment((src_cluster, dst_cluster, chunk_segments))
+        # Only iterate through unique pairs to avoid duplicates
+        for i, src in enumerate(cluster_nodes):
+            for dst in cluster_nodes[i+1:]:  # Start from i+1 to avoid duplicates
+                # Get all simple paths between src and dst
+                for path in nx.all_simple_paths(cluster_subgraph, src, dst):
+                    cluster_path = ClusterPath()
+                    for i in range(len(path) - 1):
+                        src_cluster = self.node_to_cluster(path[i])
+                        dst_cluster = self.node_to_cluster(path[i + 1])
+                        edge_datas = cluster_subgraph.get_edge_data(src_cluster.id, dst_cluster.id).values()
+                        if any(edge_data["kind"] != EdgeKind.ClusterRef for edge_data in edge_datas):
+                            continue
+                        
+                        # add up all the chunk segments between two clusters
+                        chunk_segments = set()
+                        for edge_data in edge_datas:
+                            src_chunk = self.node_to_chunk(edge_data["src_node"])
+                            dst_chunk = self.node_to_chunk(edge_data["dst_node"])
+                            ref = edge_data["ref"]
+                            chunk_segments.add(ChunkPathSegment(src_chunk, ref, dst_chunk))
+                        cluster_path.add_segment((src_cluster, dst_cluster, chunk_segments))
+                    
+                    if not any([p.__hash__() == cluster_path.__hash__() for p in all_paths]):
+                        print("New path: ", cluster_path.__hash__())
+                        print("Old hash: ", all_paths[-1].__hash__() if all_paths else None)
                         all_paths.append(cluster_path)
 
-        # return all_paths
+    # return all_paths
         # # Sort paths by length in descending order and return top num_paths
+        all_paths = list(all_paths)
         all_paths.sort(key=len, reverse=True)
         return all_paths[:num_paths]
 

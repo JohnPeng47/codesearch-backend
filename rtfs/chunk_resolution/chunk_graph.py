@@ -17,7 +17,7 @@ from rtfs.cluster.cluster_graph import ClusterGraph
 # Note: ideally we probably want to either move rtfs into src.graph
 # or chunk out of src
 from src.chunk.chunk import CodeChunk
-
+from src.chunk.lmp.summarize import CodeSummary
 from .graph import (
     ChunkMetadata,
     ClusterNode,

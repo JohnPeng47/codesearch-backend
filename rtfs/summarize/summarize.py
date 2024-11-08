@@ -31,7 +31,6 @@ class Summarizer:
     def __init__(self, graph: ClusterGraph):
         self._model = LLMModel(
             provider=MODEL_CONFIG["ClusterSummarizer"]["provider"],
-            model_name=MODEL_CONFIG["ClusterSummarizer"]["model"]
         )
         self.graph = graph
 
@@ -44,98 +43,14 @@ class Summarizer:
     # TODO: we can parallelize this
     # TODO: reimplement test_run
     def summarize(self):
+        previous_names = []
         for cluster_id, child_content in self._iterate_clusters_with_text():
-            summary_data = summarize_llm(self._model, child_content)
+            summary_data = summarize_llm(self._model, child_content, previous_names)
+            previous_names.append(summary_data.title)
 
             print("updating node: ", cluster_id, "with summary: ", summary_data)
             cluster_node = ClusterNode(id=cluster_id, **summary_data.dict())
             self.graph.update_node(cluster_node)
-
-    def gen_categories(self):
-        """
-        Attempts relabel of clusters. If relabel attempt misses any existing clusters, will iteratively
-        retry relabeling until all clusters are accounted for.
-        """
-
-        def cluster_yaml_str(cluster_nodes):
-            clusters_json = self.graph.clusters(cluster_nodes)
-            for cluster in clusters_json:
-                cluster.pop("chunks")
-                cluster.pop("key_variables")
-
-            return yaml.dump(
-                clusters_json,
-                Dumper=VerboseSafeDumper,
-                sort_keys=False,
-            ), [cluster["title"] for cluster in clusters_json]
-
-        retries = 3
-        previous_clusters = []
-        cluster_yaml, og_clusters = self._clusters_to_yaml(
-            self.graph.filter_nodes({"kind": NodeKind.Cluster})
-        )
-        while retries > 0:
-            try:
-                # TODO: redo this logic here
-                generated_clusters: ClusterList = (
-                    recategorize_llm(self._model, cluster_yaml)
-                    if retries == 3
-                    else categorize_missing(self._model, cluster_yaml, previous_clusters)
-                )
-                generated_child_clusters = []
-                for category in generated_clusters.clusters:
-                    # why do I still get empty clusters?
-                    if not category.children:
-                        continue
-
-                    cluster_node = self.graph.find_node(
-                        {"kind": NodeKind.Cluster, "title": category.category}
-                    )
-                    if not cluster_node:
-                        cluster_node = ClusterNode(
-                            id=get_cluster_id(),
-                            title=category.category,
-                            kind=NodeKind.Cluster,
-                        )
-                        self.graph.add_node(cluster_node)
-
-                    for child in category.children:
-                        child_node = self.graph.find_node(
-                            {"kind": NodeKind.Cluster, "title": child}
-                        )
-                        if not child_node:
-                            print("Childnode not found: ", child)
-                            continue
-
-                        self.graph._graph.add_edge(
-                            child_node.id,
-                            cluster_node.id,
-                            kind=EdgeKind.ClusterToCluster,
-                        )
-                        generated_child_clusters.append(child_node.id)
-
-                # TODO: if more, we dont really care, can prune
-                if len(og_clusters) > len(generated_child_clusters):
-                    missing = set(og_clusters) - set(generated_child_clusters)
-                    raise LLMValidationError(
-                        f"Missing clusters from generated categories: {list(missing)}"
-                    )
-                else:
-                    break
-
-            except LLMValidationError as e:
-                cluster_yaml, og_clusters = cluster_yaml_str(
-                    [self.graph.get_node(c) for c in generated_child_clusters]
-                )
-                previous_clusters = [
-                    cluster.category for cluster in generated_clusters.clusters
-                ]
-                retries -= 1
-                if retries == 0:
-                    raise Exception("Failed to generate categories")
-
-            except Exception as e:
-                raise e
 
     def _iterate_clusters_with_text(self):
         """
@@ -158,15 +73,3 @@ class Summarizer:
 
     def get_output(self):
         return self.graph.get_clusters()
-
-    def _clusters_to_yaml(self, cluster_nodes: List[ClusterNode]):
-        clusters_json = self.graph.clusters(cluster_nodes)
-        for cluster in clusters_json:
-            del cluster["chunks"]
-            del cluster["key_variables"]
-
-        return yaml.dump(
-            clusters_json,
-            Dumper=VerboseSafeDumper,
-            sort_keys=False,
-        ), [cluster["id"] for cluster in clusters_json]

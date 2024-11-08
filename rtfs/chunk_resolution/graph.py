@@ -8,6 +8,8 @@ from rtfs.utils import TextRange
 from rtfs.cluster.graph import ClusterNode, ClusterEdge
 from rtfs.graph import EdgeKind
 
+from src.chunk.lmp.summarize import summarize_chunk
+
 from tree_sitter import Point
 
 ChunkNodeID = NewType("ChunkNodeID", str)
