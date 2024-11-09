@@ -104,10 +104,6 @@ class ChunkMetadata:
     def __from_json__(cls, data):
         return cls.from_dict(data)
 
-class NodeKind(str, Enum):
-    Chunk = "ChunkNode"
-    Cluster = "ClusterNode"
-
 @dataclass(kw_only=True)
 class ChunkNode(Node):
     kind: str = "ChunkNode"

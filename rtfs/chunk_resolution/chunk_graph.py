@@ -10,7 +10,7 @@ from rtfs.scope_resolution.graph_types import ScopeID
 from rtfs.repo_resolution.repo_graph import RepoGraph, RepoNodeID, repo_node_id
 from rtfs.fs import RepoFs
 from rtfs.utils import TextRange
-
+from rtfs.graph import NodeKind
 from rtfs.models import OpenAIModel, BaseModel
 from rtfs.cluster.cluster_graph import ClusterGraph
 
@@ -26,7 +26,6 @@ from .graph import (
     CallEdge,
     ChunkEdgeKind,
     ClusterEdge,
-    NodeKind,
     ChunkNodeID,
 )
 

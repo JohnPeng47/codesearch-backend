@@ -11,7 +11,7 @@ from rtfs.graph import Edge, Node, EdgeKind, NodeKind
 
 @dataclass(kw_only=True)
 class ClusterNode(Node):
-    kind: NodeKind = NodeKind.ClusterNode
+    kind: NodeKind = NodeKind.Cluster
     title: str = ""
     summary: str = ""
     key_variables: List[str] = field(default_factory=list)
@@ -42,7 +42,7 @@ class ClusterChunk:
     file_path: str
     start_line: int
     end_line: int
-    summary: CodeSummary
+    summary: Optional[CodeSummary] = None
     content: Optional[str] = ""
 
     # @property
@@ -50,8 +50,6 @@ class ClusterChunk:
     #     return f"/".join(self.file_path.split(os.path.sep)[-2:])
 
     def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
-        print("return_content", return_content)
-        print("content: ", self.content)
         s = f"Chunk: {self.id}"
         s += f"\nSummary: {self.summary.short_description}" if return_summaries else ""
         if return_content and self.content:

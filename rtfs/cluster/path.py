@@ -61,10 +61,12 @@ class ClusterPathSegment:
 
 class ClusterPath:
     def __init__(self, segments: List[ClusterPathSegment] = None):
-        self.segments = set(segments) if segments else set()
+        self.segments = segments if segments else []
 
     def add_segment(self, segment: Tuple):
-        self.segments.add(ClusterPathSegment(*segment))
+        new_segment = ClusterPathSegment(*segment)
+        if new_segment not in self.segments:
+            self.segments.append(new_segment)
 
     def find_cluster(self, name):
         for segment in self.segments:
@@ -85,7 +87,7 @@ class ClusterPath:
             return False
         return self.segments == other.segments
 
-    def to_str(self):
+    def to_str(self, verbose: bool = False, show_refs: bool = False):
         path_str = ""
         if not self.segments:
             return path_str
@@ -93,12 +95,21 @@ class ClusterPath:
         # Add first source cluster and its chunk paths
         path_str += list(self.segments)[0].src_cluster.title
         chunk_paths = "\n".join([str(path) for path in list(self.segments)[0].paths])
-        path_str += "\n" + chunk_paths
+        path_str +=  ("\n" + chunk_paths) if verbose else ""
 
         # Add each subsequent segment
         for segment in self.segments:
-            path_str += f"\n-> {segment.dst_cluster.title}"
+            if show_refs:
+                refs = [path.ref for path in segment.paths]
+                path_str += f"\n-[{', '.join(refs)}]-> {segment.dst_cluster.title}"
+            else:
+                path_str += f"\n-> {segment.dst_cluster.title}"
             chunk_paths = "\n".join([str(path) for path in segment.paths])
-            path_str += "\n" + chunk_paths
+            path_str += ("\n" +  chunk_paths) if verbose else ""
             
         return path_str
+
+    # def to_str_simple(self):
+    #     for i in range(1, len(self.segments) - 1):
+    #         src_cluster = self.segments[i].src_cluster
+    #         print(f"{segment.src_cluster.title} -> {segment.dst_cluster.title}")

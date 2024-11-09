@@ -5,8 +5,7 @@ from dataclasses import dataclass
 
 from src.config import MODEL_CONFIG
 from ..chunk_resolution.graph import (
-    ClusterNode,
-    NodeKind,
+    ClusterNode
 )
 from .lmp import (
     summarize as summarize_llm,
@@ -15,7 +14,7 @@ from .lmp import (
 )
 from .lmp import ClusterList
 
-from rtfs.graph import EdgeKind
+from rtfs.graph import EdgeKind, NodeKind
 from rtfs.cluster.cluster_graph import ClusterGraph
 from rtfs.utils import VerboseSafeDumper
 from rtfs.exceptions import LLMValidationError

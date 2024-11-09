@@ -2,13 +2,12 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from llama_index.core.schema import BaseNode
 import networkx as nx
-from dataclasses import dataclass
-from pydantic import BaseModel
+import random
 
 from .path import ClusterPath, ChunkPathSegment
 
-from rtfs.chunk_resolution.graph import ClusterNode, ChunkNode, ChunkMetadata, NodeKind
-from rtfs.graph import CodeGraph, EdgeKind
+from rtfs.chunk_resolution.graph import ClusterNode, ChunkNode, ChunkMetadata
+from rtfs.graph import CodeGraph, EdgeKind, NodeKind
 from rtfs.cluster.infomap import cluster_infomap
 from rtfs.cluster.graph import (
     ClusterRefEdge,
@@ -17,8 +16,9 @@ from rtfs.cluster.graph import (
     ClusterChunk,
     ClusterGStats
 )
-from .lmp import regroup_clusters
-    
+from .lmp import regroup_clusters, split_cluster
+from llm import LLMModel
+
 class ClusterGraph(CodeGraph):
     def __init__(
         self,
@@ -29,6 +29,7 @@ class ClusterGraph(CodeGraph):
     ):
         super().__init__(graph=graph, node_types=[ChunkNode, ClusterNode])
 
+        self.model = LLMModel(provider="openai")
         self.repo_path = repo_path
         self._clustered = clustered
 
@@ -87,7 +88,7 @@ class ClusterGraph(CodeGraph):
         return graph_dict
         
     # TODO: we have two control flags, use_summaries and reutrn_content
-    def cluster(self, use_summaries=True, alg="infomap"):
+    def cluster(self, use_summaries=False, alg="infomap"):
         """
         Performs the actual clustering operation on the graph
         """
@@ -105,9 +106,52 @@ class ClusterGraph(CodeGraph):
             )
             self.add_edge(cluster_edge)
 
+        # TODO: implement these using graphops
+        # perform recollection operations
+        self.split_clusters()
+        self.regroup_chunks(use_summaries=use_summaries)
+ 
+        # # cluster the clusters
+        self._build_cluster_edges()
+        self._clustered = True
+
+    def split_clusters(self):
+        clusters = self.get_clusters(return_content=True)
+        largest_cluster = max(clusters, key=lambda c: len(c.chunks))
+        print("Breaking cluster: ", largest_cluster.id, len(largest_cluster.chunks))
+        new_clusters = split_cluster(self.model, largest_cluster)
+        
+        # Add new clusters and reassign chunks
+        for cluster_info in new_clusters.topics:
+            print("New cluster: ", cluster_info.name, len(cluster_info.chunks))
+            
+            # BUG: this actually goes against the Node id=str gurantee
+            # but we have already hardcoded this into the regroup_clusters prompt
+            new_cluster = ClusterNode(id=random.randint(40, 100000))
+            self.add_node(new_cluster)
+            
+            # Move chunks to new cluster
+            for chunk_name in cluster_info.chunks:
+                chunk_node = self.get_node(chunk_name)
+                if chunk_node:
+                    # Remove edge to old cluster
+                    self.remove_edge(chunk_name, largest_cluster.id)
+                    # Add edge to new cluster 
+                    self.add_edge(ClusterEdge(
+                        src=chunk_name,
+                        dst=new_cluster.id,
+                        kind=EdgeKind.ChunkToCluster
+                    ))
+                        
+        # Remove old cluster if empty
+        if len(self.children(largest_cluster.id, edge_types=[EdgeKind.ChunkToCluster])) == 0:
+            self.remove_node(largest_cluster.id)
+
+
+    def regroup_chunks(self, use_summaries=False):
         # regroup clusters
         clusters = self.get_clusters(return_content=True)
-        _, moves = regroup_clusters(clusters, use_summaries=use_summaries)
+        _, moves = regroup_clusters(self.model, clusters, use_summaries=use_summaries)
         valid_moves = 0
 
         for move in moves:
@@ -138,10 +182,6 @@ class ClusterGraph(CodeGraph):
 
         print("Valid moves: ", valid_moves)
 
-        # cluster the clusters
-        self._build_cluster_edges()
-        self._clustered = True
-
     def _build_cluster_edges(self):
         """
         Construct edges between clusters based on the edges between their chunks
@@ -153,8 +193,6 @@ class ClusterGraph(CodeGraph):
         cluster_nodes = [
             node
             for node in self.filter_nodes({"kind": NodeKind.Cluster})
-            # # looking for bottom level child clusters
-            # if len(self.parents(node.id)) != 0
         ]
 
         # Create edges between clusters based on chunk relationships
@@ -176,7 +214,6 @@ class ClusterGraph(CodeGraph):
                         
                     # Find the cluster that contains the target chunk
                     target_parents = self.parents(target_chunk.id)
-                    
                     if not target_parents:
                         continue
                         
@@ -301,13 +338,21 @@ class ClusterGraph(CodeGraph):
                 # Get all simple paths between src and dst
                 for path in nx.all_simple_paths(cluster_subgraph, src, dst):
                     cluster_path = ClusterPath()
+
+                    # Check if any edges in the path are not ClusterRef
+                    skip_path = False
+                    for i in range(len(path) - 1):
+                        edge_datas = cluster_subgraph.get_edge_data(path[i], path[i+1]).values()
+                        if any(edge_data["kind"] != EdgeKind.ClusterRef for edge_data in edge_datas):
+                            skip_path = True
+                            break
+                    if skip_path:
+                        continue
+
                     for i in range(len(path) - 1):
                         src_cluster = self.node_to_cluster(path[i])
                         dst_cluster = self.node_to_cluster(path[i + 1])
                         edge_datas = cluster_subgraph.get_edge_data(src_cluster.id, dst_cluster.id).values()
-                        if any(edge_data["kind"] != EdgeKind.ClusterRef for edge_data in edge_datas):
-                            continue
-                        
                         # add up all the chunk segments between two clusters
                         chunk_segments = set()
                         for edge_data in edge_datas:
@@ -316,10 +361,9 @@ class ClusterGraph(CodeGraph):
                             ref = edge_data["ref"]
                             chunk_segments.add(ChunkPathSegment(src_chunk, ref, dst_chunk))
                         cluster_path.add_segment((src_cluster, dst_cluster, chunk_segments))
-                    
+
+                    # NOTE: not sure why I have to do this but set doesnt seem to work here?                    
                     if not any([p.__hash__() == cluster_path.__hash__() for p in all_paths]):
-                        print("New path: ", cluster_path.__hash__())
-                        print("Old hash: ", all_paths[-1].__hash__() if all_paths else None)
                         all_paths.append(cluster_path)
 
     # return all_paths

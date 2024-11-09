@@ -7,6 +7,8 @@ from llm import LLMModel
 from rtfs.cluster.graph import Cluster
 from src.utils import DELIMETER
 
+# TODO: use this with the proper apply code
+# from .graph_ops import MoveOp
 
 class MoveOp(BaseModel):
     src_cluster: int
@@ -89,13 +91,13 @@ def split_clusters(clusters: List[Cluster], groups: int = 3) -> List[List[Cluste
         
     return cluster_groups
 
-def regroup_clusters(clusters: List[Cluster], 
+def regroup_clusters(model: LLMModel,
+                     clusters: List[Cluster], 
                      use_summaries: bool) -> Tuple[List[Cluster], List[MoveOp]]:
     """
     Compares groups of clusters together and move chunks between them to maximize the coherence
     of a single cluster
     """
-    model = LLMModel(provider="openai")
     cluster_sets = split_clusters(clusters)
     cgroups = itertools.combinations(cluster_sets, 2)
     all_moves = []

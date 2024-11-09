@@ -8,11 +8,9 @@ from enum import Enum
 class MultipleNodesException(Exception):
     pass
 
-
 class DictMixin:
     def dict(self):
         return {k: v for k, v in self.__dict__.items() if not k == "id"}
-
 
 @dataclass
 class Node(DictMixin):
@@ -39,8 +37,8 @@ class EdgeKind(str, Enum):
     ClusterRef = "ClusterRef"
 
 class NodeKind(str, Enum):
-    ClusterNode = "ClusterNode"
-
+    Chunk = "ChunkNode"
+    Cluster = "ClusterNode"
 
 class CodeGraph:
     def __init__(self, *, graph=MultiDiGraph, node_types: List[Type[Node]]):
