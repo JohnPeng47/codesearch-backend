@@ -238,7 +238,6 @@ async def summarize_repo(
     # should definitely flip the order of this
     summarizer = Summarizer(cg)
     summarizer.summarize()
-    summarizer.gen_categories()
 
     logger.info(
         f"Summarizing stats: {request.graph_type} for {repo.file_path}: \n{cg.get_stats()}"

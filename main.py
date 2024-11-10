@@ -17,6 +17,7 @@ from src.auth.views import auth_router
 from src.repo.views import repo_router
 from src.queue.views import task_queue_router
 from src.health.views import health_router
+from src.walkthrough.views import walkthrough_router
 from src.config import PORT, REPOS_ROOT, ELL_STORAGE
 
 
@@ -79,6 +80,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(repo_router, prefix="/api")
 app.include_router(task_queue_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
+app.include_router(walkthrough_router, prefix="/api")
 
 # app.include_router(search_router)
 # logfire.configure(console=False)
@@ -125,7 +127,8 @@ if __name__ == "__main__":
         host="localhost",
         port=PORT,
         # workers=2,
-        workers=calculate_workers(),
+        # workers=calculate_workers(),
+        workers=1,
         reload=True,
         # reload_excludes=["data"],
         # log_config=config,

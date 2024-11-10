@@ -43,8 +43,8 @@ Here are the clusters:
         model_name="gpt-4o"
     )
 
-def parse_moves(model: LLMModel, move_text: str) -> MoveOpList:
-    PARSE_MOVES = """
+def convert(model: LLMModel, move_text: str) -> MoveOpList:
+    CONVERT = """
 Parse the following text that contains cluster move operations.
 Each line should be in the format: (src_cluster, dst_cluster, chunk_name)
 
@@ -57,7 +57,7 @@ Text to parse:
 {moves}
 """
     return model.invoke(
-        PARSE_MOVES.format(moves=move_text),
+        CONVERT.format(moves=move_text),
         model_name="gpt-4o-mini",
         response_format=MoveOpList
     )
@@ -108,7 +108,7 @@ def regroup_clusters(model: LLMModel,
 
     for cs1, cs2 in cgroups:
         raw_moves = compare_pairwise_llm(model, cs1 + cs2, use_summaries)
-        movelist = parse_moves(model, raw_moves)
+        movelist = convert(model, raw_moves)
         all_moves.extend(movelist.moves)
 
     # Group moves by source cluster and chunk to detect collisions
