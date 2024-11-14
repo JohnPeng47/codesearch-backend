@@ -1,22 +1,15 @@
 from sqlalchemy import Column, Integer, String, ARRAY
 from sqlalchemy.orm import relationship
 from pydantic import BaseModel, field_validator, model_validator, Field
+import re
+from typing import List, Optional
 
 from rtfs.cluster.graph import Cluster
-
 from src.models import RTFSBase
 from src.database.core import Base
 from src.model_relations import user_repo
 
-import re
-from typing import List, Optional
-
 from .graph import GraphType
-
-
-def repo_ident(owner: str, repo_name: str):
-    return f"{owner}_{repo_name}"
-
 
 # TODO: redefine all backend models using FastAPI SQLModel
 # create separate path objects for the file paths, especially graph_path
@@ -108,19 +101,16 @@ class RepoCreate(BaseModel):
 
         return self
     
-# TODO: define this repoBase
-class RepoIdent(BaseModel):
-    owner: str
-    repo_name: str
+    @property
+    def repo_ident(self):
+        return f"{self.owner}_{self.repo_name}" 
+
+class RepoResponse(RepoCreate):
+    url: Optional[str] = None
 
 
-class RepoResponse(RepoIdent):
-    pass
-
-
-class RepoGetRequest(RepoIdent):
-    pass
-
+class RepoGetRequest(RepoCreate):
+    url: Optional[str] = None
 
 class RepoSummaryRequest(RepoGetRequest):
     graph_type: GraphType

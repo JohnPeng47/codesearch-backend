@@ -28,7 +28,6 @@ from .models import (
     RepoGetRequest,
     RepoSummaryRequest,
     SummarizedClusterResponse,
-    repo_ident,
 )
 from .tasks import InitIndexGraphTask, IndexGraphResponse
 from .graph import get_or_create_chunk_graph
@@ -82,9 +81,9 @@ async def create_repo(
             )
 
         repo_dst = None
-        index_persist_dir = INDEX_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
-        repo_dst = REPOS_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
-        save_graph_path = GRAPH_ROOT / repo_ident(repo_in.owner, repo_in.repo_name)
+        index_persist_dir = INDEX_ROOT / repo_in.repo_ident
+        repo_dst = REPOS_ROOT / repo_in.repo_ident
+        save_graph_path = GRAPH_ROOT / repo_in.repo_ident
         
         language = get_repo_main_language(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN)
         if language.lower() not in SUPPORTED_LANGS:
@@ -216,8 +215,8 @@ async def summarize_repo(
         print("Repo not found")
         raise HTTPException(status_code=404, detail="Repository not found")
     
-    summary_path = SUMMARIES_ROOT / (repo_ident(repo.owner, repo.repo_name) + ".json")
-    graph_path = GRAPH_ROOT / repo_ident(repo.owner, repo.repo_name)
+    summary_path = SUMMARIES_ROOT / (request.repo_ident + ".json")
+    graph_path = GRAPH_ROOT / request.repo_ident
 
     if summary_path and Path(summary_path).exists():
         print("Loading summary from cache ...")

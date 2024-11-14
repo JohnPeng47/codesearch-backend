@@ -9,6 +9,10 @@ PrimaryKey = Annotated[int, Field(gt=0, lt=2147483647)]
 NameStr = Annotated[
     str, Field(pattern=r"^(?!\s*$).+", strip_whitespace=True, min_length=3)
 ]
+UUID = Annotated[str, Field(
+    # pattern=r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$",
+    description="UUID string in hex format"
+)]
 
 
 class TimeStampMixin(object):

@@ -1,14 +1,13 @@
-from rtfs.chunk_resolution.chunk_graph import ChunkGraph
-from rtfs.summarize.summarize import Summarizer
-from src.config import GRAPH_ROOT
-from src.chunk.chunk import chunk_repo, ChunkStrat
-
+from src.chat.models import WalkthroughChat 
+from src.config import WALKTHROUGH_ROOT
 import json
-from src.chunk.lmp.summarize import summarize_lmp, CodeSummary
-from rtfs.chunk_resolution.chunk_graph import ChunkGraph
-from pathlib import Path
 
-repo_path = Path(r"C:\Users\jpeng\Documents\projects\codesearch-backend\src\cluster\repos\moatless-tools")
-graph_path = GRAPH_ROOT / "aorwall_moatless-tools"
+from openai import OpenAI
 
-graph_json = json.loads(open(graph_path, "r").read())
+
+
+walkthrough_path = WALKTHROUGH_ROOT / "aorwall_moatless-tools"
+
+with open(walkthrough_path) as f:
+    c = json.loads(f.read())
+    WalkthroughChat(c)

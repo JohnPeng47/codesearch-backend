@@ -5,6 +5,7 @@ from moatless.index import CodeIndex
 from moatless.index.settings import IndexSettings
 from moatless import FileRepository
 
+
 def get_or_create_index(repo_path: str, persist_dir: str, exclusions: List[str] = []):
     """
     Gets or creates the code embeddings/docstore for the repo

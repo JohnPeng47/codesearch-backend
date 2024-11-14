@@ -1092,8 +1092,8 @@ class CodeIndex:
             pipelines += ((EmbeddingType.CLUSTER, cluster_embed_pipeline),)
 
         return pipelines
-
-    def run_ingestion(
+    
+    def create_chunks(
         self,
         repo_path: Optional[str] = None,
         input_files: Optional[list[str]] = None,
@@ -1133,9 +1133,7 @@ class CodeIndex:
             recursive=True,
         )
 
-        embed_pipelines = self._create_embed_pipelines()
         docs = reader.load_data()
-
         blocks_by_class_name = {}
         blocks_by_function_name = {}
 
@@ -1164,56 +1162,66 @@ class CodeIndex:
             repo_path=repo_path,
         )
 
-        prepared_nodes = {}
+        return splitter.get_nodes_from_documents(docs, show_progress=True)
 
-        code_nodes = splitter.get_nodes_from_documents(docs, show_progress=True)
-        prepared_nodes[EmbeddingType.CODE] = code_nodes
+    # def run_ingestion(
+    #     self,
+    #     code_nodes: List[BaseNode],
+    #     repo_path: Optional[str] = None,
+    #     input_files: Optional[list[str]] = None,
+    #     num_workers: Optional[int] = None,
+    # ):
+    #     prepared_nodes = {}
+    #     embed_pipelines = self._create_embed_pipelines()
+    #     repo_path = repo_path or self._file_repo.path
 
-        if self._use_summaries and not self._summaries:
-            summary_nodes = generate_summary(
-                code_nodes,
-                anthropic=self._summary_anthropic_model,
-                ref_vars=self._summary_ref_vars,
-            )
-            prepared_nodes[EmbeddingType.SUMMARY] = summary_nodes
+    #     prepared_nodes[EmbeddingType.CODE] = code_nodes
 
-        if self._cluster_list:
-            cluster_nodes = []
-            for cluster in self._cluster_list:
-                cluster_nodes.extend(self._clusters_from_dict(cluster))
+    #     if self._use_summaries and not self._summaries:
+    #         summary_nodes = generate_summary(
+    #             code_nodes,
+    #             anthropic=self._summary_anthropic_model,
+    #             ref_vars=self._summary_ref_vars,
+    #         )
+    #         prepared_nodes[EmbeddingType.SUMMARY] = summary_nodes
 
-            prepared_nodes[EmbeddingType.CLUSTER] = cluster_nodes
+    #     if self._cluster_list:
+    #         cluster_nodes = []
+    #         for cluster in self._cluster_list:
+    #             cluster_nodes.extend(self._clusters_from_dict(cluster))
 
-        prepared_tokens = sum(
-            [
-                count_tokens(node.get_content(), self._settings.embed_model)
-                for node in prepared_nodes[EmbeddingType.CODE]
-            ]
-        )
-        print(f"Prepared {len(prepared_nodes)} nodes and {prepared_tokens} tokens")
+    #         prepared_nodes[EmbeddingType.CLUSTER] = cluster_nodes
 
-        self._blocks_by_class_name = blocks_by_class_name
-        self._blocks_by_function_name = blocks_by_function_name
+    #     prepared_tokens = sum(
+    #         [
+    #             count_tokens(node.get_content(), self._settings.embed_model)
+    #             for node in prepared_nodes[EmbeddingType.CODE]
+    #         ]
+    #     )
+    #     print(f"Prepared {len(prepared_nodes)} nodes and {prepared_tokens} tokens")
 
-        all_nodes = []
-        total_nodes = 0
-        for name, pipeline in embed_pipelines:
-            nodes = prepared_nodes.get(name, None)
-            if not nodes:
-                raise Exception(f"No nodes prepared for pipeline {name}")
+    #     self._blocks_by_class_name = blocks_by_class_name
+    #     self._blocks_by_function_name = blocks_by_function_name
 
-            embedded_nodes = pipeline.run(
-                nodes=list(nodes),
-                show_progress=True,
-                num_workers=num_workers,
-            )
-            num_nodes = len(embedded_nodes)
-            all_nodes.extend(embedded_nodes)
+    #     all_nodes = []
+    #     total_nodes = 0
+    #     for name, pipeline in embed_pipelines:
+    #         nodes = prepared_nodes.get(name, None)
+    #         if not nodes:
+    #             raise Exception(f"No nodes prepared for pipeline {name}")
 
-            total_nodes += num_nodes
-            print(f"{name} pipeline embedded ", num_nodes, "vectors")
+    #         embedded_nodes = pipeline.run(
+    #             nodes=list(nodes),
+    #             show_progress=True,
+    #             num_workers=num_workers,
+    #         )
+    #         num_nodes = len(embedded_nodes)
+    #         all_nodes.extend(embedded_nodes)
 
-        return all_nodes, total_nodes
+    #         total_nodes += num_nodes
+    #         print(f"{name} pipeline embedded ", num_nodes, "vectors")
+
+    #     return all_nodes, total_nodes
 
     def persist(self, persist_dir: str):
         self._code_vector_store.persist(persist_dir, VectorStoreType.CODE)

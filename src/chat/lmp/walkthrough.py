@@ -1,17 +1,27 @@
 import re
 from pydantic import BaseModel
-from typing import List
-from llm import LLMModel, LMClusteredTopicList
+from typing import List, Dict, Tuple
+from llm import LLMModel
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+    retry_if_not_exception_type,
+)
+
 from rtfs.cluster.graph import Cluster
+from .utils import get_src_metadata
+from ..models import WalkthroughChat
 
 # TODO: should move all of this into src
 class Transition(BaseModel):
     src_cluster: int
     dst_cluster: int
     description: str
+
 class TransitionList(BaseModel):
     transitions: List[Transition]
-    
+
 # TODO: add optional to start with a cluster
 def identify_transitions(model: LLMModel, 
                          clusters: List[Cluster], 
@@ -42,10 +52,16 @@ Start with the following cluster: {start_cluster}
         response_format=TransitionList
     )
 
+@retry(
+    wait=wait_random_exponential(min=1, max=15),
+    reraise=True,
+    stop=stop_after_attempt(3),
+    after=lambda retry_state: print(f"Retry attempt failed with exception: {retry_state.outcome.exception()}"),
+)
 def generate_chat_transition(model: LLMModel,
                              transition: Transition,
                              clusters: List[Cluster],
-                             walkthrough: str) -> str:
+                             walkthrough: str) -> Tuple[str, Dict]:
     src_cluster = next(cluster for cluster in clusters if cluster.id == transition.src_cluster)
     dst_cluster = next(cluster for cluster in clusters if cluster.id == transition.dst_cluster)
 
@@ -56,7 +72,7 @@ The following walkthrough describes a feature that spans several code clusters i
 Here is an overview of the clusters in the codebase:
 {clusters}
 
-You are tasked with writing a detailed summary of the transition between cluster {src_cluster} and cluster {dst_cluster}.
+You are tasked with writing a short summary of the transition between cluster {src_cluster} and cluster {dst_cluster}.
 Here are their respective source code:
 Source cluster:
 {src_code}
@@ -67,9 +83,18 @@ Destination cluster:
 Here is a brief description of the transition:
 {description}
 
-Now write a more detailed summary of the transition, including references to code entities and how they interact
+Some additional guidance to follow:
+- a list of code related features. this section should include the id of the chunk that is being referenced enclosed in [_KEYPHRASE_][[]], which will be specially parsed by the client, where _KEYPHRASE_ is a word/phrase that is referenced in the chunk
+- do not refer to clusters explicitly in your explanation
+- limit your discussion only to the relevant part described by the walkthrough
+
+Here is an example:
+....
+- The [search() function][[src/vector.py::1]] uses an exclusion filter to exclude certain search terms from the result
+
+Now write a more short summary of the transition, including references to code entities and how they interact
 """
-    return model.invoke(
+    llm_res = model.invoke(
         CHAT_TRANSITION.format(walkthrough=walkthrough,
                                clusters="\n".join([c.to_str(return_content=True) for c in clusters]),
                                src_cluster=src_cluster.id,
@@ -79,6 +104,8 @@ Now write a more detailed summary of the transition, including references to cod
                                description=transition.description),
         model_name="gpt-4o"
     )
+    src_metadata = get_src_metadata(llm_res, clusters)
+    return llm_res, src_metadata
 
 def cluster_wiki(model: LLMModel, cluster: Cluster) -> str:
     cluster_str = cluster.to_str(return_content=True)
@@ -98,15 +125,3 @@ Here is an exampe of a wiki page:
         CLUSTER_WIKI.format(cluster=cluster_str),
         model_name="gpt-4o"
     )
-    chunk_metadata = {}
-    chunk_files = re.findall("\[\[(.*)\]\]", output)
-    for f in chunk_files:
-        if f not in [c.id for c in cluster.chunks]:
-            raise Exception(f"{f} is hallucinated")
-        
-        chunk = next(filter(lambda c: c.id == f, cluster.chunks), None)
-        chunk_metadata[f] = SrcMetadata(
-            filepath=chunk.file_path,
-            start_line=chunk.metadata.start_line, 
-            end_line=chunk.metadata.end_line
-        )

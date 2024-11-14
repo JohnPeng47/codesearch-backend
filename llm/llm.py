@@ -1,5 +1,7 @@
 from typing import Any, Dict, Optional, Type, Union
 
+
+from langchain_core.messages.base import BaseMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.language_models.llms import BaseLLM
 from langchain_openai import ChatOpenAI
@@ -106,9 +108,10 @@ class LLMModel:
                 )
             lm = lm.with_structured_output(response_format, strict=True)
 
-        # TODO: build adapter here to support other models
-        res = lm.invoke(prompt)        
+        res = lm.invoke(prompt)
+        if isinstance(res, BaseMessage):
+            return res.content 
         if isinstance(res, BaseModel):
             return res
         else:
-            return res.content
+            raise Exception(f"Unsupported return type: {type(res)}")
