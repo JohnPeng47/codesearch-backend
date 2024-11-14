@@ -7,12 +7,26 @@ from typing import Annotated
 
 PrimaryKey = Annotated[int, Field(gt=0, lt=2147483647)]
 NameStr = Annotated[
-    str, Field(pattern=r"^(?!\s*$).+", strip_whitespace=True, min_length=3)
+    str, Field(pattern=r"^.+\S.*$", strip_whitespace=True, min_length=3)
 ]
 UUID = Annotated[str, Field(
     # pattern=r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$",
     description="UUID string in hex format"
 )]
+FULL_PATH = Annotated[
+    str, Field(
+        pattern=r"^([A-Za-z]:[\\/]|/).+",  # Matches C:\ or C:/ or / at start
+        strip_whitespace=True,
+        description="Absolute filesystem path (Windows or Unix)"
+    )
+]
+REL_PATH = Annotated[
+    str, Field(
+        pattern=r"^(?![A-Za-z]:[\\/]|/).+",  # Does not match absolute paths
+        strip_whitespace=True,
+        description="Relative filesystem path (Windows or Unix)"
+    )
+]
 
 
 class TimeStampMixin(object):

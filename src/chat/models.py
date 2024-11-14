@@ -3,10 +3,11 @@ from typing import List, Dict, Tuple, Optional, NewType, Any
 from enum import Enum
 import uuid
 
-from src.models import UUID
+from src.repo.models import RepoGetRequest
+from src.models import UUID, NameStr
 
 class WikiPage(BaseModel):
-    title: str
+    title: NameStr
     content: str
     metadata: Dict
 
@@ -26,22 +27,47 @@ class WikiPageResponse(BaseModel):
 class SrcMetadata(BaseModel):
     filepath: str
     start_line: int
-    end_line: int 
+    end_line: int
 
-class ChatResType(str, Enum):
+class ChatType(str, Enum):
     CHAT = "chat"
     WALKTHROUGH_CHAT = "walkthrough_chat"
 
+
+# TODO: kinda weird to extend repoGetRequest ...
+class ChatMessage(RepoGetRequest):
+    query: str
+    id: UUID
+    type: ChatType = ChatType.CHAT
+    data: Optional[Any] = Field(default=None)
+
+    # Add model validator to handle ChatMessage subclasses
+    @model_validator(mode='before')
+    @classmethod
+    def validate_data(cls, values):
+        if isinstance(values, dict):
+            if values.get('type') == ChatType.WALKTHROUGH_CHAT and values.get('data'):
+                values['data'] = WalkThroughData(**values['data'])
+        return values
+
+class WalkThroughData(BaseModel):
+    walkthrough: NameStr
+    next_id: UUID
+
+class WalkthroughMessage(RepoGetRequest):
+    type: ChatType = ChatType.WALKTHROUGH_CHAT
+    data: WalkThroughData
+
 class ChatResponse(BaseModel):
     content: str
-    type: ChatResType
+    type: ChatType
     id: UUID = Field(default=str(uuid.uuid4()))
-    title: Optional[str] = Field(default="")
+    title: Optional[NameStr] = Field(default="")
     metadata: Optional[Any] = Field(default=None)
 
 class WalkthroughChat(ChatResponse):
     next_chat: Optional[UUID] = Field(default=None) 
-    type: ChatResType = ChatResType.WALKTHROUGH_CHAT
+    type: ChatType = ChatType.WALKTHROUGH_CHAT
     metadata: Dict[str, SrcMetadata] = Field(...)
 
     # NOTE: need custom validator here for the dict
@@ -64,9 +90,9 @@ class WalkthroughChat(ChatResponse):
         )
 
 # TODO: create a db model for this associated a with Repo
-# TODO: add cluster count
+# TODO: add cluster count to this
 class Walkthrough(BaseModel):
-    name: str
+    name: NameStr
     chat_list: List[UUID]
 
 class WalkthroughResponse(BaseModel):

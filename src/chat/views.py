@@ -11,25 +11,37 @@ from src.chunk.chunk import chunk_repo, ChunkStrat
 from src.config import REPOS_ROOT, WALKTHROUGH_ROOT
 from src.repo.models import RepoGetRequest
 
-from .models import Walkthrough, WalkthroughResponse, ChatResponse
+from .models import (
+    Walkthrough, 
+    WalkthroughResponse, 
+    WalkthroughChat,
+    ChatMessage,
+    ChatType,
+    ChatResponse,
+    SrcMetadata
+)
 
 chat_router = APIRouter()
 
 # main chat endpoint
-# @chat_router.post("/chat")
-# async def chat(
-#     chat_id: int,
-#     db_session: Session = Depends(get_db),
-#     curr_user: User = Depends(get_current_user)
-# ):
-#     chat = CHATS[chat_id]
-#     print("Getting chat: ", chat["nextWiki"])
-#     return ChatResponse(
-#         id=str(uuid.uuid4()), 
-#         content=chat["content"], 
-#         nextWiki=chat["nextWiki"], 
-#         title=chat["content"][12:24])
-
+@chat_router.post("/chat", response_model=ChatResponse)
+async def chat(
+    msg: ChatMessage,
+    db_session: Session = Depends(get_db),
+    curr_user: User = Depends(get_current_user)
+):
+    walkthrough_path = WALKTHROUGH_ROOT / msg.repo_ident
+    walkthrough_json = json.loads(open(walkthrough_path).read())
+    if msg.type == ChatType.WALKTHROUGH_CHAT:
+        walkthrough = next(filter(lambda w: w["name"] == msg.data.walkthrough, walkthrough_json), None)
+        if not walkthrough:
+            raise ValueError(f"Walkthrough {msg.data.walkthrough} not found")
+    
+        chat = next(filter(lambda chat: chat["id"] == msg.data.next_id, walkthrough["walkthroughs"]))
+        if not chat:
+            raise ValueError(f"Chat {msg.data.next_id} not found")
+        
+        return WalkthroughChat.from_json(chat)
 
 @chat_router.post("/chat/walkthrough", response_model=WalkthroughResponse)
 async def gen_walkthrough(
