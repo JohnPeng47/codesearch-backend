@@ -1,5 +1,6 @@
 from typing import List, Dict
 import re
+from functools import reduce
 
 from rtfs.cluster.cluster_graph import Cluster
 from ..models import SrcMetadata
@@ -21,3 +22,15 @@ def get_src_metadata(content: str, clusters: List[Cluster]) -> Dict[str, SrcMeta
         )
     
     return chunk_metadata
+
+def clean_markdown(mkdown: str):
+    def clean_backticks_in_brackets(content: str):
+        pattern = r'`\[(.*?)\]\[\[(.*?)\]\]`'
+        content = re.sub(pattern, r'[`\1`][[\2]]', content)
+        return content
+    
+    clean_funcs = [
+        clean_backticks_in_brackets
+    ]
+    
+    return reduce(lambda x, f: f(x), clean_funcs, mkdown)

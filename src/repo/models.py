@@ -27,8 +27,7 @@ class Repo(Base):
     language = Column(String)
     repo_size = Column(Integer)
     cluster_files = Column(ARRAY(String))
-
-    time = Column(Integer) # clone / indexing duration
+    time = Column(Integer) # clone + indexing duration
 
     # Paths
     file_path = Column(String)
@@ -38,7 +37,6 @@ class Repo(Base):
 
     # TODO: probably want to make this a separate RepoStats table
     views = Column(Integer)
-
     users = relationship(
         "User",
         secondary=user_repo,

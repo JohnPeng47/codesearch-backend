@@ -33,11 +33,9 @@ async def chat(
     walkthrough_path = WALKTHROUGH_ROOT / msg.repo_ident
     walkthrough_json = json.loads(open(walkthrough_path).read())
     if msg.type == ChatType.WALKTHROUGH_CHAT:
-        walkthrough = next(filter(lambda w: w["name"] == msg.data.walkthrough, walkthrough_json), None)
-        if not walkthrough:
-            raise ValueError(f"Walkthrough {msg.data.walkthrough} not found")
-    
-        chat = next(filter(lambda chat: chat["id"] == msg.data.next_id, walkthrough["walkthroughs"]))
+        # Flatten all chats from all walkthroughs into a single list
+        all_chats = [chat for walkthrough in walkthrough_json for chat in walkthrough["walkthroughs"]]
+        chat = next(filter(lambda chat: chat["id"] == msg.data.next_id, all_chats), None)
         if not chat:
             raise ValueError(f"Chat {msg.data.next_id} not found")
         
@@ -56,7 +54,7 @@ async def gen_walkthrough(
         walkthroughs = [
             Walkthrough(
                 name=walkthrough["name"], 
-                chat_list=[w["id"] for w in walkthrough["walkthroughs"]]
+                chat_messages=[w["id"] for w in walkthrough["walkthroughs"]]
             ) for walkthrough in walkthrough_json
         ]
     )

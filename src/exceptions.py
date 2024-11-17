@@ -6,3 +6,9 @@ class ClientActionException(Exception):
         self.message = message
         
         super().__init__()
+
+class LLMException(Exception):
+    """
+    Exception class for errors during LLM generation
+    """
+    pass

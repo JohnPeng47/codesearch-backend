@@ -22,9 +22,6 @@ class ClusterList:
     clusters: List[str]
 
 
-## TODO TMRW: complete the rest of this, with evals and shit
-
-
 @ell.simple(model="gpt-4o-2024-08-06")
 def summarize(repo_code):
     SUMMARY_PROMPT = """
