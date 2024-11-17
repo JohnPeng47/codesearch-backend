@@ -52,3 +52,7 @@ def summarize_lmp(model: LLMModel, code) -> CodeSummary:
     print("generating summary")
     raw_summary = summarize_chunk(model, code)    
     return convert(model, raw_summary)
+
+def func():
+    model = LLMModel(provider="openai")
+    print(model.invoke("hello?", model_name="gpt-4o-mini"))
