@@ -79,6 +79,7 @@ class LLMModel:
         
         # Initialize cache-related attributes
         self.cache_enabled_functions = self._get_cache_enabled_functions()
+        print("Enabled functions: ", self.cache_enabled_functions)
         self.db_connection = None
         
         if use_cache:
@@ -91,7 +92,7 @@ class LLMModel:
 
     def _get_caller_info(self):
         frame = inspect.currentframe()
-        caller_frame = frame.f_back
+        caller_frame = frame.f_back.f_back  # Go back one more frame
         caller_function = caller_frame.f_code.co_name
         caller_filename = caller_frame.f_code.co_filename
 
@@ -183,8 +184,8 @@ class LLMModel:
             prompt_hash = self._hash_prompt(prompt)
             cached_response = self._get_cached_response(caller_function, prompt_hash)
 
-            print("Retrieiving from cache: ", cached_response)
-
+            print(f"Retrieiving from cache for {caller_function}")
+            
             if cached_response is not None:
                 # If response is a Pydantic model, reconstruct it
                 if response_format is not None:

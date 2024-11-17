@@ -228,10 +228,7 @@ def main():
     if new_functions:
         for call in new_functions:
             relative_path = os.path.relpath(call.file_path, os.getcwd())
-            print(f"Function: {call.function_name}")
-            print(f"File: {relative_path}")
-            print(f"Line {call.line_number}: {call.line_content}")
-            print()
+            print(f"Function: {call.function_name}, Path: {relative_path}")
     
     update_yaml_config(args.config, results, existing_config)
 
