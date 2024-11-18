@@ -141,10 +141,9 @@ class ChunkStrategy:
         index_dir = index_dir if index_dir else temp_index_dir(self.repo_dir.name)
         chunk_index = get_or_create_index(str(self.repo_dir), str(index_dir), exclusions=self.exclusions)
         chunk_nodes = chunk_index._docstore.docs.values()
+        chunk_fp, chunk_i = list(chunk_nodes)[0].metadata["file_path"], 1
 
         print(f"[Chunker]: {len(chunk_nodes)} chunks used")
-
-        chunk_fp, chunk_i = list(chunk_nodes)[0].metadata["file_path"], 1
 
         for chunk_ctxt in get_chunk_ctxt_nodes(chunk_nodes):
             chunk_node, ctxt_list = chunk_ctxt
@@ -167,6 +166,7 @@ class ChunkStrategy:
                 )
             )
 
+        # generate summaries of clusters
         if self.summarize:
             cluster_input = summarize(cluster_input)
 

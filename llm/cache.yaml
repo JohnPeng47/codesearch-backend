@@ -16,11 +16,17 @@ compare_pairwise_llm:
 convert:
 - cache: false
 - filepath: .\rtfs\cluster\lmp\recluster.py
+func:
+- cache: false
+- filepath: .\src\chunk\lmp\summarize.py
 generate_chat_transition:
 - cache: false
 - filepath: .\rtfs\cluster\lmp\walkthrough.py
+generate_chat_transition_rolled:
+- cache: true
+- filepath: .\src\chat\lmp\walkthrough.py
 identify_transitions:
-- cache: false
+- cache: true
 - filepath: .\rtfs\cluster\lmp\walkthrough.py
 merge:
 - cache: false
@@ -28,6 +34,12 @@ merge:
 parse_moves:
 - cache: false
 - filepath: .\src\cluster\lmp\merge_ops.py
+post_process_name:
+- cache: true
+- filepath: .\src\chat\lmp\walkthrough.py
+post_process_smooth:
+- cache: true
+- filepath: .\src\chat\lmp\walkthrough.py
 split_cluster:
 - cache: false
 - filepath: .\rtfs\cluster\lmp\split_cluster.py

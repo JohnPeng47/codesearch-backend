@@ -50,6 +50,14 @@ async def gen_walkthrough(
     walkthrough_path = WALKTHROUGH_ROOT / repo_in.repo_ident
     walkthrough_json = json.loads(open(walkthrough_path).read())
 
+    print([
+            Walkthrough(
+                name=walkthrough["name"], 
+                chat_messages=[w["id"] for w in walkthrough["walkthroughs"]]
+            ) for walkthrough in walkthrough_json
+        ]
+    )
+
     return WalkthroughResponse(
         walkthroughs = [
             Walkthrough(

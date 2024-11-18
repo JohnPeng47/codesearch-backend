@@ -143,4 +143,4 @@ matched_clusters = get_cluster_from_chunk(chunk_paths, cg)
 
 transitions = identify_transitions(model, matched_clusters, WALKTHROUGH, start_cluster=10)
 walkthroughs = generate_walkthroughs(model, WALKTHROUGH, transitions.transitions, matched_clusters)
-write_new("New Test", walkthroughs)
+write_new("ClaudeUnsmooth", walkthroughs)

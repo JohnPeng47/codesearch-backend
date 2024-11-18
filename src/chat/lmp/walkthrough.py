@@ -1,4 +1,5 @@
 import re
+import sys
 from pydantic import BaseModel, Field
 from typing import List, Dict, Tuple, Optional
 from llm import LLMModel
@@ -9,7 +10,6 @@ from tenacity import (
     wait_random_exponential,
 )
 from src.chat.models import WalkthroughChat, WalkthroughData
-from src.chat.models import SrcMetadata
 from rtfs.cluster.graph import Cluster
 from src.exceptions import LLMException
 from src.utils import DELIMETER
@@ -190,7 +190,8 @@ Connect your output to this previously generated step, and make the flow smooth
                                src_code=src_cluster.to_str(return_content=True),
                                dst_code=dst_cluster.to_str(return_content=True),
                                description=transition.description),
-        model_name="gpt-4o"
+        model_name="claude-3-5-sonnet-20241022",
+        provider="anthropic"
     )
 
     mkdown = clean_markdown(llm_res)
@@ -221,6 +222,10 @@ You are given a list of the chats aimed at walking a user through a code feature
 Each of these chats are generated individually wrt to a specific part of the feature, without taking into consideration the previous chat
 Your task is to rectify this, and introduce a smooth transition between the chats.
 You should also add a proper introduction to the first chat to introduce the reader to the code feature
+Take care to preserve the original content as much as possible, only focusing your modifications on the beginning of each chat to smooth the transition
+
+Especially take care to preserve special formatting such as:
+- [KEYPHRASE][[]] for code entities
 
 Here are the previous chats:
 {prev_chats}
@@ -231,6 +236,8 @@ Here are the previous chats:
             prev_chats=prev_chat_str
         ),
         model_name="gpt-4o",
+        # model_name="claude-3-5-sonnet-20241022",
+        # provider="anthropic",
         response_format=ChatList
     )
 
@@ -273,11 +280,19 @@ def generate_walkthroughs(model: LLMModel,
         )   
 
     # NOTE: parse to LMChat, which is an internal LM representation used for this function
+    # chat_list = post_process_smooth(model, summary, all_chats).chats
+    # for og, reformed in zip(all_chats, chat_list):
+    #     print(f"Original chat: {og['content']}")
+    #     print(f"Reformed chat: {reformed.content}")
+
+    #     sys.exit()    
+
     chat_list = post_process_smooth(model, summary, all_chats).chats
     for i, chat in enumerate(all_chats):
         for smooth_chat in chat_list:
             if smooth_chat.name == chat["name"]:
                 all_chats[i]["content"] = smooth_chat.content
+                print("Reforemd: ", all_chats[i]["content"])
                 break
 
     walkthroughs = []

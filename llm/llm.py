@@ -53,7 +53,7 @@ class LLMModel:
         self,
         provider: str,
         use_cache: bool = True,
-        configpath: Path = Path(__file__).parent / "config.yaml",
+        configpath: Path = Path(__file__).parent / "cache.yaml",
         dbpath: Path = Path(__file__).parent / "llm_cache.db"
     ) -> None:
         """
@@ -84,6 +84,9 @@ class LLMModel:
         
         if use_cache:
             self._initialize_cache(dbpath)
+        
+        # Add call chain tracking
+        self.call_chain = []
 
     def _read_config(self, fp: Path):
         with open(fp, "r") as f:
@@ -98,8 +101,13 @@ class LLMModel:
 
         return caller_filename, caller_function
 
-    def use_model(self, model_name: str, temperature: int = 0, **kwargs: Any):
-        model_class = self.PROVIDER_MAP[self.provider]
+    def use_model(self, 
+                  model_name: str, 
+                  temperature: int = 0,
+                  provider: str = None,
+                  **kwargs: Any):
+        provider = provider if provider else self.provider    
+        model_class = self.PROVIDER_MAP[provider]
 
         return model_class(
             model=model_name,
@@ -125,10 +133,11 @@ class LLMModel:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS llm_cache (
                 function_name TEXT,
+                model_name TEXT,
                 prompt_hash TEXT,
                 response TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (function_name, prompt_hash)
+                PRIMARY KEY (function_name, model_name, prompt_hash)
             )
         """)
         self.db_connection.commit()
@@ -137,28 +146,28 @@ class LLMModel:
         """Create a consistent hash of the prompt."""
         return hashlib.sha256(prompt.encode()).hexdigest()
 
-    def _get_cached_response(self, function_name: str, prompt_hash: str) -> Optional[str]:
+    def _get_cached_response(self, function_name: str, model_name: str, prompt_hash: str) -> Optional[str]:
         """Retrieve cached response if it exists."""
         if not self.db_connection:
             return None
             
         cursor = self.db_connection.cursor()
         cursor.execute(
-            "SELECT response FROM llm_cache WHERE function_name = ? AND prompt_hash = ?",
-            (function_name, prompt_hash)
+            "SELECT response FROM llm_cache WHERE function_name = ? AND model_name = ? AND prompt_hash = ?",
+            (function_name, model_name, prompt_hash)
         )
         result = cursor.fetchone()
         return json.loads(result[0]) if result else None
 
-    def _cache_response(self, function_name: str, prompt_hash: str, response: Any) -> None:
+    def _cache_response(self, function_name: str, model_name: str, prompt_hash: str, response: Any) -> None:
         """Store response in cache."""
         if not self.db_connection:
             return
             
         cursor = self.db_connection.cursor()
         cursor.execute(
-            "INSERT OR REPLACE INTO llm_cache (function_name, prompt_hash, response) VALUES (?, ?, ?)",
-            (function_name, prompt_hash, json.dumps(response))
+            "INSERT OR REPLACE INTO llm_cache (function_name, model_name, prompt_hash, response) VALUES (?, ?, ?, ?)",
+            (function_name, model_name, prompt_hash, json.dumps(response))
         )
         self.db_connection.commit()
 
@@ -172,8 +181,9 @@ class LLMModel:
         **kwargs,
     ) -> Any:
         """Modified invoke method with caching support."""
-        # Get caller info for function name
+        # Track the call
         caller_filename, caller_function = self._get_caller_info()
+        self.call_chain.append((caller_filename, caller_function))
         
         # Check if caching is enabled for this function
         if (self.use_cache and 
@@ -182,9 +192,9 @@ class LLMModel:
 
             # Check cache for existing response
             prompt_hash = self._hash_prompt(prompt)
-            cached_response = self._get_cached_response(caller_function, prompt_hash)
-
-            print(f"Retrieiving from cache for {caller_function}")
+            cached_response = self._get_cached_response(caller_function, model_name, prompt_hash)
+            
+            print(f"Retrieving from cache for {caller_function} using {model_name}")
             
             if cached_response is not None:
                 # If response is a Pydantic model, reconstruct it
@@ -204,11 +214,11 @@ class LLMModel:
 
         res = lm.invoke(prompt)
         
-        # Extract content from response
+        # Extract content from response and convert to response to string for caching
         if isinstance(res, BaseMessage):
-            final_response = res.content
+            cached_response = res.content
         elif isinstance(res, BaseModel):
-            final_response = res.model_dump()
+            cached_response = res.model_dump()
         else:
             raise Exception(f"Unsupported return type: {type(res)}")
 
@@ -216,15 +226,28 @@ class LLMModel:
         if (self.use_cache and 
             caller_function in self.cache_enabled_functions and 
             self.cache_enabled_functions[caller_function]):
-            print("Caching respones: ", final_response)
-            self._cache_response(caller_function, prompt_hash, final_response)
+
+            print("Caching response: ", cached_response)
+            self._cache_response(caller_function, model_name, prompt_hash, cached_response)
 
         # If original response was a Pydantic model, return it as is
-        if isinstance(res, BaseModel):
-            return res
+        if isinstance(res, BaseMessage):
+            final_response = res.content
+        elif isinstance(res, BaseModel):
+            final_response = res
+            
         return final_response
 
     def __del__(self):
         """Cleanup database connection on object destruction."""
         if self.db_connection:
             self.db_connection.close()
+
+    def get_callchain(self) -> None:
+        """Prints the sequence of calls made to the invoke method."""
+        print("\nCall Chain:")
+        for idx, (file, func) in enumerate(self.call_chain, 1):
+            print(f"{idx}. File: {file}")
+            print(f"   Function: {func}")
+            if idx < len(self.call_chain):
+                print("   ↓")
