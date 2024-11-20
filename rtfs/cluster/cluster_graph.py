@@ -1,23 +1,24 @@
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 from llama_index.core.schema import BaseNode
 import networkx as nx
 import random
+from llm import LLMModel
 
-from .path import ClusterPath, ChunkPathSegment
-
-from rtfs.chunk_resolution.graph import ClusterNode, ChunkNode, ChunkMetadata
+from rtfs.chunk_resolution.graph import ChunkNode
 from rtfs.graph import CodeGraph, EdgeKind, NodeKind
 from rtfs.cluster.infomap import cluster_infomap
 from rtfs.cluster.graph import (
+    ClusterNode,
     ClusterRefEdge,
     ClusterEdge,
     Cluster,
-    ClusterChunk,
     ClusterGStats
 )
+from src.models import ChunkMetadata, CodeChunk
+
+from .path import ClusterPath, ChunkPathSegment
 from .lmp import regroup_clusters, split_cluster
-from llm import LLMModel
 
 class ClusterGraph(CodeGraph):
     def __init__(
@@ -273,7 +274,7 @@ class ClusterGraph(CodeGraph):
 
     def node_to_chunk(self, 
                       chunk_id: str, 
-                      return_content = False) -> ClusterChunk:
+                      return_content = False) -> CodeChunk:
         """
         Converts graph ChunkNode to ClusterChunk by node ID
         """
@@ -281,15 +282,11 @@ class ClusterGraph(CodeGraph):
         if chunk_node.kind != NodeKind.Chunk:
             raise ValueError(f"Node {chunk_id} is not a chunk node")
 
-        return ClusterChunk(
-            id=chunk_node.id,
-            og_id=chunk_node.og_id,
-            file_path=chunk_node.metadata.file_path,
-            start_line=chunk_node.range.line_range()[0] + 1,
-            end_line=chunk_node.range.line_range()[1] + 1,
-            summary=chunk_node.summary,
-            content=chunk_node.content if return_content else "",
-        )
+        code_chunk = chunk_node.to_code_chunk()
+        if not return_content:
+            code_chunk.content = ""
+
+        return code_chunk
 
     def clusters(
         self, 

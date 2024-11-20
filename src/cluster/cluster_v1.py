@@ -368,7 +368,6 @@ def generate_graph_clusters(repo_path: Path) -> List[ClusteredTopic]:
             name="Graph Cluster",
             chunks=[
                 CodeChunk(
-                    id=chunk.og_id,
                     content=chunk.content,
                     filepath=chunk.file_path,
                     input_type=ClusterInputType.CHUNK,

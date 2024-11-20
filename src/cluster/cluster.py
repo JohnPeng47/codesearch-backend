@@ -33,7 +33,7 @@ class LMChunk(ClusterInput):
 
     def get_summary(self) -> str:
         return self._summary
-
+    
 class ClusterStrategy:
     """
     Generates clusters from a list of CodeChunks

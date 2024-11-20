@@ -16,17 +16,13 @@ from rtfs.cluster.cluster_graph import ClusterGraph
 
 # Note: ideally we probably want to either move rtfs into src.graph
 # or chunk out of src
-from src.chunk.chunk import CodeChunk
+from src.chunk.models import CodeChunk
 from src.chunk.lmp.summarize import CodeSummary
 from .graph import (
-    ChunkMetadata,
-    ClusterNode,
     ChunkNode,
     ImportEdge,
     CallEdge,
     ChunkEdgeKind,
-    ClusterEdge,
-    ChunkNodeID,
 )
 
 import logging
@@ -81,11 +77,11 @@ class ChunkGraph(ClusterGraph):
                 continue
 
             chunk_node = ChunkNode(
-                id=chunk.node_id,
-                og_id=chunk.node_id,
+                id=chunk.id,
                 metadata=metadata,
                 summary=chunk.summary,
                 content=chunk.content,
+                input_type=chunk.input_type,
             )
             chunk_names.add(chunk_node.id)
             cg.add_node(chunk_node)
@@ -173,28 +169,6 @@ class ChunkGraph(ClusterGraph):
                 return chunk
 
         return None
-
-    def find_cluster_node_by_title(self, title: str):
-        """
-        Find a cluster node by its ID
-        """
-        for node in self._graph.nodes:
-            cluster_node = self.get_node(node)
-            if isinstance(cluster_node, ClusterNode) and cluster_node.title == title:
-                return cluster_node
-        return None
-
-        # for cluster, chunks in chunks_attached_to_clusters.items():
-        #     print(f"---------------------{cluster}------------------")
-        #     for chunk in chunks:
-        #         print(chunk.id)
-        #         print(chunk.content)
-        #         print("--------------------------------------------------")
-
-        print(f"Total chunks: {total_chunks}")
-        print(f"Total leaves: {total_leaves}")
-
-        return chunks_attached_to_clusters
 
     def _chunk_short_name(self, chunk_node: CodeChunk, i: int) -> str:
         # take out the root path and only last two subdirectories

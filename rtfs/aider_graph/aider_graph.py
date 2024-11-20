@@ -67,7 +67,6 @@ class AiderGraph(ClusterGraph):
 
             node = ChunkNode(
                 id=chunk.node_id,
-                og_id=chunk.node_id,
                 metadata=chunk.metadata,
                 content=chunk.get_content(),
                 ctxt_list=[module_ctxt] + class_ctxts,

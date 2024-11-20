@@ -12,9 +12,18 @@ class DictMixin:
     def dict(self):
         return {k: v for k, v in self.__dict__.items() if not k == "id"}
 
+class EdgeKind(str, Enum):
+    ChunkToCluster = "ChunkToCluster"
+    ClusterToCluster = "ClusterToCluster"
+    ClusterRef = "ClusterRef"
+
+class NodeKind(str, Enum):
+    Chunk = "ChunkNode"
+    Cluster = "ClusterNode"
+
 @dataclass
 class Node(DictMixin):
-    kind: str
+    kind: NodeKind
     id: str = field(default=str(uuid.uuid4()))
 
     def get_content(self):
@@ -30,15 +39,6 @@ class Node(DictMixin):
 class Edge(DictMixin):
     src: str
     dst: str
-
-class EdgeKind(str, Enum):
-    ChunkToCluster = "ChunkToCluster"
-    ClusterToCluster = "ClusterToCluster"
-    ClusterRef = "ClusterRef"
-
-class NodeKind(str, Enum):
-    Chunk = "ChunkNode"
-    Cluster = "ClusterNode"
 
 class CodeGraph:
     def __init__(self, *, graph=MultiDiGraph, node_types: List[Type[Node]]):

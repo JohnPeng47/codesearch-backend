@@ -2,11 +2,7 @@ from typing import List
 from pydantic import BaseModel
 from llm import LLMModel
 
-# TODO: probably shold implement an abstract interface for this similar to ClusterInputs
-class CodeSummary(BaseModel):
-    long_description: str
-    short_description: str
-    questions: List[str]
+from src.models import CodeSummary
 
 def summarize_chunk(model: LLMModel, code: str, context: str = "") -> str:
     SUMMARY_PROMPT_1 = """

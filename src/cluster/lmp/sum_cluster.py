@@ -4,13 +4,10 @@ from typing import List
 from pathlib import Path
 
 from ..models import CodeChunk
-from ..chunk_repo import chunk_repo
-
 
 # TODO(Prompt Optimizations):
 # order of summary wrt to defs/refs? Adding it after could benefit
 # from the refs/defs being used as the scratchpad
-
 class Reference(BaseModel):
     name: str
     use_explanation: str

@@ -2,7 +2,7 @@ from typing import List, Tuple
 from enum import Enum
 from llm import LLMModel
 
-from rtfs.cluster.graph import Cluster, ClusterChunk
+from rtfs.cluster.graph import Cluster
 from src.chunk.models import ClusterInput
 # wtff??
 # from llm import LMClusteredTopicList

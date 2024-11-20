@@ -1,7 +1,8 @@
-from .graph import Cluster, ClusterChunk
+from .graph import Cluster
 
 from typing import List, Tuple, Set
-from dataclasses import dataclass
+
+from src.models import CodeChunk
 
 
 class ChunkPathSegment:
@@ -9,9 +10,9 @@ class ChunkPathSegment:
     A single ref connection between two chunks
     """
     def __init__(self, 
-                 src_chunk: ClusterChunk, 
+                 src_chunk: CodeChunk, 
                  ref: str, 
-                 dst_chunk: ClusterChunk):
+                 dst_chunk: CodeChunk):
         self.src_chunk = src_chunk
         self.dst_chunk = dst_chunk
         self.ref = ref

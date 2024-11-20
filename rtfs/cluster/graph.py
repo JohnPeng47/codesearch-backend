@@ -1,12 +1,8 @@
-import os
-from enum import Enum
-from pathlib import Path
-from typing import List, Dict, Optional, Literal
+from typing import List, Dict, Literal
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 
-from src.chunk.lmp.summarize import CodeSummary
-
+from src.models import CodeChunk
 from rtfs.graph import Edge, Node, EdgeKind, NodeKind
 
 @dataclass(kw_only=True)
@@ -32,34 +28,6 @@ class ClusterRefEdge(Edge):
     src_node: str
     dst_node: str
     kind: EdgeKind = EdgeKind.ClusterRef
-
-@dataclass
-class ClusterChunk:
-    id: str
-    og_id: str
-    file_path: str
-    start_line: int
-    end_line: int
-    summary: Optional[CodeSummary] = None
-    content: Optional[str] = ""
-
-    # @property
-    # def name(self) -> str:
-    #     return f"/".join(self.file_path.split(os.path.sep)[-2:])
-
-    def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
-        s = f"Chunk: {self.id}"
-        s += f"\nSummary: {self.summary.short_description}" if return_summaries else ""
-        if return_content and self.content:
-            s += f"\n{self.content}"
-        return s
-
-    def __hash__(self):
-        return hash(self.id)
-
-    def __eq__(self, other):
-        return self.id == other.id
-
     
 @dataclass
 class Cluster:
@@ -67,7 +35,7 @@ class Cluster:
     title: str
     # key_variables: List[str]
     summary: str
-    chunks: List[ClusterChunk]
+    chunks: List[CodeChunk]
     children: List["Cluster"]
 
     def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
@@ -90,7 +58,6 @@ class Cluster:
         return {
             "id": self.id,
             "title": self.title,
-            # "key_variables": self.key_variables,
             "summary": self.summary,
             "chunks": [chunk.__dict__ for chunk in self.chunks],
             "children": [child.to_dict() for child in self.children],
@@ -98,44 +65,24 @@ class Cluster:
     
     @classmethod
     def from_json(cls, data: Dict):
-        # Control flags
-        has_valid_fields = all(field in data for field in 
-                               ["id", "title", "summary", "chunks", "children"])
-        should_process = has_valid_fields
-        
         # Process chunks
-        processed_chunks = []
-        if should_process:
-            processed_chunks = [
-                ClusterChunk(
-                    id=chunk["id"],
-                    og_id=chunk["og_id"], 
-                    file_path=chunk["file_path"],
-                    start_line=chunk["start_line"],
-                    end_line=chunk["end_line"]
-                )
-                for chunk in data["chunks"]
-            ]
-        
+        processed_chunks = [
+            CodeChunk.from_json(chunk) for chunk in data["chunks"]
+        ]
+    
         # Process children recursively 
-        processed_children = []
-        if should_process:
-            processed_children = [
-                Cluster.from_json(child) 
-                for child in data["children"]
-            ]
+        processed_children = [
+            Cluster.from_json(child) for child in data["children"]
+        ]
 
         # Create instance
-        result = None
-        if should_process:
-            result = cls(
-                id=data["id"],
-                title=data["title"],
-                # key_variables=data["key_variables"],
-                summary=data["summary"],
-                chunks=processed_chunks,
-                children=processed_children
-            )
+        result = cls(
+            id=data["id"],
+            title=data["title"],
+            summary=data["summary"],
+            chunks=processed_chunks,
+            children=processed_children
+        )
 
         return result   
     

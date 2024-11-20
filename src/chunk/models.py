@@ -4,7 +4,7 @@ from enum import Enum
 from abc import ABC, abstractmethod
 
 from .lmp.summarize import CodeSummary
-from rtfs.chunk_resolution.graph import ChunkMetadata
+from src.models import ChunkMetadata, ChunkType
 from moatless.types import MoatlessChunkID
 
 
@@ -21,17 +21,15 @@ class ClusterInput(ABC):
     def get_name(self) -> str:
         pass
 
-class ClusterInputType(str, Enum):
-    FILE = "file"
-    CHUNK = "chunk"
-
+# NOTE: currently using CodeChunk from src/models in favor of this one
+# deprecated for now 
 class CodeChunk(BaseModel, ClusterInput):
     """
     Input to the clustering algorithm that represents either a whole file
     or a partial partial input
     """
     id: MoatlessChunkID 
-    input_type: ClusterInputType
+    input_type: ChunkType
     content: str
     filepath: Optional[str] = None
 
@@ -71,7 +69,7 @@ class CodeType(str, Enum):
 class LMSummaryChunk(BaseModel):
     """
     Version of SummaryChunk as output from LM
-    """
+"""
     title: str
     summary: str
     code_type: CodeType

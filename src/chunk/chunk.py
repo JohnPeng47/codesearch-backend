@@ -21,7 +21,6 @@ from rtfs.chunk_resolution.graph import (
     ImportEdge as RefToEdge,
 )
 from src.index.service import get_or_create_index
-from src.config import GRAPH_ROOT, MODEL_CONFIG
 from src.utils import num_tokens_from_string
 
 from .summarizer import summarize
@@ -77,49 +76,6 @@ class ChunkCtxtNode:
         return "\n".join(str(ctxt) for ctxt in self.ctxt_list)
 
 
-def get_chunk_ctxt_nodes(chunks: List[BaseNode]):
-    for chunk in chunks:
-        definitions = []
-        references = []
-        module_ctxt = ChunkContext(
-            scope_name="module", scope_type=ScopeType.MODULE, functions=[]
-        )
-        class_ctxts: List[ChunkContext] = []
-        curr_scope = module_ctxt
-        curr_func = None
-        end_class = False
-
-        for node, capture_name in cap_ts_queries(
-            bytearray(chunk.get_content(), encoding="utf-8"), TSLangs.PYTHON
-        ):
-            match capture_name:
-                case "name.definition.class":
-                    class_name = node.text.decode()
-                    definitions.append(class_name)
-                    ctxt = ChunkContext(
-                        scope_name=class_name,
-                        scope_type=ScopeType.CLASS,
-                        functions=[],
-                    )
-                    class_ctxts.append(ctxt)
-                    curr_scope = ctxt
-                case "name.definition.function":
-                    curr_func = FunctionContext(name=node.text.decode(), args_list=[])
-                    curr_scope.functions.append(curr_func)
-                    if end_class:
-                        curr_scope = module_ctxt
-                        end_class = False
-                case "parameter.definition.function":
-                    curr_func.args_list.append(node.text.decode())
-                # TS query for class parses the last block before the last function
-                # which is why we need to set this here and handle the ctx change in
-                # function definitions
-                case "class.definition.end":
-                    end_class = True
-                case "name.reference.call":
-                    references.append(node.text.decode())
-
-        yield chunk, [module_ctxt] + class_ctxts
 
 class ChunkStrategy:
     """Base class for chunking strategies"""
@@ -224,7 +180,6 @@ class BatchStrategy(ChunkStrategy):
 
 #         graph_chunks = [
 #             CodeChunk(
-#                 id=chunk.og_id,
 #                 content=chunk.content,
 #                 filepath=chunk.file_path,
 #                 input_type=ClusterInputType.CHUNK
