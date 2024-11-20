@@ -22,7 +22,7 @@ class _Settings:
 
     @property
     def agent_model(self) -> str:
-        return self._agent_model
+    return self._agent_model
 
     @agent_model.setter
     def agent_model(self, agent_model: str) -> None:

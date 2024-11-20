@@ -33,13 +33,14 @@ class CodeChunk(BaseModel, ClusterInput):
     id: MoatlessChunkID 
     input_type: ClusterInputType
     content: str
-    summary: Optional[CodeSummary] = None
     filepath: Optional[str] = None
 
     # for backwards compat with BaseNode
     metadata: Optional[ChunkMetadata] = Field(default=None, validate_default=False)
     node_id: MoatlessChunkID = Field(default="", validate_default=False)
-    
+
+    summary: Optional[CodeSummary] = None
+
     def get_chunkinfo(self) -> str:
         return f"Chunk: {self.id}\n\n"
 

@@ -32,7 +32,6 @@ SQLALCHEMY_DATABASE_URI = (
     else f"postgresql://postgres:{DB_PASS}@{config('DB_URL')}:5432/codesearch"
 )
 
-
 SQLALCHEMY_ENGINE_POOL_SIZE = 50
 
 ALEMBIC_INI_PATH = "."
@@ -53,9 +52,6 @@ WALKTHROUGH_ROOT = Path(CODESEARCH_DIR) / "walkthroughs"
 GITHUB_API_TOKEN = config("GITHUB_API_TOKEN")
 REPO_MAX_SIZE_MB = 80
 
-SUPPORTED_LANGS = [
-    "python"
-]
 EVAL_ROOT = Path(CODESEARCH_DIR) / "evals"
 CLUSTER_ROOT = Path(CODESEARCH_DIR) / "clusters"
 
@@ -67,9 +63,5 @@ ANON_LOGIN = True
 with open(ROOT_DIR / "llm_config.yaml", "r") as f:
     MODEL_CONFIG = yaml.safe_load(f)
 
-class Language(str, Enum):
-    """
-    Currently supported languages
-    """
-
-    python = "python"
+class SUPPORTED_LANGS(str, Enum):
+    PYTHON = "python"

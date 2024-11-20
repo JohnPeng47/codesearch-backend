@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime, event
 from pydantic import BaseModel, Field
 from pydantic.types import SecretStr
+from dataclasses import dataclass, field
 
 from typing import Annotated
 
@@ -62,3 +63,7 @@ class RTFSBase(BaseModel):
 
 class HTTPSuccess(BaseModel):
     msg: str = "Success"
+
+
+# Hack until we get rtfs integrated under src
+class

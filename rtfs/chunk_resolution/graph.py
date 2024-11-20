@@ -111,9 +111,6 @@ class ChunkNode(Node):
     metadata: ChunkMetadata
     content: str
     summary: Optional[str] = ""
-    ctxt_list: List[ChunkContext] = field(default_factory=list)
-    references: List[str] = field(default_factory=list)
-    definitions: List[str] = field(default_factory=list)
 
     @property
     def range(self):

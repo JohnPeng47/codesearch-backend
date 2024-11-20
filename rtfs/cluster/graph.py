@@ -33,8 +33,6 @@ class ClusterRefEdge(Edge):
     dst_node: str
     kind: EdgeKind = EdgeKind.ClusterRef
 
-# Note: only ClusterChunk and Cluster can be pydantic BaseModel
-# because it provides too much latency during graph construction
 @dataclass
 class ClusterChunk:
     id: str

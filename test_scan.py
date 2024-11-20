@@ -1,3 +1,7 @@
-from src.chunk.lmp.summarize import func
+from src.chunk.chunkers import PythonChunker
+from src.chunk.settings import IndexSettings
 
-func()
+
+chunker = PythonChunker(r"..\codesearch-data\repo\aorwall_moatless-tools")
+chunks = chunker.chunk()
+
