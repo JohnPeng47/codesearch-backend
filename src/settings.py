@@ -52,3 +52,5 @@ class IndexSettings(BaseModel):
         with open(os.path.join(persist_dir, "settings.json"), "r") as f:
             data = json.load(f)
         return cls(**data)
+    
+DEFAULT_INDEX_SETTINGS = IndexSettings()

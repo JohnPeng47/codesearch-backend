@@ -1,17 +1,13 @@
 from src.chunk.chunkers import PythonChunker
-from src.chunk.settings import IndexSettings
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
+from src.index import Indexer, FaissVectorStore
 
 from pathlib import Path
 
 repo_path = r"..\codesearch-data\repo\JohnPeng47_CrashOffsetFinder.git"
 
+
 chunker = PythonChunker(repo_path)
-chunks = chunker.chunk()
+indexer = Indexer(Path(repo_path), chunker)
 
-cg = ChunkGraph.from_chunks(Path(repo_path), chunks)
-cg.cluster()
-
-for cluster in cg.get_clusters():
-    print(cluster)
-
+indexer.run()

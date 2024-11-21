@@ -13,7 +13,7 @@ from src.models import (
     CodeChunk,
     ChunkType
 )
-from src.chunk.settings import IndexSettings
+from src.settings import DEFAULT_INDEX_SETTINGS
 from moatless.index.epic_split import EpicSplitter
 from moatless.codeblocks import CodeBlock, CodeBlockType
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
@@ -122,13 +122,12 @@ class PythonChunker(Chunker):
                     (codeblock.module.file_path, codeblock.full_path())
                 )
 
-        settings = IndexSettings()
         self.splitter = EpicSplitter(
-            min_chunk_size=settings.min_chunk_size,
-            chunk_size=settings.chunk_size,
-            hard_token_limit=settings.hard_token_limit,
-            max_chunks=settings.max_chunks,
-            comment_strategy=settings.comment_strategy,
+            min_chunk_size=DEFAULT_INDEX_SETTINGS.min_chunk_size,
+            chunk_size=DEFAULT_INDEX_SETTINGS.chunk_size,
+            hard_token_limit=DEFAULT_INDEX_SETTINGS.hard_token_limit,
+            max_chunks=DEFAULT_INDEX_SETTINGS.max_chunks,
+            comment_strategy=DEFAULT_INDEX_SETTINGS.comment_strategy,
             index_callback=index_callback,
             repo_path=repo_path,
         )

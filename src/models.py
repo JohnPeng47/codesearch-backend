@@ -3,6 +3,7 @@ from sqlalchemy import Column, DateTime, event
 from pydantic import BaseModel, Field
 from pydantic.types import SecretStr
 from dataclasses import dataclass, field
+from llama_index.core.schema import TextNode
 
 from enum import Enum
 from typing import Annotated, Optional, Any, List, Dict
@@ -187,6 +188,14 @@ class CodeChunk:
         if return_content and self.content:
             s += f"\n{self.content}"
         return s
+    
+    def to_text_node(self) -> TextNode:
+        return TextNode(
+            text=self.content,
+            id_=self.id,
+            metadata=self.metadata.to_json(),
+            embedding=None,
+        )
 
     def __hash__(self):
         return hash(self.id)

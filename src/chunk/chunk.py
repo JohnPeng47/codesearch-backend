@@ -15,16 +15,13 @@ from src.llm.invoke_mt import invoke_multithread
 
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
 from rtfs.chunk_resolution.graph import (
-    FunctionContext,
-    ScopeType,
-    ChunkContext,
     ImportEdge as RefToEdge,
 )
 from src.index.service import get_or_create_index
 from src.utils import num_tokens_from_string
 
 from .summarizer import summarize
-from .models import CodeChunk, ClusterInputType, SummaryChunk, FILE_CLASSIFICATIONS
+from .models import CodeChunk, SummaryChunk, FILE_CLASSIFICATIONS
 from .classify_files import classify_files
 
 from llm import LLMModel
