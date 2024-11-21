@@ -40,9 +40,6 @@ from moatless.index.types import (
 )
 from moatless.repository import FileRepository
 from moatless.types import FileWithSpans
-from moatless.utils.tokenizer import count_tokens
-from moatless.summary import SummaryNode, generate_summary
-
 from moatless.index.cluster_node import ClusterNode
 
 logger = logging.getLogger(__name__)

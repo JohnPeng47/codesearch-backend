@@ -322,7 +322,6 @@ class FaissVectorStore(VectorStore):
         self._index_name = index_name
         self._persist_dir = INDEX_ROOT / repo_path.name
 
-    def add_all(self, chunks: List[CodeChunk]):
         if os.path.exists(self._persist_dir):
             print(f"Loading from persisted: {self._persist_dir}")
             self._vector_store = SimpleFaissVectorStore.from_persist_dir(self._persist_dir, self._index_name)
@@ -330,7 +329,8 @@ class FaissVectorStore(VectorStore):
             print("Creating new vector store")
             faiss_index = faiss.IndexIDMap(faiss.IndexFlatL2(DEFAULT_INDEX_SETTINGS.dimensions))
             self._vector_store = SimpleFaissVectorStore(faiss_index)
-        
+
+    def add_all(self, chunks: List[CodeChunk]):        
         self._docstore = SimpleDocumentStore()
         self._pipeline = IngestionPipeline(
         transformations=[EMBEDDING_MODEL],
@@ -348,7 +348,19 @@ class FaissVectorStore(VectorStore):
         self._docstore.persist(persist_path=self._persist_dir / f"docstore_{self._index_name}.json")
         self._vector_store.persist(self._persist_dir, self._index_name)
 
-    def query(self, query):
-        return self._vector_store.query(query)
+    # NOTE: Consider adding this to the VectorStore interface
+    def query(self, query_str: str):
+        query_embedding = EMBEDDING_MODEL.get_query_embedding(query_str)
+
+        # LEARN:
+        # figure out what this is and how does hybrid search work in (parameter alpha in VectorStoreQuery)
+        # filters = MetadataFilters(filters=[], condition=FilterCondition.AND)
+        query_bundle = VectorStoreQuery(
+            query_str=query_str,
+            query_embedding=query_embedding,
+            similarity_top_k=5,  # TODO: Fix paging?
+        )
+
+        return self._vector_store.query(query_bundle)
 
     

@@ -1,5 +1,5 @@
 from src.models import CodeChunk
-from typing import   List, Protocol, Any
+from typing import List, Protocol, Any
 from abc import ABC
 from abc import abstractmethod
 
@@ -12,7 +12,14 @@ class CodeIndex(ABC):
     @abstractmethod
     def index(self, *args: Any, **kwargs: Any) -> None:
         pass
-    
+
+    @abstractmethod
+    def query(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
 class CodeIndex(CodeIndex):
     def index(self, chunks: List[CodeChunk]) -> None:
         self._vec_store.add_all(chunks)
+
+    def query(self, query: str) -> List[CodeChunk]:
+        return self._vec_store.query(query)
