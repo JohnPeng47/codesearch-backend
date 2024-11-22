@@ -129,7 +129,7 @@ class PythonChunker(Chunker):
             max_chunks=DEFAULT_INDEX_SETTINGS.max_chunks,
             comment_strategy=DEFAULT_INDEX_SETTINGS.comment_strategy,
             index_callback=index_callback,
-            repo_path=repo_path,
+            repo_path=str(repo_path),
         )
 
     def chunk(self) -> List[CodeChunk]:

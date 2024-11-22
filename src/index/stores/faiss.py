@@ -366,7 +366,8 @@ class FaissVectorStore(VectorStore):
             VStoreQueryResult(
                 id=id,
                 distance=dist,
-                metadata=self._docstore.get_node(id).metadata
+                metadata=self._docstore.get_node(id).metadata,
+                type=self._docstore.get_node(id).metadata["type"]
             ) for dist, id in zip(query_res.similarities, query_res.ids)
         ]
 

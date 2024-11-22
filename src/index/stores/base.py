@@ -5,6 +5,8 @@ from typing import Any, Dict, List
 from pathlib import Path
 from abc import ABC, abstractmethod
 
+from src.models import MetadataType
+
 EMBEDDING_MODEL = OpenAIEmbedding()
 
 @dataclass
@@ -12,6 +14,7 @@ class VStoreQueryResult:
     distance: float
     id: str
     metadata: Dict
+    type: MetadataType
 
 # TODO: add logging methods here
 class VectorStore(ABC):

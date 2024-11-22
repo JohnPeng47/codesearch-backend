@@ -1,11 +1,13 @@
 from pathlib import Path
 from enum import Enum
+from typing import List
 
-from src.chunk.chunkers import Chunker
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 
+from src.chunk.chunkers import Chunker
+from src.models import CodeChunk
+
 from .stores import VECTOR_STORES, VectorStoreType 
-from .index_strats import CodeIndex
 
 class IndexStrat(str, Enum):
     VANILLA = "vanilla"
@@ -14,33 +16,35 @@ class IndexStrat(str, Enum):
 class Indexer:
     def __init__(self, 
                  repo_path: Path, 
-                 chunker: Chunker,
+                 # TODO: consider grouping these into a single object
+                 # that matches the indexing strategy 
+                 chunks: List[CodeChunk],
+                 cg: ChunkGraph = None,
+                 ############################
                  vec_store_type: VectorStoreType = VectorStoreType.FAISS,
                  run_code: bool = True, 
                  run_cluster: bool = False):
         self._vec_store_cls = VECTOR_STORES[vec_store_type]
         self._repo_path = repo_path
-        self._chunker = chunker
+        self._chunks = chunks
+        self._cg = cg
 
         self._run_code = run_code
         self._run_cluster = run_cluster
 
     def run(self):
-        chunks = self._chunker.chunk()
-
         if self._run_code:
             vec_store = self._vec_store_cls(self._repo_path, IndexStrat.VANILLA)
-            code_index = CodeIndex(vec_store)
-
-            nodes = chunks
-            code_index.index(chunks)
+            chunk_nodes = [c.to_text_node() for c in self._chunks]
+            vec_store.add_all(chunk_nodes)
             
         if self._run_cluster:
-            vec_store = self._vec_store_cls(self._repo_path, IndexStrat.CLUSTER)
-            cg = ChunkGraph.from_chunks(self._repo_path, chunks)
-            cg.cluster()
+            if not self._cg and len(self._cg.get_clusters()) == 0:
+                raise ValueError(f"No clusters found in graph {self._cg}")
 
-            chunk_nodes = [c.to_text_node() for c in chunks]
-            cluster_nodes = [c.to_text_node() for c in cg.get_clusters()]
+            vec_store = self._vec_store_cls(self._repo_path, IndexStrat.CLUSTER)
+            chunk_nodes = [c.to_text_node() for c in self._chunks]
+            cluster_nodes = [c.to_text_node() for c in self._cg.get_clusters()]
+
             vec_store.add_all(chunk_nodes + cluster_nodes)
             
