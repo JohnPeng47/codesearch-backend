@@ -11,7 +11,7 @@ cluster_wiki:
 - cache: false
 - filepath: .\rtfs\cluster\lmp\walkthrough.py
 compare_pairwise_llm:
-- cache: false
+- cache: true
 - filepath: .\rtfs\cluster\lmp\recluster.py
 convert:
 - cache: false
@@ -44,8 +44,8 @@ split_cluster:
 - cache: false
 - filepath: .\rtfs\cluster\lmp\split_cluster.py
 summarize:
-- cache: false
-- filepath: .\rtfs\summarize\lmp.py
+- cache: true
+- filepath: rtfs\cluster\lmp\summarize.py
 summarize_chunk:
 - cache: false
 - filepath: .\src\chunk\lmp\summarize.py

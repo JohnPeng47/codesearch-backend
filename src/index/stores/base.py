@@ -1,10 +1,17 @@
 from llama_index.embeddings.openai import OpenAIEmbedding
+from dataclasses import dataclass
 
-from typing import Any
+from typing import Any, Dict, List
 from pathlib import Path
 from abc import ABC, abstractmethod
 
 EMBEDDING_MODEL = OpenAIEmbedding()
+
+@dataclass
+class VStoreQueryResult:
+    distance: float
+    id: str
+    metadata: Dict
 
 # TODO: add logging methods here
 class VectorStore(ABC):
@@ -17,5 +24,5 @@ class VectorStore(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def query(self, query: str):
+    def query(self, query: str) -> List[VStoreQueryResult]:
         raise NotImplementedError()

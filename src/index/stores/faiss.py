@@ -30,7 +30,7 @@ from src.settings import DEFAULT_INDEX_SETTINGS
 from src.config import INDEX_ROOT
 from src.models import CodeChunk
 
-from .base import VectorStore, EMBEDDING_MODEL
+from .base import VectorStore, VStoreQueryResult, EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +232,6 @@ class SimpleFaissVectorStore(BasePydanticVectorStore):
     def persist(
         self,
         persist_dir: str,
-        index_name: str,
         fs: Optional[fsspec.AbstractFileSystem] = None,
     ) -> None:
         """Persist the SimpleVectorStore to a directory."""
@@ -260,7 +259,7 @@ class SimpleFaissVectorStore(BasePydanticVectorStore):
                     self._data.metadata_dict.pop(text_id, None)
 
         faiss.write_index(
-            self._faiss_index, f"{persist_dir}/vector_index_{index_name}.faiss"
+            self._faiss_index, f"{persist_dir}/vector_index.faiss"
         )
 
         for vector_id in self._vector_ids_to_delete:
@@ -270,14 +269,13 @@ class SimpleFaissVectorStore(BasePydanticVectorStore):
 
         self._vector_ids_to_delete = []
 
-        with fs.open(f"{persist_dir}/vector_index_{index_name}.json", "w") as f:
+        with fs.open(f"{persist_dir}/vector_index.json", "w") as f:
             json.dump(self._data.to_dict(), f)
 
     @classmethod
     def from_persist_dir(
         cls,
         persist_dir: str,
-        index_name: str,
         fs: Optional[fsspec.AbstractFileSystem] = None,
     ) -> "SimpleFaissVectorStore":
         """Create a SimpleKVStore from a persist directory."""
@@ -286,11 +284,11 @@ class SimpleFaissVectorStore(BasePydanticVectorStore):
         if not fs.exists(persist_dir):
             raise ValueError(f"No existing index store found at {persist_dir}.")
 
-        index_path = f"{persist_dir}/vector_index_{index_name}.faiss"
-        data_path = f"{persist_dir}/vector_index_{index_name}.json"
+        index_path = f"{persist_dir}/vector_index.faiss"
+        data_path = f"{persist_dir}/vector_index.json"
 
         if not fs.exists(index_path) or not fs.exists(data_path):
-            logger.warning(f"No existing index store found for index {index_name}")
+            logger.warning(f"No existing index store found for index {persist_dir}")
             return None
 
         # I don't think FAISS supports fsspec, it requires a path in the SWIG interface
@@ -314,24 +312,24 @@ class SimpleFaissVectorStore(BasePydanticVectorStore):
 
     def to_dict(self) -> dict:
         return self._data.to_dict()
-
-
-# TODO: define query on this class
+    
+# TODO: define query on this class because in case
 class FaissVectorStore(VectorStore):
     def __init__(self, repo_path: Path, index_name: str):
         self._index_name = index_name
-        self._persist_dir = INDEX_ROOT / repo_path.name
+        self._persist_dir = INDEX_ROOT / repo_path.name / index_name
+        self._docstore_path = self._persist_dir / f"docstore.json"
+        self._docstore = SimpleDocumentStore()
 
         if os.path.exists(self._persist_dir):
             print(f"Loading from persisted: {self._persist_dir}")
-            self._vector_store = SimpleFaissVectorStore.from_persist_dir(self._persist_dir, self._index_name)
+            self._vector_store = SimpleFaissVectorStore.from_persist_dir(self._persist_dir)
         else:
             print("Creating new vector store")
             faiss_index = faiss.IndexIDMap(faiss.IndexFlatL2(DEFAULT_INDEX_SETTINGS.dimensions))
             self._vector_store = SimpleFaissVectorStore(faiss_index)
 
-    def add_all(self, chunks: List[CodeChunk]):        
-        self._docstore = SimpleDocumentStore()
+    def add_all(self, chunks: List[BaseNode]):        
         self._pipeline = IngestionPipeline(
         transformations=[EMBEDDING_MODEL],
             docstore_strategy=DocstoreStrategy.UPSERTS_AND_DELETE,
@@ -340,18 +338,20 @@ class FaissVectorStore(VectorStore):
         )
 
         self._pipeline.run( 
-            nodes=[c.to_text_node() for c in chunks],
+            nodes=chunks,
             show_progress=True,
             num_workers=None,
         )
+        self._docstore.persist(persist_path=self._docstore_path)
+        self._vector_store.persist(self._persist_dir)
 
-        self._docstore.persist(persist_path=self._persist_dir / f"docstore_{self._index_name}.json")
-        self._vector_store.persist(self._persist_dir, self._index_name)
-
-    # NOTE: Consider adding this to the VectorStore interface
+    # NOTE: Need to include docstore as well
     def query(self, query_str: str):
-        query_embedding = EMBEDDING_MODEL.get_query_embedding(query_str)
+        # save an instance of docstore
+        if not self._docstore.docs:
+            self._docstore = SimpleDocumentStore.from_persist_path(self._docstore_path)
 
+        query_embedding = EMBEDDING_MODEL.get_query_embedding(query_str)
         # LEARN:
         # figure out what this is and how does hybrid search work in (parameter alpha in VectorStoreQuery)
         # filters = MetadataFilters(filters=[], condition=FilterCondition.AND)
@@ -360,7 +360,14 @@ class FaissVectorStore(VectorStore):
             query_embedding=query_embedding,
             similarity_top_k=5,  # TODO: Fix paging?
         )
+        query_res = self._vector_store.query(query_bundle)
 
-        return self._vector_store.query(query_bundle)
+        return [
+            VStoreQueryResult(
+                id=id,
+                distance=dist,
+                metadata=self._docstore.get_node(id).metadata
+            ) for dist, id in zip(query_res.similarities, query_res.ids)
+        ]
 
     

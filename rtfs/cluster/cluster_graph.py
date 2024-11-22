@@ -18,7 +18,7 @@ from rtfs.cluster.graph import (
 from src.models import ChunkMetadata, CodeChunk
 
 from .path import ClusterPath, ChunkPathSegment
-from .lmp import regroup_clusters, split_cluster
+from .lmp import regroup_clusters, split_cluster, summarize
 
 class ClusterGraph(CodeGraph):
     def __init__(
@@ -89,7 +89,10 @@ class ClusterGraph(CodeGraph):
         return graph_dict
         
     # TODO: we have two control flags, use_summaries and reutrn_content
-    def cluster(self, use_summaries=False, alg="infomap"):
+    def cluster(self, 
+                summarize=True,
+                use_summaries=False, 
+                alg="infomap"):
         """
         Performs the actual clustering operation on the graph
         """
@@ -107,18 +110,42 @@ class ClusterGraph(CodeGraph):
             )
             self.add_edge(cluster_edge)
 
+        # TODO: this part feels like it needs tests
         # TODO: implement these using graphops
         # perform recollection operations
         self.split_clusters()
         self.regroup_chunks(use_summaries=use_summaries)
+
+        print("Finished regrouping clusters")
  
-        # # cluster the clusters
-        self._build_cluster_edges()
+        # TODO: this takes infinity to run
+        # cluster the clusters
+        # self._build_cluster_edges()
+
+        # TODO: should take in cluster edges using summaries
+        self.summarize_clusters()
+        print("Finished summarizing clusters")
+
         self._clustered = True
 
-    def split_clusters(self):
+    def summarize_clusters(self):
+        clusters = self.get_clusters(return_content=True)
+        for cluster in clusters:
+            cluster_node = self.get_node(cluster.id)
+            if not cluster_node:
+                continue
+
+            # Summarize cluster
+            summary_data = summarize(self.model, cluster)
+            cluster_node.summary = summary_data
+            self.update_node(cluster_node)
+
+    def split_clusters(self, threshold=8):
         clusters = self.get_clusters(return_content=True)
         largest_cluster = max(clusters, key=lambda c: len(c.chunks))
+        if len(largest_cluster.chunks) < threshold:
+            return
+        
         print("Breaking cluster: ", largest_cluster.id, len(largest_cluster.chunks))
         new_clusters = split_cluster(self.model, largest_cluster)
         
@@ -266,7 +293,6 @@ class ClusterGraph(CodeGraph):
         return Cluster(
             id=cluster_node.id,
             title=cluster_node.title,
-            # key_variables=cluster_node.key_variables[:4],
             summary=cluster_node.summary,
             chunks=chunks,
             children=children,
@@ -309,8 +335,6 @@ class ClusterGraph(CodeGraph):
         cluster_nodes = [
             node.id
             for node in self.filter_nodes({"kind": NodeKind.Cluster})
-            # looking for top-level parent clusters
-            # if len(self.parents(node.id)) == 0
         ]
 
         return self.clusters(cluster_nodes, return_type="obj", return_content=return_content)

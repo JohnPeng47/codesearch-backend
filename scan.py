@@ -7,9 +7,10 @@ from typing import List, Set, Tuple, Dict, Optional
 from dataclasses import dataclass
 import logging
 import fnmatch
-import platform
 import yaml
 from pathlib import Path
+
+CONFIG_DIR = "llm"
 
 # Default exclusions
 DEFAULT_EXCLUSIONS = [
@@ -148,11 +149,12 @@ def scan_directory(directory: str, llm_path: str = "llm", exclusions: List[str] 
                 continue
                 
             try:
+                logging.info(f"Checking: {file_path}")
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 
                 has_import, var_names = check_llm_import(content)
-                
+                logging.info(f"Imports: {var_names}")
                 if not has_import:
                     continue
                     
@@ -160,6 +162,7 @@ def scan_directory(directory: str, llm_path: str = "llm", exclusions: List[str] 
                     logging.warning(f"File uses 'llm' import but specified path was {llm_path}")
                 
                 calls = find_invoke_calls(content, var_names)
+                logging.info(f"Calls: {calls}")
                 if calls:
                     for call in calls:
                         call.file_path = file_path
@@ -199,13 +202,76 @@ def update_yaml_config(config_path: str, results: List[LLMFunctionCall], existin
     with open(config_path, 'w') as f:
         yaml.dump(existing_config, f, sort_keys=True, default_flow_style=False)
 
+def reset_cache_config(config_path: str) -> List[str]:
+    """Reset all cache settings to false and return list of modified functions."""
+    modified_functions = []
+    
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f) or {}
+        
+        # Find and reset all cache: true settings
+        for func_name, settings in config.items():
+            for item in settings:
+                if isinstance(item, dict) and 'cache' in item and item['cache']:
+                    item['cache'] = False
+                    modified_functions.append(func_name)
+        
+        # Write updated config back to file
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, sort_keys=True, default_flow_style=False)
+            
+        return modified_functions
+    except FileNotFoundError:
+        logging.error(f"Config file not found: {config_path}")
+        return []
+
+def list_cached_functions(config_dir: str) -> None:
+    """List all YAML files and their cached functions."""
+    if not os.path.exists(config_dir):
+        print(f"Config directory {config_dir} not found")
+        return
+
+    yaml_files = [f for f in os.listdir(config_dir) if f.endswith('.yaml')]
+    
+    if not yaml_files:
+        print(f"No YAML files found in {config_dir}")
+        return
+
+    for yaml_file in yaml_files:
+        file_path = os.path.join(config_dir, yaml_file)
+        try:
+            with open(file_path, 'r') as f:
+                config = yaml.safe_load(f) or {}
+            
+            # Find functions with cache: true
+            cached_functions = []
+            for func_name, settings in config.items():
+                for item in settings:
+                    if isinstance(item, dict) and 'cache' in item and item['cache']:
+                        cached_functions.append(func_name)
+                        break
+            
+            print(f"\nFile: {yaml_file}")
+            if cached_functions:
+                print("Cached functions:")
+                for func_name in sorted(cached_functions):
+                    print(f"  - {func_name}")
+            else:
+                print("No cached functions found")
+                
+        except Exception as e:
+            print(f"Error reading {yaml_file}: {str(e)}")
+
 def main():
     parser = argparse.ArgumentParser(description='Scan for LLMModel invoke calls in Python files.')
-    parser.add_argument('directory', help='Directory to scan')
+    parser.add_argument('directory', nargs='?', help='Directory to scan')
     parser.add_argument('--llm-path', default='llm', help='Expected import path for LLMModel')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     parser.add_argument('--no-exclusions', action='store_true', help='Disable default exclusions')
-    parser.add_argument('--config', default='llm/config.yaml', help='Path to YAML config file')
+    parser.add_argument('--config', default=f'{CONFIG_DIR}/cache.yaml', help='Path to YAML config file')
+    parser.add_argument('--reset', action='store_true', help='Reset all cache settings to false')
+    parser.add_argument('--list', action='store_true', help='List all YAML files and their cached functions')
     
     args = parser.parse_args()
     
@@ -214,6 +280,23 @@ def main():
         format='%(levelname)s: %(message)s'
     )
     
+    if args.list:
+        list_cached_functions(f"{CONFIG_DIR}/cache")
+        return
+        
+    if args.reset:
+        modified = reset_cache_config(args.config)
+        if modified:
+            print("Reset cache for the following functions:")
+            for func_name in modified:
+                print(f"  - {func_name}")
+        else:
+            print("No cached functions found to reset")
+        return
+
+    if not args.directory:
+        parser.error("directory argument is required unless using --reset or --list")
+
     existing_config = load_yaml_config(args.config)
     exclusions = [] if args.no_exclusions else DEFAULT_EXCLUSIONS
     results = scan_directory(args.directory, args.llm_path, exclusions)

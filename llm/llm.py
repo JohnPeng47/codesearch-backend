@@ -79,7 +79,7 @@ class LLMModel:
         
         # Initialize cache-related attributes
         self.cache_enabled_functions = self._get_cache_enabled_functions()
-        print("Enabled functions: ", self.cache_enabled_functions)
+        print("Enabled functions: ", "\n".join([f for f, enabled in self.cache_enabled_functions.items() if enabled]))
         self.db_connection = None
         
         if use_cache:
@@ -178,9 +178,10 @@ class LLMModel:
         *,
         model_name: str,
         response_format: Optional[Type[BaseModel]] = None,
+        timeout: Optional[float] = None,
         **kwargs,
     ) -> Any:
-        """Modified invoke method with caching support."""
+        """Modified invoke method with caching and timeout support."""
         # Track the call
         caller_filename, caller_function = self._get_caller_info()
         self.call_chain.append((caller_filename, caller_function))
@@ -203,7 +204,14 @@ class LLMModel:
                 return cached_response
 
         # If no cache hit, proceed with normal invocation
-        lm = self.use_model(model_name, temperature=temperature, **kwargs)
+        lm = self.use_model(
+            model_name, 
+            temperature=temperature,
+            timeout=timeout,
+            max_retries=0,
+            **kwargs
+        )
+        
         if response_format is not None:
             if self.provider != "openai":
                 raise ValueError(
@@ -212,8 +220,13 @@ class LLMModel:
                 )
             lm = lm.with_structured_output(response_format, strict=True)
 
-        res = lm.invoke(prompt)
-        
+        try:
+            res = lm.invoke(prompt)
+        except Exception as e:
+            if "timeout" in str(e).lower():
+                raise TimeoutError(f"LLM request timed out after {timeout} seconds") from e
+            raise
+
         # Extract content from response and convert to response to string for caching
         if isinstance(res, BaseMessage):
             cached_response = res.content

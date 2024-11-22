@@ -5,11 +5,20 @@ from pydantic import BaseModel
 from src.models import CodeChunk
 from rtfs.graph import Edge, Node, EdgeKind, NodeKind
 
+from llama_index.core.schema import TextNode
+
+class ClusterSummary(BaseModel):
+    title: str
+    summary: str
+
+    def get_content(self):
+        return self.summary
+
 @dataclass(kw_only=True)
 class ClusterNode(Node):
     kind: NodeKind = NodeKind.Cluster
     title: str = ""
-    summary: str = ""
+    summary: ClusterSummary = None
     key_variables: List[str] = field(default_factory=list)
     
     def get_content(self):
@@ -28,19 +37,18 @@ class ClusterRefEdge(Edge):
     src_node: str
     dst_node: str
     kind: EdgeKind = EdgeKind.ClusterRef
-    
+
 @dataclass
 class Cluster:
     id: int
     title: str
-    # key_variables: List[str]
-    summary: str
     chunks: List[CodeChunk]
     children: List["Cluster"]
+    summary: ClusterSummary
 
     def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
         s = f"Cluster {self.id}: {self.title}\n"
-        s += f"Summary: {self.summary}\n" if self.summary and return_summaries else ""
+        s += f"Summary: {self.summary.get_content()}\n" if self.summary and return_summaries else ""
         
         for chunk in self.chunks:
             chunk_str = chunk.to_str(return_content)
@@ -95,6 +103,17 @@ class Cluster:
         
         chunks_equal = all([chunk == other_chunk for chunk, other_chunk in zip(self.chunks, other.chunks)])
         return self.id == other.id and chunks_equal
+    
+    def to_text_node(self) -> TextNode:
+        return TextNode(
+            text=self.summary.get_content(),
+            metadata={
+                "chunk_ids": [chunk.id for chunk in self.chunks],
+                "title": self.title,
+            },
+            id_=self.id,
+            embedding=None,
+        )
 
 class ClusterGStats(BaseModel):
     num_clusters: int
