@@ -187,13 +187,12 @@ class ClusterGraph(CodeGraph):
             dst_cluster = self.get_node(move.dst_cluster)
             chunk_node = self.get_node(move.chunk)
 
-            # node hallucination ...
+            # node hallucination
             if not src_cluster or not dst_cluster or not chunk_node:
                 continue
             
-            # also edge hallucination??
-            # maybe hallucinate edge but we still consider it a valid move
-            if self._graph.has_edge(chunk_node.id, dst_cluster.id):
+            # edge hallucination
+            if self._graph.has_edge(chunk_node.id, src_cluster.id):
                 self.remove_edge(chunk_node.id, src_cluster.id)
             
             self.add_edge(ClusterEdge(
