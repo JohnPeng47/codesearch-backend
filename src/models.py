@@ -74,6 +74,10 @@ class ScopeType(str, Enum):
 
 
 # Temporary place to keep these defs until we get rtfs integrated under src
+class MetadataType(str, Enum):
+    CODE = "chunk"
+    CLUSTER = "cluster"
+    
 @dataclass
 class FuncArg:
     name: str
@@ -126,6 +130,7 @@ class ChunkMetadata:
     end_line: int
 
     contexts: Optional[List[ChunkContext]] = field(default_factory=list)
+    type: MetadataType = MetadataType.CODE
 
     def to_json(self):
         return {
@@ -182,6 +187,15 @@ class CodeChunk:
             summary=CodeSummary(**data["summary"]) if data["summary"] else None
         )
     
+    def to_json(self):
+        return {
+            "id": self.id,
+            "metadata": self.metadata.to_json(),
+            "content": self.content,
+            "input_type": self.input_type,
+            "summary": self.summary.dict() if self.summary else None
+        }
+
     def to_str(self, 
                return_content: bool = False, 
                return_summaries: bool = False) -> str:
@@ -204,7 +218,7 @@ class CodeChunk:
 
     def __eq__(self, other):
         return self.id == other.id
-
+    
 class ClusterMetadata(BaseModel):
     chunk_ids: List[CHUNK_ID]
 

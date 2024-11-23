@@ -2,7 +2,7 @@ from typing import List, Dict, Literal
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 
-from src.models import CodeChunk
+from src.models import CodeChunk, MetadataType
 from rtfs.graph import Edge, Node, EdgeKind, NodeKind
 
 from llama_index.core.schema import TextNode
@@ -26,6 +26,14 @@ class ClusterNode(Node):
 
     def __hash__(self):
         return hash(self.id)
+
+    def to_json(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "summary": self.summary.dict(),
+            "key_variables": self.key_variables
+        }
 
 @dataclass(kw_only=True)
 class ClusterEdge(Edge):
@@ -66,11 +74,11 @@ class Cluster:
         return {
             "id": self.id,
             "title": self.title,
-            "summary": self.summary,
+            "summary": self.summary.dict(),
             "chunks": [chunk.__dict__ for chunk in self.chunks],
             "children": [child.to_dict() for child in self.children],
         }
-    
+        
     @classmethod
     def from_json(cls, data: Dict):
         # Process chunks
@@ -110,6 +118,7 @@ class Cluster:
             metadata={
                 "chunk_ids": [chunk.id for chunk in self.chunks],
                 "title": self.title,
+                "type": MetadataType.CLUSTER
             },
             id_=self.id,
             embedding=None,

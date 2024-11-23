@@ -52,40 +52,42 @@ class ClusterGraph(CodeGraph):
         )
 
     def to_json(self):
-        def custom_node_link_data(G):
-            data = {
-                "directed": G.is_directed(),
-                "multigraph": G.is_multigraph(),
-                "graph": G.graph,
-                "nodes": [],
-                "links": [],
-            }
+        data = {
+            "directed": self._graph.is_directed(),
+            "multigraph": self._graph.is_multigraph(),
+            "graph": self._graph.graph,
+            "nodes": [],
+            "links": [],
+        }
 
-            for n, node_data in G.nodes(data=True):
-                node_dict = node_data.copy()
-                node_dict.pop("references", None)
-                node_dict.pop("definitions", None)
+        # for n, node_data in G.nodes(data=True):
+        #     node_dict = node_data.copy()
+        #     node_dict.pop("references", None)
+        #     node_dict.pop("definitions", None)
 
-                if "metadata" in node_dict and isinstance(
-                    node_dict["metadata"], ChunkMetadata
-                ):
-                    node_dict["metadata"] = node_dict["metadata"].to_json()
+        #     if "metadata" in node_dict and isinstance(
+        #         node_dict["metadata"], ChunkMetadata
+        #     ):
+        #         node_dict["metadata"] = node_dict["metadata"].to_json()
 
-                node_dict["id"] = n
-                data["nodes"].append(node_dict)
+        #     node_dict["id"] = n
+        #     data["nodes"].append(node_dict)
 
-            for u, v, edge_data in G.edges(data=True):
-                edge = edge_data.copy()
-                edge["source"] = u
-                edge["target"] = v
-                data["links"].append(edge)
+        for node_id in self._graph.nodes:
+            node = self.get_node(node_id)
+            data["nodes"].append(node.to_json())
 
-            return data
+        for u, v, edge_data in self._graph.edges(data=True):
+            edge = edge_data.copy()
+            edge["source"] = u
+            edge["target"] = v
+            data["links"].append(edge)
+
+        
 
         graph_dict = {}
         graph_dict["clustered"] = self._clustered
-        graph_dict["link_data"] = custom_node_link_data(self._graph)
-
+        graph_dict["link_data"] = data
         return graph_dict
         
     # TODO: we have two control flags, use_summaries and reutrn_content

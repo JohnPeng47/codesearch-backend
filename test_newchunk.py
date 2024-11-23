@@ -14,7 +14,7 @@ graph_path = Path(graph_dir.format(dir=repo)).resolve()
 chunker = PythonChunker(repo_path)
 chunks = chunker.chunk()
 
-if graph_path.exists():
+if graph_path.exists() and graph_path.read_text():
     print("Loading graph from json: ", graph_path)
     graph_json = json.loads(graph_path.read_text()) 
     cg = ChunkGraph.from_json(repo_path, graph_json)
