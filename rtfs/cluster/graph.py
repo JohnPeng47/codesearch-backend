@@ -1,11 +1,15 @@
-from typing import List, Dict, Literal
+from typing import List, Dict, Literal, TYPE_CHECKING
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 
-from src.models import CodeChunk, MetadataType
+from src.models import CodeChunk, MetadataType, ChunkImport
 from rtfs.graph import Edge, Node, EdgeKind, NodeKind
+from rtfs.chunk_resolution.graph import ChunkNode
 
 from llama_index.core.schema import TextNode
+
+if TYPE_CHECKING:
+    from .cluster_graph import ClusterGraph
 
 class ClusterSummary(BaseModel):
     title: str
@@ -13,28 +17,6 @@ class ClusterSummary(BaseModel):
 
     def get_content(self):
         return self.summary
-
-@dataclass(kw_only=True)
-class ClusterNode(Node):
-    kind: NodeKind = NodeKind.Cluster
-    title: str = ""
-    summary: ClusterSummary = None
-    key_variables: List[str] = field(default_factory=list)
-    
-    def get_content(self):
-        return self.summary
-
-    def __hash__(self): 
-        return hash(self.id)
-
-    def to_json(self):
-        return {
-            "id": self.id,
-            "title": self.title,
-            "summary": self.summary.dict(),
-            "key_variables": self.key_variables,
-            "kind": self.kind
-        }
 
 @dataclass(kw_only=True)
 class ClusterEdge(Edge):
@@ -47,6 +29,13 @@ class ClusterRefEdge(Edge):
     dst_node: str
     kind: EdgeKind = EdgeKind.ClusterRef
 
+### Cluster Node ####
+class ClusterMetadata(BaseModel):
+    imports: List[ChunkImport]
+
+# TODO: not ideal since we to have all deserialize logic inside the class
+# TODO: think we want to establish inheritance from ClusterNode to Cluster
+# ClusterNode is convereted to Cluster via ClusterGraph::node_to_cluster
 @dataclass
 class Cluster:
     id: int
@@ -54,10 +43,13 @@ class Cluster:
     chunks: List[CodeChunk]
     children: List["Cluster"]
     summary: ClusterSummary
+    metadata: ClusterMetadata
 
     # TODO: 
-    def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
-        name = self.id if not self.summary.title else self.summary.title
+    def to_str(self, 
+               return_content: bool = False, 
+               return_summaries: bool = False) -> str:
+        name = self.id if not self.summary else self.summary.title
         s = f"Cluster {name}\n"
         s += f"Summary: {self.summary.get_content()}\n" if self.summary and return_summaries else ""
         
@@ -105,6 +97,41 @@ class Cluster:
 
         return result   
     
+    # Design decision:
+    # consolidate all deserialization methods into one class
+    @classmethod
+    def from_cluster_node(cls, 
+                          cluster_id: str, 
+                          cluster_graph: "ClusterGraph",    
+                          return_content = False):
+        cluster_node: ClusterNode = cluster_graph.get_node(cluster_id)
+        if not cluster_node or cluster_node.kind != NodeKind.Cluster:
+            raise ValueError(f"Node {cluster_node} is the wrong input type")
+
+        chunks = []
+        children = []
+        for child in cluster_graph.children(cluster_id, edge_types=[EdgeKind.ChunkToCluster, 
+                                                           EdgeKind.ClusterToCluster]):
+            if child == cluster_id:
+                raise ValueError(f"Cluster {cluster_id} has a self-reference")
+
+            child_node: ChunkNode = cluster_graph.get_node(child)
+            if child_node.kind == NodeKind.Chunk:
+                chunk_info = cluster_graph.node_to_chunk(child, return_content=return_content)
+                chunks.append(chunk_info)
+            elif child_node.kind == NodeKind.Cluster:
+                children.append(cluster_graph.node_to_cluster(child, return_content=return_content))
+
+        return Cluster(
+            id=cluster_node.id,
+            title=cluster_node.title,
+            summary=cluster_node.summary,
+            metadata=cluster_node.metadata,
+            chunks=chunks,
+            children=children,
+        )
+
+
     def __hash__(self):
         return self.id
     
@@ -127,14 +154,25 @@ class Cluster:
             embedding=None,
         )
 
-class ClusterGStats(BaseModel):
-    num_clusters: int
-    num_chunks: int
-    avg_cluster_sz: float
 
-    def __str__(self):
-        return f"""
-Clusters: {self.num_clusters}, 
-Chunks: {self.num_chunks}, 
-Avg Cluster Size: {self.avg_cluster_sz:.2f}
-        """
+@dataclass(kw_only=True)
+class ClusterNode(Node):
+    kind: NodeKind = NodeKind.Cluster
+    title: str = ""
+    summary: ClusterSummary = None
+    metadata: ClusterMetadata = None
+
+    def get_content(self):
+        return self.summary
+
+    def __hash__(self): 
+        return hash(self.id)
+
+    def to_json(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "summary": self.summary.dict(),
+            "kind": self.kind,
+            "metadata": self.metadata.dict() if self.metadata else None
+        }        

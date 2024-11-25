@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from pathlib import Path
 from typing import List, Dict
 from llama_index.core.schema import BaseNode
@@ -12,14 +13,25 @@ from rtfs.cluster.graph import (
     ClusterNode,
     ClusterRefEdge,
     ClusterEdge,
-    Cluster,
-    ClusterGStats
+    Cluster
 )
 from src.models import CodeSummary, ChunkMetadata, CodeChunk
 
 from .graph import ClusterSummary
 from .path import ClusterPath, ChunkPathSegment
 from .lmp import regroup_clusters, split_cluster, summarize
+
+class ClusterGStats(BaseModel):
+    num_clusters: int
+    num_chunks: int
+    avg_cluster_sz: float
+
+    def __str__(self):
+        return f"""
+Clusters: {self.num_clusters}, 
+Chunks: {self.num_chunks}, 
+Avg Cluster Size: {self.avg_cluster_sz:.2f}
+        """
 
 class ClusterGraph(CodeGraph):
     def __init__(
@@ -275,31 +287,33 @@ class ClusterGraph(CodeGraph):
         """
         Converts graph ClusterNode to Cluster by node ID
         """
-        cluster_node: ClusterNode = self.get_node(cluster_id)
-        if not cluster_node or cluster_node.kind != NodeKind.Cluster:
-            raise ValueError(f"Node {cluster_node} is the wrong input type")
+        # cluster_node: ClusterNode = self.get_node(cluster_id)
+        # if not cluster_node or cluster_node.kind != NodeKind.Cluster:
+        #     raise ValueError(f"Node {cluster_node} is the wrong input type")
 
-        chunks = []
-        children = []
-        for child in self.children(cluster_id, edge_types=[EdgeKind.ChunkToCluster, 
-                                                           EdgeKind.ClusterToCluster]):
-            if child == cluster_id:
-                raise ValueError(f"Cluster {cluster_id} has a self-reference")
+        # chunks = []
+        # children = []
+        # for child in self.children(cluster_id, edge_types=[EdgeKind.ChunkToCluster, 
+        #                                                    EdgeKind.ClusterToCluster]):
+        #     if child == cluster_id:
+        #         raise ValueError(f"Cluster {cluster_id} has a self-reference")
 
-            child_node: ChunkNode = self.get_node(child)
-            if child_node.kind == NodeKind.Chunk:
-                chunk_info = self.node_to_chunk(child, return_content=return_content)
-                chunks.append(chunk_info)
-            elif child_node.kind == NodeKind.Cluster:
-                children.append(self.node_to_cluster(child, return_content=return_content))
+        #     child_node: ChunkNode = self.get_node(child)
+        #     if child_node.kind == NodeKind.Chunk:
+        #         chunk_info = self.node_to_chunk(child, return_content=return_content)
+        #         chunks.append(chunk_info)
+        #     elif child_node.kind == NodeKind.Cluster:
+        #         children.append(self.node_to_cluster(child, return_content=return_content))
 
-        return Cluster(
-            id=cluster_node.id,
-            title=cluster_node.title,
-            summary=cluster_node.summary,
-            chunks=chunks,
-            children=children,
-        )
+        # return Cluster(
+        #     id=cluster_node.id,
+        #     title=cluster_node.title,
+        #     summary=cluster_node.summary,
+        #     metadata=cluster_node.metadata,
+        #     chunks=chunks,
+        #     children=children,
+        # )
+        return Cluster.from_cluster_node(cluster_id, self, return_content=return_content)
 
     def node_to_chunk(self, 
                       chunk_id: str, 
