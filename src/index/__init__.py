@@ -1,2 +1,2 @@
 from .stores import *
-from .core import Indexer
+from .core import Indexer, IndexStrat

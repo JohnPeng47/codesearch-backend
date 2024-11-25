@@ -56,7 +56,7 @@ class CodeGraph:
             raise ValueError(
                 f"NodeType {node.kind} not supported for {self.__class__.__name__}"
             )
-
+        
         self._graph.add_node(node.id, **node.dict())
         return node.id
 

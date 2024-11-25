@@ -4,15 +4,16 @@ from pathlib import Path
 from src.chunk.chunkers import PythonChunker
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
 from src.index import Indexer
+from src.config import CHUNKS_ROOT
 
-repo = "JohnPeng47_CrashOffsetFinder.git"
+repo = "codesearch-backend"
 graph_dir = "C:\\Users\\jpeng\\Documents\\projects\\codesearch-data\\graphs\\{dir}"
 repo_dir = "C:\\Users\\jpeng\\Documents\\projects\\codesearch-data\\repo\\{dir}"
 
 repo_path = Path(repo_dir.format(dir=repo)).resolve()
 graph_path = Path(graph_dir.format(dir=repo)).resolve()
 chunker = PythonChunker(repo_path)
-chunks = chunker.chunk()
+chunks = chunker.chunk(persist_path=CHUNKS_ROOT / repo)
 
 if graph_path.exists() and graph_path.read_text():
     print("Loading graph from json: ", graph_path)
@@ -26,5 +27,8 @@ else:
     with open(graph_path, "w") as f:
         f.write(json.dumps(cg.to_json(), indent=2))
     
-indexer = Indexer(repo_path, chunks, cg, run_code=False, run_cluster=True)
-indexer.run()
+# indexer = Indexer(repo_path, chunks, cg, run_code=False, run_cluster=True)
+# indexer.run()
+
+for cluster in cg.get_clusters():
+    print(cluster.to_str(return_summaries=True))

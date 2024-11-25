@@ -1,8 +1,10 @@
 import os
 import fnmatch
 import mimetypes
+import json
 from typing import Dict, List
 from llama_index.core import SimpleDirectoryReader
+from llama_index.core.storage.docstore import SimpleDocumentStore
 from llama_index.core.schema import BaseNode
 
 from src.models import (
@@ -132,12 +134,16 @@ class PythonChunker(Chunker):
             repo_path=str(repo_path),
         )
 
-    def chunk(self) -> List[CodeChunk]:
-        chunks = []
-        chunk_nodes = self.splitter.get_nodes_from_documents(self.docs, show_progress=True)
-        # NOTE: chunk_ctxt doesnt serialize rn
-        # chunk_nodes = get_chunk_ctxt_nodes(chunk_nodes)
+    def chunk(self, persist_path: str = "") -> List[CodeChunk]:
+        if os.path.exists(persist_path):
+            print("Loading persisted chunks from ", persist_path)
+            with open(persist_path, "r") as f:
+                chunk_nodes = json.loads(f.read())
+                return [CodeChunk.from_json(chunk) for chunk in chunk_nodes]
+        else:
+            chunk_nodes = self.splitter.get_nodes_from_documents(self.docs, show_progress=True)
 
+        chunks = []
         chunk_fp, chunk_i = chunk_nodes[0].metadata["file_path"], 0
         for chunk_ctxt in chunk_nodes:
             # chunk_node, _ = chunk_ctxt
@@ -156,7 +162,12 @@ class PythonChunker(Chunker):
                     metadata=ChunkMetadata(**chunk_node.metadata),
                     input_type=ChunkType.CHUNK,
                     content=chunk_node.get_content().replace("\r\n", "\n"),
+                    # add summary here
                 )
             )
+
+        print(f"Persisting chunks to {persist_path}")
+        with open(persist_path, "w") as f:
+            f.write(json.dumps([chunk.to_json() for chunk in chunks], indent=2))    
 
         return chunks

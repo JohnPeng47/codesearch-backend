@@ -24,7 +24,7 @@ class ClusterNode(Node):
     def get_content(self):
         return self.summary
 
-    def __hash__(self):
+    def __hash__(self): 
         return hash(self.id)
 
     def to_json(self):
@@ -32,7 +32,8 @@ class ClusterNode(Node):
             "id": self.id,
             "title": self.title,
             "summary": self.summary.dict(),
-            "key_variables": self.key_variables
+            "key_variables": self.key_variables,
+            "kind": self.kind
         }
 
 @dataclass(kw_only=True)
@@ -54,8 +55,10 @@ class Cluster:
     children: List["Cluster"]
     summary: ClusterSummary
 
+    # TODO: 
     def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
-        s = f"Cluster {self.id}: {self.title}\n"
+        name = self.id if not self.summary.title else self.summary.title
+        s = f"Cluster {name}\n"
         s += f"Summary: {self.summary.get_content()}\n" if self.summary and return_summaries else ""
         
         for chunk in self.chunks:

@@ -60,6 +60,16 @@ class ChunkNode(CodeChunk, Node):
             input_type=self.input_type,
             summary=self.summary
         )
+    
+    def to_json(self):
+        return {
+            "id": self.id,
+            "metadata": self.metadata.to_json(),
+            "content": self.content,
+            "input_type": self.input_type,
+            "summary": self.summary.dict() if self.summary else None,
+            "kind": self.kind
+        }
 
 class ChunkEdgeKind(str, Enum):
     ImportFrom = "ImportFrom"

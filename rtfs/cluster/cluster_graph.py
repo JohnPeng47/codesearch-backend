@@ -15,8 +15,9 @@ from rtfs.cluster.graph import (
     Cluster,
     ClusterGStats
 )
-from src.models import ChunkMetadata, CodeChunk
+from src.models import CodeSummary, ChunkMetadata, CodeChunk
 
+from .graph import ClusterSummary
 from .path import ClusterPath, ChunkPathSegment
 from .lmp import regroup_clusters, split_cluster, summarize
 
@@ -29,6 +30,11 @@ class ClusterGraph(CodeGraph):
         clustered: List[str] = [],
     ):
         super().__init__(graph=graph, node_types=[ChunkNode, ClusterNode])
+        for node, node_data in self._graph.nodes(data=True):
+            if not node_data.get("kind"):
+                raise ValueError("Node kind not found in node data")
+            if node_data["kind"] not in self.node_types:
+                raise ValueError(f"Node kind {node_data['kind']} not supported")
 
         self.model = LLMModel(provider="openai")
         self.repo_path = repo_path
@@ -45,6 +51,15 @@ class ClusterGraph(CodeGraph):
             if "metadata" in node_data:
                 node_data["metadata"] = ChunkMetadata(**node_data["metadata"])
 
+            # TODO: not ideal that we have to do this here probably want to move 
+            # this field into metadata
+            summary = node_data.get("summary", None)
+            if summary:
+                if node_data["kind"] == NodeKind.Chunk:
+                    node_data["summary"] = CodeSummary(**summary)
+                elif node_data["kind"] == NodeKind.Cluster:
+                    node_data["summary"] = ClusterSummary(**summary)
+
         return cls(
             repo_path=repo_path,
             graph=cg,
@@ -60,21 +75,10 @@ class ClusterGraph(CodeGraph):
             "links": [],
         }
 
-        # for n, node_data in G.nodes(data=True):
-        #     node_dict = node_data.copy()
-        #     node_dict.pop("references", None)
-        #     node_dict.pop("definitions", None)
-
-        #     if "metadata" in node_dict and isinstance(
-        #         node_dict["metadata"], ChunkMetadata
-        #     ):
-        #         node_dict["metadata"] = node_dict["metadata"].to_json()
-
-        #     node_dict["id"] = n
-        #     data["nodes"].append(node_dict)
-
         for node_id in self._graph.nodes:
             node = self.get_node(node_id)
+            if node.kind == NodeKind.Cluster:
+                print("Node summary: ", node.summary)
             data["nodes"].append(node.to_json())
 
         for u, v, edge_data in self._graph.edges(data=True):
@@ -82,8 +86,6 @@ class ClusterGraph(CodeGraph):
             edge["source"] = u
             edge["target"] = v
             data["links"].append(edge)
-
-        
 
         graph_dict = {}
         graph_dict["clustered"] = self._clustered
@@ -205,7 +207,7 @@ class ClusterGraph(CodeGraph):
 
             if self.children(src_cluster.id, edge_types=[EdgeKind.ChunkToCluster]) == 0:
                 self.remove_node(src_cluster.id)
-                print("Removing cluster: ", src_cluster.id)
+                print("Removing empty cluster: ", src_cluster.id)
 
             valid_moves += 1
 

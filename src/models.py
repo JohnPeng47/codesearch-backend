@@ -186,7 +186,7 @@ class CodeChunk:
             input_type=data["input_type"],
             summary=CodeSummary(**data["summary"]) if data["summary"] else None
         )
-    
+
     def to_json(self):
         return {
             "id": self.id,
