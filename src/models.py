@@ -4,9 +4,10 @@ from pydantic import BaseModel, Field
 from pydantic.types import SecretStr
 from dataclasses import dataclass, field
 from llama_index.core.schema import TextNode
-
+from collections import defaultdict
 from enum import Enum
-from typing import Annotated, Optional, Any, List, Dict
+
+from typing import DefaultDict, Annotated, Optional, Any, List, Dict, Set
 
 PrimaryKey = Annotated[int, Field(gt=0, lt=2147483647)]
 NameStr = Annotated[
@@ -74,6 +75,9 @@ class ScopeType(str, Enum):
 
 
 # Temporary place to keep these defs until we get rtfs integrated under src
+CHUNK_ID = Annotated[str, Field(descrition="Chunk identifier")]
+CLUSTER_ID = Annotated[int, Field(description="Cluster identifier")]
+
 class MetadataType(str, Enum):
     CODE = "chunk"
     CLUSTER = "cluster"
@@ -117,7 +121,6 @@ class ChunkType(str, Enum):
     FILE = "file"    
     CHUNK = "chunk"
 
-
 @dataclass(kw_only=True)
 class ChunkMetadata:
     file_path: str
@@ -129,6 +132,9 @@ class ChunkMetadata:
     start_line: int
     end_line: int
 
+    imports: DefaultDict[CHUNK_ID, Set[str]] = field(
+        default_factory=lambda: defaultdict(set)
+    )
     contexts: Optional[List[ChunkContext]] = field(default_factory=list)
     type: MetadataType = MetadataType.CODE
 
@@ -142,29 +148,31 @@ class ChunkMetadata:
             "span_ids": self.span_ids,
             "start_line": self.start_line,
             "end_line": self.end_line,
+            "imports": {k: list(v) for k, v in self.imports.items()},
             "contexts": [ctxt.__dict__ for ctxt in self.contexts],
         }
 
     @classmethod
-    def from_dict(cls, data):
-        return cls(**data)
-
-    def __json__(self):
-        return self.to_dict()
-
-    @classmethod
-    def __from_json__(cls, data):
-        return cls.from_dict(data)
+    def from_json(cls, data):        
+        return cls(
+            file_path=data["file_path"],
+            file_name=data["file_name"],
+            file_type=data["file_type"],
+            category=data["category"],
+            tokens=data["tokens"],
+            span_ids=data["span_ids"],
+            start_line=data["start_line"],
+            end_line=data["end_line"],
+            imports=defaultdict(set, {k: set(v) for k, v in data.get("imports", {}).items()}),
+            contexts=[ChunkContext(**ctx) for ctx in data.get("contexts", [])],
+            type=data.get("type", MetadataType.CODE)
+        )
     
 # CHUNK AUGMENTATIONS
 class CodeSummary(BaseModel):
-    long_description: str
-    short_description: str
-    questions: List[str]
-
-
-CHUNK_ID = Annotated[str, Field(descrition="Chunk identifier")]
-CLUSTER_ID = Annotated[int, Field(description="Cluster identifier")]
+    long_description: str = ""
+    short_description: str = ""
+    questions: List[str] = Field(default_factory=list)
 
 @dataclass
 class CodeChunk:
@@ -175,31 +183,26 @@ class CodeChunk:
     
     # additional augmentations
     # Note: unsure what field because of CodeSummary in ClusterChunk
-    summary: Optional[CodeSummary] = None
+    summary: Optional[CodeSummary] = CodeSummary()
 
     @classmethod
     def from_json(cls, data: Dict):
-        return cls(
-            id=data["id"],
-            metadata=ChunkMetadata(**data["metadata"]),
-            content=data["content"],
+        try:
+            return cls(
+                id=data["id"],
+                metadata=ChunkMetadata.from_json(data["metadata"]),
+                content=data["content"],
             input_type=data["input_type"],
-            summary=CodeSummary(**data["summary"]) if data["summary"] else None
-        )
-
-    def to_json(self):
-        return {
-            "id": self.id,
-            "metadata": self.metadata.to_json(),
-            "content": self.content,
-            "input_type": self.input_type,
-            "summary": self.summary.dict() if self.summary else None
-        }
-
+                summary=CodeSummary(**data["summary"]) if data["summary"] else None
+            )
+        except Exception as e:
+            print("Failed to deserilaize: ", data)
+            raise e
+        
     def to_str(self, 
                return_content: bool = False, 
                return_summaries: bool = False) -> str:
-        s = f"Chunk: {self.id}"
+        s = f"{self.id}"
         s += f"\nSummary: {self.summary.short_description}" if return_summaries else ""
         if return_content and self.content:
             s += f"\n{self.content}"
@@ -218,80 +221,3 @@ class CodeChunk:
 
     def __eq__(self, other):
         return self.id == other.id
-    
-class ClusterMetadata(BaseModel):
-    chunk_ids: List[CHUNK_ID]
-
-@dataclass
-class Cluster:
-    id: CLUSTER_ID
-    title: str
-    summary: str
-    chunks: List[CodeChunk]
-    children: List["Cluster"]
-
-    def to_str(self, return_content: bool = False, return_summaries: bool = False) -> str:
-        s = f"Cluster {self.id}: {self.title}\n"
-        s += f"Summary: {self.summary}\n" if self.summary and return_summaries else ""
-        
-        for chunk in self.chunks:
-            chunk_str = chunk.to_str(return_content)
-            s += "  " + chunk_str.replace("\n", "\n  ") + "\n"
-
-        if self.children:
-            s += f"Children ({len(self.children)}):\n"
-            for child in self.children:
-                child_str = child.to_str(return_content)
-                s += "  " + child_str.replace("\n", "\n  ") + "\n"
-
-        return s
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "title": self.title,
-            "summary": self.summary,
-            "chunks": [chunk.__dict__ for chunk in self.chunks],
-            "children": [child.to_dict() for child in self.children],
-        }
-    
-    @classmethod
-    def from_json(cls, data: Dict):
-        # Process chunks
-        processed_chunks = [
-            CodeChunk.from_json(chunk) for chunk in data["chunks"]
-        ]
-    
-        # Process children recursively 
-        processed_children = [
-            Cluster.from_json(child) for child in data["children"]
-        ]
-
-        # Create instance
-        result = cls(
-            id=data["id"],
-            title=data["title"],
-            summary=data["summary"],
-            chunks=processed_chunks,
-            children=processed_children
-        )
-
-        return result   
-    
-    def __hash__(self):
-        return self.id
-    
-    def __eq__(self, other):
-        if len(self.chunks) != len(other.chunks):
-            return False
-        
-        chunks_equal = all([chunk == other_chunk for chunk, other_chunk in zip(self.chunks, other.chunks)])
-        return self.id == other.id and chunks_equal
-    
-    def to_text_node(self) -> TextNode:
-        return TextNode(
-            text=self.summary,
-            metadata={"chunk_ids": [chunk.id for chunk in self.chunks]},
-            id_=self.id,
-            embedding=None,
-        )

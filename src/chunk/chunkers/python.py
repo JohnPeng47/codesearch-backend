@@ -159,7 +159,7 @@ class PythonChunker(Chunker):
             chunks.append(
                 CodeChunk(
                     id=node_id,
-                    metadata=ChunkMetadata(**chunk_node.metadata),
+                    metadata=ChunkMetadata.from_json(chunk_node.metadata),
                     input_type=ChunkType.CHUNK,
                     content=chunk_node.get_content().replace("\r\n", "\n"),
                     # add summary here

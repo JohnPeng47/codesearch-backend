@@ -18,4 +18,22 @@ Here is the code:
                         response_format=ClusterSummary,
                         timeout=15)
 
+def summarizev2(model: LLMModel, cluster: Cluster) -> ClusterSummary:
+    SUMMARY_PROMPT = """
+The following chunks of code are grouped into the same feature.
+I want you to respond with a structured output using the following steps: 
+- first come up with a descriptive title that best captures the role that these chunks of code
+play in the overall codebase. 
+- next, write a detailed summary of the code chunks, paying special attention to include:
+--> how each chunk interact with each other
+--> reference specific source code symbols much as you can
+
+Here is the code:
+{code}
+""".format(code=cluster.to_str(return_content=True))
+    return model.invoke(SUMMARY_PROMPT, 
+                        model_name="gpt-4o", 
+                        response_format=ClusterSummary,
+                        timeout=15)
+
     

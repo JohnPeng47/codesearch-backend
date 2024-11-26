@@ -3,10 +3,9 @@ from pathlib import Path
 
 from src.chunk.chunkers import PythonChunker
 from rtfs.chunk_resolution.chunk_graph import ChunkGraph
-from src.index import Indexer
 from src.config import CHUNKS_ROOT
 
-repo = "codesearch-backend"
+repo = "CrashOffsetFinder"
 graph_dir = "C:\\Users\\jpeng\\Documents\\projects\\codesearch-data\\graphs\\{dir}"
 repo_dir = "C:\\Users\\jpeng\\Documents\\projects\\codesearch-data\\repo\\{dir}"
 

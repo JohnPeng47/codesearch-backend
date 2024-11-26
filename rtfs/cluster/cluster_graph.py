@@ -17,7 +17,7 @@ from rtfs.cluster.graph import (
 )
 from src.models import CodeSummary, ChunkMetadata, CodeChunk
 
-from .graph import ClusterSummary
+from .graph import ClusterSummary, ClusterMetadata
 from .path import ClusterPath, ChunkPathSegment
 from .lmp import regroup_clusters, split_cluster, summarize
 
@@ -60,17 +60,13 @@ class ClusterGraph(CodeGraph):
     def from_json(cls, repo_path: Path, json_data: Dict):
         cg = nx.node_link_graph(json_data["link_data"])
         for _, node_data in cg.nodes(data=True):
-            if "metadata" in node_data:
-                node_data["metadata"] = ChunkMetadata(**node_data["metadata"])
+            if node_data["kind"] == NodeKind.Chunk:
+                node_data["metadata"] = ChunkMetadata.from_json(node_data["metadata"])
+                node_data["summary"] = CodeSummary(**node_data["summary"])
 
-            # TODO: not ideal that we have to do this here probably want to move 
-            # this field into metadata
-            summary = node_data.get("summary", None)
-            if summary:
-                if node_data["kind"] == NodeKind.Chunk:
-                    node_data["summary"] = CodeSummary(**summary)
-                elif node_data["kind"] == NodeKind.Cluster:
-                    node_data["summary"] = ClusterSummary(**summary)
+            elif node_data["kind"] == NodeKind.Cluster:
+                node_data["metadata"] = ClusterMetadata.from_json(node_data["metadata"])
+                node_data["summary"] = ClusterSummary(**node_data["summary"])
 
         return cls(
             repo_path=repo_path,
@@ -89,8 +85,6 @@ class ClusterGraph(CodeGraph):
 
         for node_id in self._graph.nodes:
             node = self.get_node(node_id)
-            if node.kind == NodeKind.Cluster:
-                print("Node summary: ", node.summary)
             data["nodes"].append(node.to_json())
 
         for u, v, edge_data in self._graph.edges(data=True):
@@ -287,32 +281,6 @@ class ClusterGraph(CodeGraph):
         """
         Converts graph ClusterNode to Cluster by node ID
         """
-        # cluster_node: ClusterNode = self.get_node(cluster_id)
-        # if not cluster_node or cluster_node.kind != NodeKind.Cluster:
-        #     raise ValueError(f"Node {cluster_node} is the wrong input type")
-
-        # chunks = []
-        # children = []
-        # for child in self.children(cluster_id, edge_types=[EdgeKind.ChunkToCluster, 
-        #                                                    EdgeKind.ClusterToCluster]):
-        #     if child == cluster_id:
-        #         raise ValueError(f"Cluster {cluster_id} has a self-reference")
-
-        #     child_node: ChunkNode = self.get_node(child)
-        #     if child_node.kind == NodeKind.Chunk:
-        #         chunk_info = self.node_to_chunk(child, return_content=return_content)
-        #         chunks.append(chunk_info)
-        #     elif child_node.kind == NodeKind.Cluster:
-        #         children.append(self.node_to_cluster(child, return_content=return_content))
-
-        # return Cluster(
-        #     id=cluster_node.id,
-        #     title=cluster_node.title,
-        #     summary=cluster_node.summary,
-        #     metadata=cluster_node.metadata,
-        #     chunks=chunks,
-        #     children=children,
-        # )
         return Cluster.from_cluster_node(cluster_id, self, return_content=return_content)
 
     def node_to_chunk(self, 
@@ -342,10 +310,7 @@ class ClusterGraph(CodeGraph):
         Returns a list of clusters and their child chunk nodes. Returns either
         JSON or as Cluster
         """
-        if return_type == "json":
-            return [self.node_to_cluster(node, return_content=return_content).to_dict() for node in cluster_nodes]
-        else:
-            return [self.node_to_cluster(node, return_content=return_content) for node in cluster_nodes]
+        return [self.node_to_cluster(node, return_content=return_content) for node in cluster_nodes]
 
 
     def get_clusters(self, return_content: bool = False) -> List[Cluster]:

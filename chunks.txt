@@ -1,545 +1,1976 @@
-Cluster Graph-based Code Clustering and Management
-Summary: This feature manages code chunk clustering using graph structures, leveraging algorithms like Infomap for clustering operations. It defines classes and methods for creating, manipulating, and summarizing clusters of code chunks, and includes utilities for splitting, regrouping, and summarizing clusters, as well as handling graph nodes and edges for both chunks and clusters.
-  Chunk: types/clustering.py::1
-  Chunk: chunk_resolution/chunk_graph.py::8
-  Chunk: chunk_resolution/graph.py::2
-  Chunk: cluster/cluster_graph.py::4
-  Chunk: cluster/cluster_graph.py::5
-  Chunk: cluster/cluster_graph.py::6
-  Chunk: cluster/cluster_graph.py::7
-  Chunk: cluster/cluster_graph.py::8
-  Chunk: cluster/cluster_graph.py::9
-  Chunk: cluster/cluster_graph.py::11
-  Chunk: cluster/graph.py::1
-  Chunk: cluster/graph.py::2
-  Chunk: cluster/graph.py::4
-  Chunk: cluster/infomap.py::1
-  Chunk: lmp/graph_ops.py::2
-  Chunk: lmp/split_cluster.py::1
-  Chunk: lmp/walkthrough.py::3
-  Chunk: cluster/path.py::1
-  Chunk: rtfs/graph.py::1
-  Chunk: rtfs/graph.py::2
-  Chunk: repo_resolution/graph.py::1
-  Chunk: chunkers/python.py::4
-  Chunk: src/models.py::3
+Cluster: Code Clustering and Graph Management System
+Summary:
+ This code cluster represents a comprehensive system for managing and manipulating clusters of code chunks, with a strong emphasis on graph-based data structures. It includes classes and methods for creating, splitting, and regrouping clusters, constructing and managing graph nodes and edges, and performing operations like moving code chunks between clusters. Additionally, it leverages machine learning models for tasks such as splitting large clusters and generating wiki-like summaries of clusters, providing a robust framework for code organization and analysis.
+Imports:
+ From: cluster/graph.py::2
+ - Cluster
+ - Cluster
+ - Cluster
+ - Cluster
+ - Cluster
+From: rtfs/utils.py::2
+ - TextRange
+From: cluster/graph.py::4
+ - ClusterGStats
+From: types/clustering.py::1
+ - LMClusteredTopicList
+From: src/models.py::3
+ - CodeChunk
+ - CodeChunk
+ - CodeChunk
+ - CodeChunk
+ - CodeChunk
+ - CodeChunk
+From: cluster/graph.py::1
+ - ClusterNode
+ - ClusterEdge
+ - ClusterEdge
+ - ClusterRefEdge
+ - ClusterNode
+ - ClusterEdge
+From: chunk_resolution/graph.py::2
+ - ChunkNode
+ - ChunkNode
+From: rtfs/graph.py::2
+ - CodeGraph
+From: rtfs/graph.py::1
+ - NodeKind
+ - Node
+ - NodeKind
+ - NodeKind
+ - Edge
+ - Edge
+ - EdgeKind
+ - EdgeKind
+ - NodeKind
+ - NodeKind
+ - NodeKind
+ - EdgeKind
+ - EdgeKind
+ - NodeKind
+ - NodeKind
+ - NodeKind
+ - NodeKind
+ - NodeKind
+ - Node
+ - NodeKind
+ - NodeKind
+ - EdgeKind
+ - EdgeKind
+ - Edge
+ - EdgeKind
+ - EdgeKind
+ - EdgeKind
+ - EdgeKind
+ - NodeKind
+ - Node
+ - Edge
 
-Cluster Feature Flag Management
-Summary: This feature is designed to manage feature flags within the application, allowing for dynamic enabling and disabling of features. It ensures that features can be tested and deployed incrementally without affecting the entire user base.
+Chunks (19):
+- types/clustering.py::1
+- chunk_resolution/chunk_graph.py::8
+- chunk_resolution/graph.py::2
+- cluster/cluster_graph.py::5
+- cluster/cluster_graph.py::6
+- cluster/cluster_graph.py::7
+- cluster/cluster_graph.py::8
+- cluster/cluster_graph.py::9
+- cluster/cluster_graph.py::11
+- cluster/graph.py::1
+- cluster/graph.py::2
+- cluster/graph.py::4
+- lmp/graph_ops.py::2
+- lmp/split_cluster.py::1
+- lmp/walkthrough.py::3
+- cluster/path.py::1
+- rtfs/graph.py::1
+- repo_resolution/graph.py::1
+- src/models.py::3
 
-Cluster Code Parsing and Node Splitting System
-Summary: This collection of code chunks is responsible for parsing code files, identifying their language, and splitting them into manageable nodes or code blocks. It includes support for Python and Java, utilizing specific parsers and leveraging tree-sitter for syntax tree parsing, and provides functionality for handling code spans and generating structured outputs.
-  Chunk: moatless/__init__.py::1
-  Chunk: codeblocks/__init__.py::1
-  Chunk: parser/create.py::1
-  Chunk: parser/java.py::1
-  Chunk: parser/parser.py::2
-  Chunk: parser/python.py::1
-  Chunk: moatless/file_context.py::2
-  Chunk: index/epic_split.py::3
-  Chunk: moatless/repository.py::2
-  Chunk: moatless/workspace.py::1
-  Chunk: moatless/epic_split.py::3
+Cluster: FastAPI Application with Middleware and Task Queue Integration
+Summary:
+ This section of the code sets up a FastAPI application with various middleware components for handling exceptions, database sessions, and task queues. It integrates multiple routers for different functionalities and includes a TaskQueue system for managing tasks across users, ensuring efficient task execution and response handling within the application.
+Imports:
+ From: middleware/db.py::1
+ - DBMiddleware
+From: middleware/exception.py::1
+ - ExceptionMiddleware
+From: src/exceptions.py::1
+ - ClientActionException
+From: queue/core.py::1
+ - TaskQueue
+ - TaskQueue
+ - TaskQueue
+ - TaskQueue
+From: middleware/task_queue.py::1
+ - AddTaskQueueMiddleware
 
-Cluster Codebase Evaluation and Reporting System
-Summary: This cluster of code chunks is responsible for generating evaluation reports and summaries for a codebase, tracking resolved tasks, and managing code clusters, particularly using markdown for documentation. It encompasses functions for creating detailed markdown reports, handling file spans, managing code context, and processing task queues, alongside utilities for setting up and managing a workspace and indexing code structures.
-  Chunk: main.py::1
-  Chunk: benchmark/create_dataset.py::2
-  Chunk: benchmark/evaluation.py::13
-  Chunk: swebench/utils.py::4
-  Chunk: benchmark/utils.py::4
-  Chunk: codeblocks/codeblocks.py::1
-  Chunk: codeblocks/codeblocks.py::2
-  Chunk: codeblocks/codeblocks.py::4
-  Chunk: codeblocks/codeblocks.py::8
-  Chunk: codeblocks/codeblocks.py::9
-  Chunk: parser/parser.py::1
-  Chunk: parser/parser.py::4
-  Chunk: parser/parser.py::5
-  Chunk: parser/parser.py::7
-  Chunk: parser/parser.py::10
-  Chunk: parser/parser.py::12
-  Chunk: parser/parser.py::13
-  Chunk: parser/parser.py::14
-  Chunk: parser/parser.py::15
-  Chunk: parser/parser.py::16
-  Chunk: parser/parser.py::17
-  Chunk: parser/python.py::2
-  Chunk: edit/clarify.py::7
-  Chunk: moatless/file_context.py::3
-  Chunk: moatless/file_context.py::5
-  Chunk: moatless/file_context.py::11
-  Chunk: moatless/file_context.py::13
-  Chunk: index/code_index.py::2
-  Chunk: index/code_index.py::21
-  Chunk: index/embed_model.py::1
-  Chunk: index/epic_split.py::1
-  Chunk: index/epic_split.py::4
-  Chunk: moatless/repository.py::4
-  Chunk: moatless/repository.py::5
-  Chunk: moatless/workspace.py::2
-  Chunk: moatless/workspace.py::3
-  Chunk: moatless/epic_split.py::1
-  Chunk: moatless/epic_split.py::4
-  Chunk: moatless/module.py::1
-  Chunk: lmp/walkthrough.py::5
-  Chunk: chunkers/python.py::3
-  Chunk: code/search.py::3
-  Chunk: code/search.py::4
-  Chunk: code/search.py::5
-  Chunk: src/exceptions.py::1
-  Chunk: middleware/db.py::1
-  Chunk: middleware/exception.py::1
-  Chunk: middleware/task_queue.py::1
-  Chunk: queue/core.py::1
-  Chunk: queue/service.py::1
-  Chunk: repo/views.py::2
-  Chunk: search/search.py::3
-  Chunk: search/search.py::4
-  Chunk: search/search.py::5
+Chunks (6):
+- main.py::1
+- middleware/db.py::1
+- middleware/exception.py::1
+- middleware/task_queue.py::1
+- queue/core.py::1
+- queue/service.py::1
 
-Cluster Agentic Code Evaluation and Transition System
-Summary: This code cluster implements a framework for evaluating, editing, planning, identifying, and searching code using an agentic state-based system. It defines various classes and transitions to manage different states and actions in a loop, facilitating automated code changes based on specified instructions and conditions. The system supports file context expansion, decision-making on code relevance, and structured transitions between states to achieve specific coding objectives.
-  Chunk: benchmark/evaluation.py::2
-  Chunk: edit/clarify.py::1
-  Chunk: edit/clarify.py::2
-  Chunk: edit/edit.py::1
-  Chunk: edit/edit.py::2
-  Chunk: edit/edit.py::6
-  Chunk: edit/plan.py::2
-  Chunk: edit/plan.py::3
-  Chunk: edit/plan.py::8
-  Chunk: edit/plan_lines.py::2
-  Chunk: edit/plan_lines.py::3
-  Chunk: edit/plan_lines.py::8
-  Chunk: find/decide.py::2
-  Chunk: find/decide.py::3
-  Chunk: find/identify.py::1
-  Chunk: find/identify.py::2
-  Chunk: find/identify.py::4
-  Chunk: find/search.py::4
-  Chunk: find/search.py::5
-  Chunk: find/search.py::8
-  Chunk: find/search_v2.py::5
-  Chunk: find/search_v2.py::6
-  Chunk: find/search_v2.py::9
-  Chunk: moatless/loop.py::1
-  Chunk: moatless/loop.py::2
-  Chunk: moatless/loop.py::3
-  Chunk: moatless/loop.py::6
-  Chunk: moatless/loop.py::7
-  Chunk: moatless/loop.py::9
-  Chunk: moatless/loop.py::10
-  Chunk: moatless/loop.py::11
-  Chunk: moatless/state.py::1
-  Chunk: moatless/state.py::2
-  Chunk: moatless/trajectory.py::1
-  Chunk: moatless/trajectory.py::3
-  Chunk: moatless/trajectory.py::4
-  Chunk: moatless/transitions.py::1
-  Chunk: moatless/transitions.py::2
-  Chunk: moatless/transitions.py::3
-  Chunk: moatless/transitions.py::4
-  Chunk: moatless/transitions.py::5
-  Chunk: moatless/transitions.py::6
-  Chunk: moatless/transitions.py::7
-  Chunk: moatless/types.py::2
+Cluster: Code Parsing and Language Support Module
+Summary:
+ This cluster of code is responsible for providing parsing capabilities for different programming languages, with a focus on Python and Java. It includes classes and functions to determine support for code blocks, create parsers based on file extensions or specified languages, and parse code content to generate structured representations, enabling features like syntax validation and code analysis.
+Imports:
+ From: parser/parser.py::2
+ - CodeParser
+ - CodeParser
+From: parser/java.py::1
+ - JavaParser
+From: parser/parser.py::1
+ - NodeMatch
+From: parser/python.py::1
+ - PythonParser
+ - PythonParser
+ - PythonParser
+ - PythonParser
+ - PythonParser
+ - PythonParser
+ - PythonParser
+From: moatless/repository.py::2
+ - CodeFile
+From: codeblocks/codeblocks.py::9
+ - CodeBlock
+ - CodeBlock
+From: codeblocks/codeblocks.py::2
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
 
-Cluster Automated Evaluation and Cost Tracking System
-Summary: This code cluster implements a system for evaluating problem-solving instances using an agentic loop framework. It handles instance setup, tracks evaluation metadata, manages cost tracking, and logs evaluation trajectories, facilitating automated benchmarking and performance assessment in a controlled environment.
-  Chunk: benchmark/evaluation.py::5
-  Chunk: benchmark/utils.py::8
-  Chunk: moatless/loop.py::4
+Chunks (12):
+- moatless/__init__.py::1
+- codeblocks/__init__.py::1
+- parser/create.py::1
+- parser/java.py::1
+- parser/parser.py::1
+- parser/parser.py::2
+- parser/python.py::1
+- moatless/file_context.py::2
+- index/epic_split.py::3
+- moatless/repository.py::2
+- moatless/workspace.py::1
+- moatless/epic_split.py::3
 
-Cluster Code Evaluation and Span Verification Framework
-Summary: This set of code chunks provides a framework for evaluating code transitions and verifying identified code spans within a given trajectory. It includes methods for converting evaluation instances into results, checking for missing and alternative spans, and syncing file contexts with search trajectories. The framework aims to assess various transition actions such as searching, identifying, planning, and editing code, to ensure successful code span identification and verification.
-  Chunk: benchmark/evaluation.py::11
-  Chunk: swebench/utils.py::2
-  Chunk: swebench/utils.py::3
-  Chunk: benchmark/utils.py::5
-  Chunk: benchmark/utils.py::6
+Cluster: Automated Code Evaluation and Reporting Framework
+Summary:
+ This code feature provides an automated framework for evaluating code changes and generating reports. It includes utilities for setting up code repositories, analyzing prediction results against golden patches, and generating detailed markdown reports. Additionally, it supports search functionalities across code and cluster indices, and integrates verification tools like Pylint and Maven for code quality checks.
+Imports:
+ From: index/embed_model.py::1
+ - get_embed_model
+From: moatless/types.py::4
+ - VerificationError
+From: codeblocks/codeblocks.py::2
+ - CodeBlockType
+From: moatless/file_context.py::13
+ - FileContext
+ - FileContext
+ - FileContext
+ - FileContext
+From: moatless/workspace.py::2
+ - Workspace
+ - Workspace
+ - Workspace
+ - Workspace
+ - Workspace
+ - Workspace
+ - Workspace
+From: index/settings.py::1
+ - IndexSettings
+ - IndexSettings
+ - IndexSettings
+From: index/code_index.py::2
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+ - CodeIndex
+From: verify/verify.py::1
+ - Verifier
+ - Verifier
+From: benchmark/utils.py::4
+ - get_file_spans_from_patch
+ - get_file_spans_from_patch
+From: codeblocks/codeblocks.py::1
+ - CodeBlockTypeGroup
+From: moatless/repository.py::5
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+ - FileRepository
+From: verify/maven.py::1
+ - MavenVerifier
+From: index/service.py::1
+ - get_or_create_index
+From: moatless/types.py::1
+ - FileWithSpans
+ - FileWithSpans
+ - FileWithSpans
+ - FileWithSpans
+From: moatless/loop.py::4
+ - AgenticLoop
+From: index/simple_faiss.py::1
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+From: moatless/state.py::1
+ - AgenticState
+From: verify/lint.py::1
+ - PylintVerifier
+From: benchmark/utils.py::8
+ - trace_metadata
+From: moatless/state.py::2
+ - Pending
 
-Cluster Repository Setup and Workspace Initialization
-Summary: These code snippets are responsible for setting up a GitHub repository locally and creating a workspace for it. The code handles the cloning of a specified repository at a given commit and organizes the necessary directories for future operations.
-  Chunk: swebench/utils.py::5
-  Chunk: utils/repo.py::1
+Chunks (28):
+- benchmark/create_dataset.py::2
+- benchmark/evaluation.py::5
+- benchmark/evaluation.py::13
+- swebench/utils.py::4
+- benchmark/utils.py::3
+- benchmark/utils.py::4
+- benchmark/utils.py::8
+- edit/clarify.py::3
+- moatless/file_context.py::13
+- index/code_index.py::2
+- index/code_index.py::15
+- index/embed_model.py::1
+- moatless/loop.py::4
+- moatless/repository.py::5
+- moatless/types.py::1
+- verify/lint.py::1
+- verify/maven.py::1
+- verify/verify.py::1
+- moatless/workspace.py::2
+- moatless/workspace.py::3
+- code/search.py::3
+- code/search.py::4
+- code/search.py::5
+- index/service.py::1
+- repo/graph.py::3
+- search/search.py::3
+- search/search.py::4
+- search/search.py::5
 
-Cluster Span Identification and Token Summation in Code Modules
-Summary: This cluster of code provides functionality to identify relevant code spans within modules and calculate the token count of these spans. It includes methods for comparing original and updated code blocks to determine changes and dependencies, utilizing a graph-based approach for span management.
-  Chunk: benchmark/utils.py::1
-  Chunk: codeblocks/module.py::1
+Cluster: Agentic Code Evaluation and Transition Framework
+Summary:
+ This code cluster forms a framework for managing agentic states and transitions in a code evaluation and editing workflow. It includes classes and functions to define transitions between different states, handle code changes and verification, and manage context expansion and search operations, relying on a structured loop to coordinate these processes.
+Imports:
+ From: moatless/loop.py::1
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+ - Transition
+From: moatless/types.py::3
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+From: edit/plan_lines.py::3
+ - PlanToCodeWithLines
+ - PlanToCodeWithLines
+ - PlanToCodeWithLines
+ - PlanToCodeWithLines
+ - PlanToCodeWithLines
+ - PlanToCodeWithLines
+ - PlanToCodeWithLines
+From: edit/clarify.py::9
+ - _get_post_end_line_index
+ - _get_post_end_line_index
+From: edit/clarify.py::8
+ - _get_pre_start_line
+ - _get_pre_start_line
+From: find/decide.py::3
+ - DecideRelevance
+ - DecideRelevance
+ - DecideRelevance
+ - DecideRelevance
+ - DecideRelevance
+ - DecideRelevance
+ - DecideRelevance
+From: edit/edit.py::2
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+ - EditCode
+From: codeblocks/codeblocks.py::1
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+From: moatless/types.py::2
+ - Content
+ - AssistantMessage
+ - Content
+From: utils/tokenizer.py::1
+ - count_tokens
+From: edit/plan.py::3
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+ - PlanToCode
+From: moatless/state.py::1
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+ - AgenticState
+From: moatless/state.py::2
+ - Rejected
+ - Rejected
+ - Rejected
+ - Rejected
+ - Finished
+ - Rejected
+ - Finished
+ - Rejected
+ - Finished
+ - Rejected
+ - Finished
+ - Finished
+ - Finished
+ - Finished
+From: find/search_v2.py::6
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+ - SearchCode
+From: find/identify.py::2
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+ - IdentifyCode
+From: edit/clarify.py::2
+ - ClarifyCodeChange
+ - ClarifyCodeChange
+ - ClarifyCodeChange
+ - ClarifyCodeChange
+From: moatless/loop.py::2
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+ - Transitions
+From: codeblocks/codeblocks.py::2
+ - CodeBlockType
 
-Cluster Code Context and Change Analysis
-Summary: The code clusters work together to analyze and manage code changes and contexts. They provide utilities for comparing code patches, creating file spans, clarifying code changes in context, indexing code for search hits, and defining data structures to handle file paths and code spans.
-  Chunk: benchmark/utils.py::3
-  Chunk: edit/clarify.py::3
-  Chunk: index/code_index.py::15
-  Chunk: moatless/types.py::1
+Chunks (40):
+- benchmark/evaluation.py::2
+- codeblocks/codeblocks.py::4
+- codeblocks/codeblocks.py::6
+- codeblocks/codeblocks.py::7
+- codeblocks/codeblocks.py::8
+- codeblocks/codeblocks.py::9
+- edit/clarify.py::2
+- edit/clarify.py::8
+- edit/edit.py::2
+- edit/edit.py::3
+- edit/edit.py::4
+- edit/plan.py::3
+- edit/plan.py::4
+- edit/plan.py::5
+- edit/plan.py::6
+- edit/plan_lines.py::3
+- edit/plan_lines.py::5
+- edit/plan_lines.py::6
+- find/decide.py::3
+- find/identify.py::2
+- find/identify.py::3
+- find/identify.py::4
+- find/search.py::5
+- find/search_v2.py::6
+- moatless/loop.py::1
+- moatless/loop.py::2
+- moatless/loop.py::3
+- moatless/loop.py::7
+- moatless/loop.py::9
+- moatless/state.py::1
+- moatless/state.py::2
+- moatless/trajectory.py::4
+- moatless/transitions.py::1
+- moatless/transitions.py::2
+- moatless/transitions.py::3
+- moatless/transitions.py::4
+- moatless/transitions.py::5
+- moatless/transitions.py::6
+- moatless/transitions.py::7
+- moatless/types.py::3
 
-Cluster Epic Splitter: Code Block Parsing and Chunking
-Summary: The Epic Splitter feature is responsible for parsing and managing code blocks within a codebase. It creates a hierarchical path tree for organizing code blocks, filters out irrelevant comments, and converts code blocks into context strings. Additionally, it chunks code blocks into manageable pieces based on size constraints, ensuring efficient code processing while preserving logical code structures.
-  Chunk: index/epic_split.py::7
-  Chunk: moatless/epic_split.py::5
-  Chunk: moatless/epic_split.py::7
+Cluster: Code Transition Evaluation and Verification
+Summary:
+ This collection of code chunks focuses on evaluating and verifying code transitions within a benchmarking framework. It includes classes and functions for assessing transitions such as 'SearchCode', 'IdentifyCode', 'PlanToCode', and 'EditCode', by analyzing their respective actions and outcomes against expected and alternative spans in a given workspace. The code performs checks on identified spans, planned spans, and edits, while tracking iterations and results to ensure comprehensive evaluation of code transitions.
+Imports:
+ From: benchmark/utils.py::5
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+ - file_spans_to_dict
+From: benchmark/utils.py::6
+ - get_missing_files
+ - get_missing_files
+ - get_missing_spans
+ - get_missing_files
+From: moatless/workspace.py::2
+ - Workspace
 
-Cluster Code Relationship and Reference Management
-Summary: This cluster of code is responsible for defining and managing relationships and references within the codebase. It includes enumerations for reference scopes and relationship types, a 'Relationship' class to handle path validations and hashing, and a 'CodeParser' class that creates references based on code blocks and their relationships.
-  Chunk: codeblocks/codeblocks.py::6
-  Chunk: codeblocks/codeblocks.py::7
-  Chunk: parser/parser.py::11
+Chunks (5):
+- benchmark/evaluation.py::11
+- swebench/utils.py::2
+- swebench/utils.py::3
+- benchmark/utils.py::5
+- benchmark/utils.py::6
 
-Cluster Code Block Tree Representation with Color Highlighting
-Summary: This feature defines a `CodeBlock` class that converts code blocks into a tree structure with support for various display options, such as highlighting specific spans and showing identifiers, tokens, and references. It utilizes the `Colors` class for enhancing the visual representation of code blocks by adding colored formatting to differentiate elements like visibility, spans, and content in the generated tree.
-  Chunk: codeblocks/codeblocks.py::14
-  Chunk: utils/colors.py::1
+Cluster: Repository Setup and Workspace Initialization
+Summary:
+ This feature encompasses functions that facilitate the setup of a GitHub repository in a local directory and the creation of a workspace for development. It involves cloning the repository to a specified base directory, checking out the desired commit, and organizing the setup for further use in development workflows.
+Imports:
+ From: moatless/workspace.py::2
+ - Workspace
+From: utils/repo.py::1
+ - setup_github_repo
 
-Cluster Cluster 8: User Authentication Module
-Summary: This cluster of code is responsible for managing user authentication processes within the application. It includes functions for user login, logout, and verifying user credentials to ensure secure access to the system.
+Chunks (2):
+- swebench/utils.py::5
+- utils/repo.py::1
 
-Cluster Code Change Clarification and Token Counting Utilities
-Summary: This feature provides a mechanism to verify and clarify code change requests by checking if specified line numbers are valid and within a permissible token limit, using the 'ClarifyCodeChange' class. Additionally, it includes a utility function to count tokens in a given text, supporting different models and handling tokenization dependencies efficiently.
-  Chunk: edit/clarify.py::6
-  Chunk: utils/tokenizer.py::1
+Cluster: Span Analysis and Token Management in Code Blocks
+Summary:
+ This feature focuses on managing and analyzing spans within code blocks, specifically modules. It includes functionality to find relevant spans between original and updated code blocks, utilizing a graph-based structure to assess differences and dependencies, and a mechanism for summing tokens associated with specific spans.
+Imports:
+ From: codeblocks/codeblocks.py::9
+ - CodeBlock
+From: codeblocks/module.py::1
+ - Module
+ - Module
 
-Cluster Code Editing and Management Workflow
-Summary: This code cluster defines a comprehensive system for managing and editing code changes in a structured and automated manner. It includes utility functions for identifying line boundaries, classes for handling actions related to code edits, planning code adjustments, identifying code sections, and generating action responses for transitioning between different states in the editing process.
-  Chunk: edit/clarify.py::8
-  Chunk: edit/clarify.py::9
-  Chunk: edit/edit.py::3
-  Chunk: edit/edit.py::4
-  Chunk: edit/plan.py::4
-  Chunk: edit/plan.py::5
-  Chunk: edit/plan.py::6
-  Chunk: edit/plan_lines.py::5
-  Chunk: edit/plan_lines.py::6
-  Chunk: find/identify.py::3
-  Chunk: moatless/types.py::3
+Chunks (2):
+- benchmark/utils.py::1
+- codeblocks/module.py::1
 
-Cluster Code Search and Span Ranking System
-Summary: This code cluster implements a system for searching code files based on various attributes such as file pattern, query, code snippet, class name, and function name. It ranks the found code spans and returns structured responses, supporting versioned search capabilities while handling edge cases like test file searches.
-  Chunk: moatless/file_context.py::1
-  Chunk: find/search.py::6
-  Chunk: find/search_v2.py::7
+Cluster: Code Parsing and Chunking Framework
+Summary:
+ This code cluster provides a comprehensive framework for parsing, analyzing, and managing code blocks within a codebase. It includes utilities for defining code block types, parsing code into structured representations, managing spans and relationships within the code, and splitting code into manageable chunks for further processing or indexing. The framework is equipped with features for handling comments, errors, and out-commented code and supports a variety of code-related tasks such as indexing, context expansion, and content updates. The use of classes like 'CodeParser', 'EpicSplitter', and 'ContextFile' suggests a modular approach to handling different aspects of code management efficiently.
+Imports:
+ From: codeblocks/codeblocks.py::6
+ - ReferenceScope
+From: codeblocks/codeblocks.py::4
+ - PathTree
+ - PathTree
+ - PathTree
+ - PathTree
+From: index/epic_split.py::2
+ - EpicSplitter
+From: moatless/state.py::1
+ - AgenticState
+From: codeblocks/codeblocks.py::8
+ - SpanType
+ - Parameter
+ - SpanType
+ - SpanType
+ - SpanType
+ - SpanType
+ - SpanType
+ - SpanType
+ - BlockSpan
+ - BlockSpan
+ - BlockSpan
+ - BlockSpan
+ - BlockSpan
+ - ValidationError
+ - ValidationError
+From: codeblocks/codeblocks.py::1
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+ - SpanMarker
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+From: moatless/module.py::1
+ - Module
+ - Module
+From: moatless/types.py::2
+ - UserMessage
+ - UserMessage
+ - AssistantMessage
+ - ActionRequest
+ - UserMessage
+ - AssistantMessage
+ - Content
+ - AssistantMessage
+ - AssistantMessage
+ - ActionRequest
+ - ActionRequest
+From: codeblocks/codeblocks.py::9
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+ - CodeBlock
+From: moatless/state.py::2
+ - NoopState
+From: codeblocks/codeblocks.py::2
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
 
-Cluster File Content Update with Logging and Span Management
-Summary: This feature provides the functionality to update the content of a file by specifying line numbers to be replaced, and logs the addition of new spans if applicable. It utilizes a `ContextFile` class that interacts with an `UpdateResult` data structure to track changes and potential errors during the update process, integrating with a logging system for operational transparency.
-  Chunk: moatless/file_context.py::10
-  Chunk: moatless/repository.py::1
+Chunks (35):
+- codeblocks/codeblocks.py::1
+- codeblocks/codeblocks.py::2
+- parser/parser.py::4
+- parser/parser.py::5
+- parser/parser.py::7
+- parser/parser.py::10
+- parser/parser.py::12
+- parser/parser.py::13
+- parser/parser.py::14
+- parser/parser.py::15
+- parser/parser.py::16
+- parser/parser.py::17
+- parser/python.py::2
+- edit/clarify.py::7
+- edit/edit.py::6
+- edit/plan.py::8
+- edit/plan_lines.py::2
+- edit/plan_lines.py::8
+- moatless/file_context.py::3
+- moatless/file_context.py::5
+- moatless/file_context.py::11
+- index/code_index.py::21
+- index/epic_split.py::1
+- index/epic_split.py::4
+- index/epic_split.py::7
+- moatless/loop.py::6
+- moatless/repository.py::4
+- moatless/trajectory.py::1
+- moatless/trajectory.py::3
+- moatless/epic_split.py::1
+- moatless/epic_split.py::4
+- moatless/epic_split.py::5
+- moatless/epic_split.py::7
+- moatless/module.py::1
+- chunkers/python.py::3
 
-Cluster Cluster Node Management in Code Indexing
-Summary: This feature facilitates the creation and management of cluster nodes within a code indexing system. It defines a 'ClusterNode' class inheriting from 'TextNode' and implements a method to transform cluster data dictionaries into hierarchical structures of 'ClusterNode' instances, preserving metadata and relationships.
-  Chunk: index/cluster_node.py::1
-  Chunk: index/code_index.py::14
+Cluster: Code Relationship and Cluster Graph Management
+Summary:
+ This code defines classes and methods for managing code relationships and cluster graphs. It includes enumerations for types of code references and relationships, a class to model relationships with validation and utility methods, a parser to create code reference objects, and a cluster graph class for managing and manipulating clusters of code blocks, including splitting clusters and finding longest paths between them.
+Imports:
+ From: codeblocks/codeblocks.py::6
+ - ReferenceScope
+ - RelationshipType
+ - ReferenceScope
+ - RelationshipType
+ - ReferenceScope
+ - RelationshipType
+ - RelationshipType
+ - RelationshipType
+ - RelationshipType
+ - RelationshipType
+ - RelationshipType
+ - RelationshipType
+ - RelationshipType
+ - ReferenceScope
+From: cluster/path.py::3
+ - ClusterPath
+From: codeblocks/codeblocks.py::7
+ - Relationship
+ - Relationship
+ - Relationship
+ - Relationship
+From: cluster/graph.py::1
+ - ClusterNode
+ - ClusterEdge
+From: rtfs/graph.py::1
+ - EdgeKind
+From: codeblocks/codeblocks.py::2
+ - CodeBlockType
+ - CodeBlockType
+ - CodeBlockType
 
-Cluster Code Indexing and Splitting System for Efficient Search and Retrieval
-Summary: This code cluster implements a comprehensive system for indexing code and non-code documents, allowing efficient search and retrieval. It includes functionalities for downloading and storing code repositories, defining embedding and vector store settings, splitting documents into manageable chunks, and managing comment strategies during indexing.
-  Chunk: index/code_index.py::1
-  Chunk: index/code_index.py::4
-  Chunk: index/epic_split.py::2
-  Chunk: index/epic_split.py::5
-  Chunk: index/settings.py::1
+Chunks (5):
+- codeblocks/codeblocks.py::6
+- codeblocks/codeblocks.py::7
+- parser/parser.py::11
+- cluster/cluster_graph.py::5
+- cluster/cluster_graph.py::10
 
-Cluster Feature Management and Validation
-Summary: This code cluster is responsible for managing and validating the features within the codebase. It includes functionality to ensure that features meet certain criteria and are correctly implemented, helping maintain code quality and consistency.
+Cluster: Code Block Tree Representation with Color Coding
+Summary:
+ This feature involves the creation of a hierarchical tree representation of code blocks, allowing for the customization of displayed code elements and their attributes, such as span highlights, line numbers, and reference details. The use of ANSI color codes facilitates the visual differentiation of elements within the tree, enabling enhanced readability and debugging.
+Imports:
+ From: utils/colors.py::1
+ - Colors
+ - Colors
+ - Colors
+ - Colors
+ - Colors
+ - Colors
+ - Colors
+ - Colors
+ - Colors
 
-Cluster Advanced Code Search and Indexing System
-Summary: This code cluster defines a sophisticated system for searching and indexing code snippets, leveraging vector stores for semantic search capabilities. It includes classes and methods for searching code by name, semantic matching, and managing indexed data, using technologies like FAISS for vector storage and retrieval, and supports operations like persistence and retrieval of code and related metadata.
-  Chunk: index/code_index.py::3
-  Chunk: index/code_index.py::5
-  Chunk: index/code_index.py::6
-  Chunk: index/code_index.py::7
-  Chunk: index/code_index.py::8
-  Chunk: index/code_index.py::9
-  Chunk: index/code_index.py::10
-  Chunk: index/code_index.py::11
-  Chunk: index/code_index.py::12
-  Chunk: index/code_index.py::13
-  Chunk: index/code_index.py::16
-  Chunk: index/code_index.py::23
-  Chunk: index/simple_faiss.py::1
-  Chunk: index/simple_faiss.py::2
-  Chunk: index/types.py::2
+Chunks (2):
+- codeblocks/codeblocks.py::14
+- utils/colors.py::1
 
-Cluster Code Vector and Cluster Search Functionality
-Summary: The given code chunks implement a vector search functionality within a 'CodeIndex' class, designed to retrieve relevant code snippets based on a query. The search process leverages vector embeddings to find and rank code snippets either from a code vector store or a cluster vector store, applying filters such as file patterns and excluding test files, and returning results as 'CodeSnippet' objects.
-  Chunk: index/code_index.py::17
-  Chunk: index/code_index.py::18
-  Chunk: index/types.py::1
+Cluster: Agentic Code Editing and Search System
+Summary:
+ This feature comprises classes and functions that facilitate autonomous code editing and search operations within a codebase. It leverages agentic states and actions to identify, modify, and verify code, employing a structured approach to manage code changes and searches based on user instructions and existing code context. The system includes mechanisms for handling retries, logging actions, and managing the trajectory of actions to ensure efficient and targeted code updates.
+Imports:
+ From: moatless/types.py::2
+ - ActionRequest
+ - ActionRequest
+ - UserMessage
+ - ActionRequest
+ - UserMessage
+ - AssistantMessage
+ - ActionRequest
+ - UserMessage
+ - AssistantMessage
+ - ActionRequest
+ - ActionRequest
+ - ActionRequest
+ - ActionRequest
+ - UserMessage
+ - AssistantMessage
+ - ActionRequest
+ - UserMessage
+ - AssistantMessage
+ - Content
+ - AssistantMessage
+ - AssistantMessage
+ - Content
+ - Content
+ - ActionRequest
+ - ActionRequest
+From: moatless/state.py::2
+ - NoopState
+From: moatless/file_context.py::13
+ - FileContext
+From: moatless/state.py::1
+ - AgenticState
 
-Cluster Code Node Hashing and Epic Node Creation
-Summary: The provided code involves defining a 'CodeNode' class, which extends 'TextNode', and includes a method to compute a hash of the node's content and metadata, excluding specific metadata keys to minimize unnecessary changes. Additionally, an 'EpicSplitter' class is implemented for creating nodes from code blocks, where metadata like line numbers and span IDs are managed, and token counts are calculated to facilitate efficient code parsing and embedding.
-  Chunk: index/code_node.py::1
-  Chunk: index/epic_split.py::8
+Chunks (19):
+- edit/clarify.py::1
+- edit/edit.py::1
+- edit/edit.py::6
+- edit/plan.py::2
+- edit/plan.py::8
+- edit/plan_lines.py::2
+- edit/plan_lines.py::8
+- find/decide.py::2
+- find/identify.py::1
+- find/search.py::4
+- find/search.py::8
+- find/search_v2.py::5
+- find/search_v2.py::9
+- moatless/loop.py::6
+- moatless/loop.py::10
+- moatless/loop.py::11
+- moatless/trajectory.py::1
+- moatless/trajectory.py::3
+- moatless/types.py::2
 
-Cluster Code Verification and Execution Framework
-Summary: This code cluster implements a framework for verifying and executing code, primarily focusing on defining and managing execution loops, handling verification through tools like Pylint and Maven, and managing code responses and errors. It includes classes like 'AgenticLoop' for running execution loops with cost and retry limits, 'Trajectory' for managing execution transitions, and 'Verifier' with concrete implementations like 'PylintVerifier' and 'MavenVerifier' for code verification tasks.
-  Chunk: moatless/loop.py::5
-  Chunk: moatless/trajectory.py::2
-  Chunk: moatless/types.py::4
-  Chunk: verify/lint.py::1
-  Chunk: verify/maven.py::1
-  Chunk: verify/maven.py::2
-  Chunk: verify/maven.py::3
-  Chunk: verify/verify.py::1
+Cluster: Code Span Verification and Token Counting
+Summary:
+ This feature comprises two main components: verifying specified line numbers within a code span and counting tokens within a text block. The 'ClarifyCodeChange' class is responsible for ensuring that the line numbers provided for code changes are appropriate, and it prompts for clarification if they are not. The 'count_tokens' function, on the other hand, calculates the number of tokens in a given text block, supporting different models and handling necessary imports for tokenization.
+Imports:
+ From: moatless/types.py::2
+ - Message
+From: utils/tokenizer.py::1
+ - count_tokens
+From: codeblocks/codeblocks.py::1
+ - CodeBlockTypeGroup
 
-Cluster API Model Integration and Summary Generation
-Summary: This code integrates various AI models, including Anthropic and OpenAI, to facilitate the summarization of code nodes. It defines model configurations, handles API interactions, and implements a function to generate summaries using the selected model based on input parameters.
-  Chunk: summary/models.py::1
-  Chunk: summary/models.py::5
-  Chunk: summary/models.py::7
-  Chunk: summary/summarize.py::2
+Chunks (2):
+- edit/clarify.py::6
+- utils/tokenizer.py::1
 
-Cluster Scope Graph Construction for Python Code Analysis
-Summary: This code defines a function, `build_scope_graph`, that constructs a scope graph from source code in Python. It utilizes a language parser to identify various code elements like definitions, references, imports, and calls, capturing their respective text ranges and building a structured graph representation of the code's scope for further analysis.
-  Chunk: rtfs/build_scopes.py::2
+Cluster: Automated Code Editing and Change Management
+Summary:
+ This cluster of code is responsible for facilitating automated code editing and change management. It includes functionality for identifying code spans, planning and implementing changes, handling retries, and verifying updates, as well as transitioning between different action states during the editing process.
+Imports:
+ From: moatless/types.py::3
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+ - ActionResponse
+From: edit/clarify.py::9
+ - _get_post_end_line_index
+ - _get_post_end_line_index
+From: edit/clarify.py::8
+ - _get_pre_start_line
+ - _get_pre_start_line
+From: codeblocks/codeblocks.py::1
+ - CodeBlockTypeGroup
+ - CodeBlockTypeGroup
+From: moatless/types.py::2
+ - Content
+ - AssistantMessage
+ - Content
+From: utils/tokenizer.py::1
+ - count_tokens
+From: codeblocks/codeblocks.py::2
+ - CodeBlockType
 
-Cluster Scope Graph Construction for Python Codebases
-Summary: The code chunks collectively define a function to construct a scope graph for Python codebases, parsing and organizing various code elements like imports, definitions, references, and calls. The function processes bytecode to capture and categorize these elements into a graph structure, facilitating subsequent scope resolution and code analysis.
-  Chunk: new_rtfs/build_scopes.py::3
-  Chunk: rtfs/build_scopes.py::3
-  Chunk: scope_resolution/imports.py::1
+Chunks (11):
+- edit/clarify.py::8
+- edit/clarify.py::9
+- edit/edit.py::3
+- edit/edit.py::4
+- edit/plan.py::4
+- edit/plan.py::5
+- edit/plan.py::6
+- edit/plan_lines.py::5
+- edit/plan_lines.py::6
+- find/identify.py::3
+- moatless/types.py::3
 
-Cluster Import Management and Analysis for Python
-Summary: This code provides a framework for managing and analyzing import statements in Python. It includes classes and methods for representing import details, validating them against Python-specific rules, and resolving import paths to absolute paths using a Python-specific implementation.
-  Chunk: captures/imports.py::1
-  Chunk: language/python.py::1
-  Chunk: language/python.py::3
-  Chunk: language/python.py::4
+Cluster: Code Search and Span Ranking System
+Summary:
+ This feature implements a code search mechanism that handles search actions by querying code files based on specified attributes such as file patterns, queries, code snippets, class names, and function names. It ranks the spans found in the search results, using classes like RankedFileSpan and ContextSpan to organize the information, and transitions the search state depending on the presence of search results.
+Imports:
+ From: moatless/file_context.py::1
+ - RankedFileSpan
+ - RankedFileSpan
 
-Cluster Codebase Graph Construction and Management
-Summary: This feature is responsible for constructing and managing graphs representing code relationships within a repository. It includes classes and functions for creating nodes from code chunks, establishing references and dependencies among them, and utilizing machine learning models for enhanced analysis. The feature supports different graph types, facilitates filesystem interactions, and provides mechanisms for persisting graph data.
-  Chunk: aider_graph/aider_graph.py::1
-  Chunk: chunk_resolution/chunk_graph.py::2
-  Chunk: rtfs/chunker.py::2
-  Chunk: cluster/cluster_graph.py::2
-  Chunk: rtfs/fs.py::1
-  Chunk: rtfs/models.py::3
-  Chunk: rtfs/models.py::7
-  Chunk: repo_resolution/repo_graph.py::2
-  Chunk: repo_resolution/repo_graph.py::5
-  Chunk: repo/graph.py::2
+Chunks (3):
+- moatless/file_context.py::1
+- find/search.py::6
+- find/search_v2.py::7
 
-Cluster Cluster 45: Data Processing and Transformation Module
-Summary: This cluster of code focuses on data processing and transformation, providing functions and utilities to clean, filter, and modify datasets for further analysis or machine learning tasks. It streamlines data handling operations, ensuring consistency and efficiency in preparing data for various applications.
+Cluster: File Content Update and Logging System
+Summary:
+ This feature allows for updating content within a file based on specified line numbers while maintaining a log of changes. It includes functionality to track new spans added to files and utilizes a structured 'UpdateResult' to encapsulate update outcomes, including file path, update status, differences, and potential errors.
+Imports:
+ From: moatless/repository.py::1
+ - UpdateResult
 
-Cluster Chunk Graph and Clustering Management
-Summary: This code defines and manages the structure and functions for handling code chunks and their clustering. It includes a class for representing a graph of code chunks, methods for chunk retrieval and naming, and functions for generating and organizing clusters of code topics from a repository path.
-  Chunk: chunk_resolution/chunk_graph.py::6
-  Chunk: chunk/models.py::2
-  Chunk: cluster/cluster_v1.py::9
+Chunks (2):
+- moatless/file_context.py::10
+- moatless/repository.py::1
 
-Cluster JSON Tree Traversal and Graph Representation
-Summary: This code provides a mechanism to represent clusters as structured strings from JSON data by utilizing depth-first traversal. The 'ChunkGraph' class transforms a JSON tree into a string format, while the 'dfs_json' function traverses JSON tree structures, supporting the hierarchical representation of clusters.
-  Chunk: chunk_resolution/chunk_graph.py::9
-  Chunk: rtfs/utils.py::1
+Cluster: Cluster Node Initialization and Hierarchical Structuring in Code Index
+Summary:
+ This feature involves defining a ClusterNode class, which inherits from TextNode, and implementing a method in the CodeIndex class to construct ClusterNode objects from a dictionary structure. The method processes clusters by creating nodes with metadata and recursively handling hierarchical relationships, enabling structured representation of code clusters.
+Imports:
+ From: index/cluster_node.py::1
+ - ClusterNode
 
-Cluster ChunkGraph Generation and Management
-Summary: This code is responsible for generating and managing a ChunkGraph from a repository path. It includes functionality to categorize files, create a graph representation, summarize clusters, and output results in different formats via a command-line interface.
-  Chunk: rtfs/chunker.py::1
-  Chunk: rtfs/cli.py::3
+Chunks (2):
+- index/cluster_node.py::1
+- index/code_index.py::14
 
-Cluster Cluster Path and Import-Export Mapping in Code Graphs
-Summary: This code cluster focuses on managing and analyzing paths within clustered code graphs and mapping import-export relationships between code chunks. It includes functionality for finding the longest paths between clusters, managing cluster path segments, and building import-export mappings for code chunks, leveraging graph representations to facilitate code analysis and refactoring.
-  Chunk: chunk_resolution/chunk_graph.py::5
-  Chunk: cluster/cluster_graph.py::10
-  Chunk: cluster/path.py::3
-  Chunk: repo_resolution/repo_graph.py::1
+Cluster: Code Indexing and Splitting Feature
+Summary:
+ This feature is responsible for indexing and splitting code and non-code documents into manageable chunks for processing and storage. It includes classes and functions for downloading, storing, and embedding code files, as well as providing configurable settings for chunk sizes and comment handling strategies during the indexing process.
+Imports:
+ From: index/settings.py::1
+ - IndexSettings
+ - IndexSettings
+ - IndexSettings
+ - CommentStrategy
+ - CommentStrategy
+ - CommentStrategy
+ - CommentStrategy
+ - CommentStrategy
+From: index/simple_faiss.py::2
+ - SimpleFaissVectorStore
+ - SimpleFaissVectorStore
+From: moatless/repository.py::5
+ - FileRepository
+From: codeblocks/codeblocks.py::9
+ - CodeBlock
+ - CodeBlock
+From: codeblocks/codeblocks.py::2
+ - CodeBlockType
 
-Cluster Import Resolution and Namespace Management in Codebase
-Summary: This code cluster is responsible for managing and resolving import statements and namespaces in the codebase. It defines classes and functions for handling local import statements, constructing import objects, determining module types (system, third-party, or local), and managing namespaces using both dataclasses and utility functions for path resolution and module checking.
-  Chunk: repo_resolution/exports.py::1
-  Chunk: repo_resolution/imports.py::2
-  Chunk: repo_resolution/imports.py::3
-  Chunk: repo_resolution/namespace.py::1
-  Chunk: repo_resolution/repo_graph.py::6
-  Chunk: scope_resolution/imports.py::2
-  Chunk: rtfs/utils.py::4
-  Chunk: rtfs/utils.py::5
+Chunks (5):
+- index/code_index.py::1
+- index/code_index.py::4
+- index/epic_split.py::2
+- index/epic_split.py::5
+- index/settings.py::1
 
-Cluster Document Splitting and Ingestion Module
-Summary: This code defines a class 'EpicSplitter' that is responsible for splitting text documents, including both code and non-code files, into manageable chunks based on specified parameters like chunk size and file extensions. The 'ingest' function utilizes this class to read files from a repository, process them using the 'EpicSplitter', and prepare them for further indexing or analysis.
-  Chunk: moatless/epic_split.py::2
-  Chunk: moatless/ingest.py::2
+Cluster: Comprehensive Code Indexing and Search Infrastructure
+Summary:
+ This code cluster implements a robust system for indexing, persisting, and searching code repositories using vector stores. It utilizes SimpleFaissVectorStore for embedding management, supports semantic search across code, summaries, and clusters, and provides facilities for storing metadata and search results persistently.
+Imports:
+ From: index/simple_faiss.py::1
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+ - VectorStoreType
+From: index/types.py::2
+ - SearchCodeResponse
+From: moatless/repository.py::5
+ - FileRepository
+From: index/simple_faiss.py::2
+ - SimpleFaissVectorStore
+ - SimpleFaissVectorStore
+ - SimpleFaissVectorStore
 
-Cluster Python Codebase Structure and Authentication Handling
-Summary: This code cluster encompasses several modules that handle Python code parsing, user authentication, health checks, and data storage. The 'ts.py' module utilizes the Tree Sitter library for parsing Python code, while 'auth/models.py' defines data models for user authentication and management. 'chunkers/python.py' provides functions for extracting context from code chunks. 'health/views.py' implements a health check endpoint using FastAPI, and 'stores/base.py' outlines an abstract base class for vector storage. Finally, 'src/models.py' contains data models and utility classes for handling timestamps, metadata, and function contexts.
-  Chunk: rtfs_rewrite/ts.py::1
-  Chunk: auth/models.py::4
-  Chunk: chunkers/python.py::2
-  Chunk: health/views.py::1
-  Chunk: stores/base.py::1
-  Chunk: src/models.py::1
+Chunks (7):
+- index/code_index.py::3
+- index/code_index.py::5
+- index/code_index.py::10
+- index/code_index.py::16
+- index/code_index.py::23
+- index/simple_faiss.py::1
+- index/simple_faiss.py::2
 
-Cluster User Authentication and Repository Management
-Summary: This code cluster handles user authentication, permission management, and repository operations in a web application. It defines user models, manages user sessions and permissions, and provides endpoints for user registration, login, and repository management, including listing, retrieving, summarizing, and deleting repositories.
-  Chunk: auth/models.py::2
-  Chunk: auth/permissions.py::1
-  Chunk: auth/service.py::1
-  Chunk: auth/service.py::3
-  Chunk: auth/views.py::1
-  Chunk: auth/views.py::2
-  Chunk: auth/views.py::3
-  Chunk: chat/views.py::2
-  Chunk: chat/views.py::3
-  Chunk: database/core.py::3
-  Chunk: queue/core.py::4
-  Chunk: queue/permissions.py::1
-  Chunk: queue/views.py::1
-  Chunk: queue/views.py::2
-  Chunk: repo/service.py::1
-  Chunk: repo/service.py::3
-  Chunk: repo/views.py::3
-  Chunk: repo/views.py::4
-  Chunk: repo/views.py::5
-  Chunk: repo/views.py::6
-  Chunk: repo/views.py::7
-  Chunk: search/views.py::2
+Cluster: Advanced Code Search and Indexing
+Summary:
+ This cluster represents an advanced code search and indexing feature within a codebase, implemented through the 'CodeIndex' class. It provides functionalities to search for code snippets, classes, and functions using both name-based and semantic search methods, while also handling file patterns and excluding test files. The feature efficiently maps search results to their corresponding spans and supports both approximate and exact match queries, providing detailed results encapsulated in 'SearchCodeHit' and 'SearchCodeResponse' classes.
+Imports:
+ From: index/types.py::2
+ - SearchCodeResponse
+ - SearchCodeResponse
+ - SearchCodeResponse
+ - SearchCodeHit
+ - SearchCodeResponse
+ - SearchCodeResponse
+ - SearchCodeHit
+ - SearchCodeResponse
+ - SearchCodeResponse
+ - SearchCodeResponse
+ - SearchCodeHit
+ - SearchCodeResponse
+From: moatless/repository.py::5
+ - FileRepository
+From: index/simple_faiss.py::1
+ - VectorStoreType
 
-Cluster Walkthrough Chat Generation and Management
-Summary: This code cluster focuses on generating and managing walkthrough chats within a chat application. It includes functions for creating walkthrough chats from model transitions, defining data structures to manage chat metadata, and ensuring the integrity of chat data through validation mechanisms. The code uses classes and methods to define chat message types, handle data validation, and ensure proper chat transitions and metadata management.
-  Chunk: lmp/walkthrough.py::7
-  Chunk: chat/models.py::2
-  Chunk: chat/models.py::3
-  Chunk: chat/models.py::4
-  Chunk: repo/models.py::4
+Chunks (8):
+- index/code_index.py::6
+- index/code_index.py::7
+- index/code_index.py::8
+- index/code_index.py::9
+- index/code_index.py::11
+- index/code_index.py::12
+- index/code_index.py::13
+- index/types.py::2
 
-Cluster Code Clustering and Evaluation Framework
-Summary: This collection of code chunks provides a comprehensive framework for clustering code snippets into cohesive topics and evaluating their coherence within a codebase. It includes functions to convert raw clusters into structured topics, generate clusters using language models, evaluate cluster coherence on a scale, and calculate perplexity scores for model predictions, facilitating both the organization and assessment of code clustering methodologies.
-  Chunk: chunk/adapter.py::1
-  Chunk: lmp/cluster_v4.py::5
-  Chunk: cluster/models.py::1
-  Chunk: evals/eval_cluster.py::2
-  Chunk: evals/eval_compare.py::1
-  Chunk: lmps/eval_coherence.py::1
-  Chunk: lmps/eval_coherence.py::2
-  Chunk: lmp_base/logprobs.py::1
-  Chunk: lmp_base/logprobs.py::2
+Cluster: Code Vector Search and Clustering
+Summary:
+ This code cluster implements a vector-based search functionality for code snippets, allowing for searching within a codebase either by specific queries or by clustering similar code sections. The 'CodeIndex' class provides methods for searching individual code snippets and clusters, utilizing metadata filters and embeddings to refine search results, while the 'CodeSnippet' data structure encapsulates details about each code snippet found, such as file path, content, and metadata like tokens and span IDs.
+Imports:
+ From: index/types.py::1
+ - CodeSnippet
+ - CodeSnippet
 
-Cluster Codebase Chunking and Summarization System
-Summary: This feature implements a system for chunking code repositories into manageable segments and generating summaries for these chunks. It includes classes and functions for defining chunking strategies, creating and managing code indices, defining tasks and their statuses, and summarizing the content to provide insights and statistics on the codebase.
-  Chunk: chunk/chunk.py::2
-  Chunk: chunk/summarizer.py::1
-  Chunk: index/service.py::1
-  Chunk: queue/models.py::1
-  Chunk: repo/graph.py::3
-  Chunk: repo/tasks.py::1
+Chunks (3):
+- index/code_index.py::17
+- index/code_index.py::18
+- index/types.py::1
 
-Cluster Automated Code Clustering and Summarization Framework
-Summary: This code defines a framework for creating and managing clusters of code chunks from a larger codebase. It includes functionality for generating, summarizing, and evaluating clusters using various strategies, such as full code, random sampling, and summarization. The framework utilizes multithreading for efficient processing and leverages language models to generate summaries and identify irrelevant code chunks.
-  Chunk: chunk/chunk.py::5
-  Chunk: lmp/sum_chunks.py::1
-  Chunk: cluster/cluster_v1.py::2
-  Chunk: cluster/cluster_v1.py::7
-  Chunk: cluster/cluster_v1.py::8
-  Chunk: cluster/cluster_v1.py::10
-  Chunk: lmp/remove_chunks.py::1
-  Chunk: evals/eval_cluster.py::5
-  Chunk: llm/invoke_mt.py::1
-  Chunk: src/utils.py::1
+Cluster: Code Node Hashing and Splitting
+Summary:
+ This code defines a system for hashing code nodes to minimize unnecessary changes and splitting code into manageable chunks for processing. The 'CodeNode' class generates a unique hash excluding certain metadata fields, while the 'EpicSplitter' class handles the division of code into nodes, maintaining metadata such as line numbers and tokens for each chunk.
+Imports:
+ From: index/code_node.py::1
+ - CodeNode
 
-Cluster Configuration and Language Support for Code Chunkers
-Summary: This code defines a configuration setup for a software project, including environment variables, API keys, database connections, and directories for code search functionalities. It also specifies language support for chunkers, currently supporting Python, through an enumeration class and a dictionary mapping.
-  Chunk: chunkers/__init__.py::1
-  Chunk: src/config.py::1
+Chunks (2):
+- index/code_node.py::1
+- index/epic_split.py::8
 
-Cluster File Classification and Directory Tree Management
-Summary: This code cluster is responsible for classifying files within a directory based on predefined categories. It includes generating a visual representation of the directory structure, filtering out excluded files, and iteratively classifying the remaining files using a language model. The system updates its state to manage the classification process and handles permission errors gracefully during tree generation.
-  Chunk: chunk/classify_files.py::1
-  Chunk: lmp/classify_tree.py::1
-  Chunk: tree/tree.py::2
+Cluster: Agentic Loop Execution and Error Handling Framework
+Summary:
+ This code cluster provides a comprehensive framework for executing and monitoring loops with cost and retry constraints, defining trajectory transitions, and parsing validation errors. The 'AgenticLoop' class manages the execution flow, while the 'Trajectory' class tracks state transitions. The 'Response' and 'VerificationError' classes model responses and errors, and 'MavenVerifier' parses compilation and test errors from Maven outputs.
+Imports:
+ From: moatless/types.py::4
+ - Response
+ - Response
+ - Response
+ - VerificationError
+ - VerificationError
+From: moatless/trajectory.py::2
+ - Trajectory
+From: moatless/state.py::2
+ - Finished
 
-Cluster Code Summarization and Metadata Management
-Summary: The code primarily focuses on generating detailed code summaries and managing metadata for code chunks. It defines a process that utilizes a language model to convert raw summaries into structured descriptions, and it uses data classes to facilitate the handling and conversion of metadata related to code chunks.
-  Chunk: lmp/summarize.py::2
-  Chunk: src/models.py::2
+Chunks (5):
+- moatless/loop.py::5
+- moatless/trajectory.py::2
+- moatless/types.py::4
+- verify/maven.py::2
+- verify/maven.py::3
 
-Cluster Code Chunk Clustering and Enrichment System
-Summary: This feature provides an abstraction for handling code chunks, defining a structure for input processing and clustering. It includes a mechanism to generate clusters from a list of code chunks using specified operations and allows for additional enrichment procedures on the clustered data.
-  Chunk: chunk/models.py::1
-  Chunk: cluster/cluster.py::2
+Cluster: Model Abstraction and Query Execution for AI Language Models
+Summary:
+ This set of code chunks implements the abstraction of AI language models by defining classes for specific models (Anthropic and OpenAI) with their respective configurations and cost structures. It includes a function to generate summaries by querying these models, allowing dynamic interaction through API calls based on the specified model and parameters.
+Imports:
+ From: summary/models.py::1
+ - ModelArguments
+ - ModelArguments
+From: summary/models.py::7
+ - OpenAIModel
+From: summary/models.py::5
+ - AnthropicModel
 
-Cluster Enhanced Multi-Step Clustering with LLM
-Summary: This feature implements a series of functions for multi-step clustering using a language model, enhancing the ability to generate clusters from input data with various levels of structure. Different versions of the clustering function are provided, each improving on the previous by introducing capabilities such as identifying specific data structures and logic types, tracking unique and total clustered chunks, and calculating session costs to optimize clustering performance.
-  Chunk: cluster/cluster_v1.py::4
-  Chunk: cluster/cluster_v1.py::5
-  Chunk: cluster/cluster_v1.py::6
-  Chunk: lmp/cluster_v4.py::1
-  Chunk: llm/utils.py::4
+Chunks (4):
+- summary/models.py::1
+- summary/models.py::5
+- summary/models.py::7
+- summary/summarize.py::2
 
-Cluster Repository and User Interaction Management
-Summary: This feature manages the configuration and interactions of repositories within the codebase. It defines a SQLAlchemy model for repositories, capturing metadata like owner, size, and file paths, and facilitates user-repo relationships, while also providing a script for querying repositories associated with a specific user by email.
-  Chunk: repo/models.py::1
-  Chunk: scripts/get_users.py::1
+Cluster: Scope Graph Construction for Source Code Analysis
+Summary:
+ This code defines the 'build_scope_graph' function, which constructs a 'ScopeGraph' from source code bytes for a specified programming language, primarily Python. It parses the source code, captures definitions, references, scopes, imports, and function calls, and organizes them into a structured graph representation for further analysis.
+Imports:
+ From: scope_resolution/scope.py::1
+ - Scoping
+ - Scoping
+ - LocalScope
+From: rtfs/utils.py::2
+ - TextRange
+ - TextRange
+From: scope_resolution/scope_graph.py::2
+ - ScopeGraph
+ - ScopeGraph
+From: ts/capture_types.py::1
+ - LocalDefCapture
+ - LocalDefCapture
+ - LocalRefCapture
+ - LocalImportPartCapture
+ - LocalCallCapture
 
-Cluster Git Repository Management and Database Table Operations
-Summary: This code cluster manages Git repository operations, including cloning and deleting repositories using the 'GitRepo' class, and provides a command-line interface for database table operations, specifically for dropping tables and cleaning up associated Git repositories. The functionality is integrated with SQLAlchemy for database interactions and uses Click for command-line command definitions.
-  Chunk: repo/repository.py::3
-  Chunk: scripts/drop_tables.py::1
+Chunks (1):
+- rtfs/build_scopes.py::2
 
-Cluster Repository Deletion and Cleanup
-Summary: This code handles the deletion of a repository from a database and the associated file system cleanup. The `delete` function in `repo/service.py` removes a repository from the database and deletes its files if it's the last user. The `rm_tree` function in `src/utils.py` ensures cross-platform deletion of files and directories, handling retries for Windows systems.
-  Chunk: repo/service.py::2
-  Chunk: src/utils.py::3
+Cluster: Scope Graph Construction for Python Code
+Summary:
+ These code chunks are responsible for constructing a scope graph from Python source code. They parse import statements, definitions, references, and function calls from the source code and insert them into a ScopeGraph, which helps in analyzing the code structure and scoping rules.
+Imports:
+ From: scope_resolution/definition.py::1
+ - LocalDef
+ - LocalDef
+From: scope_resolution/imports.py::1
+ - parse_from
+ - parse_name
+ - parse_from
+ - parse_name
 
-Cluster Scope Graph Construction and Management
-Summary: This code cluster is responsible for constructing and managing a 'Scope Graph' within a codebase, which involves parsing source code to identify scopes, definitions, imports, and references. It provides mechanisms to insert and manage these elements in a hierarchical graph structure, thereby facilitating efficient scope resolution and reference management across different parts of the code.
-  Chunk: new_rtfs/build_scopes.py::2
-  Chunk: scope_graph/graph.py::2
-  Chunk: scope_graph/graph.py::3
-  Chunk: scope_graph/graph.py::4
-  Chunk: scope_graph/graph.py::5
-  Chunk: scope_graph/graph.py::6
-  Chunk: scope_graph/graph.py::7
-  Chunk: scope_graph/graph.py::8
-  Chunk: scope_graph/graph.py::9
+Chunks (3):
+- new_rtfs/build_scopes.py::3
+- rtfs/build_scopes.py::3
+- scope_resolution/imports.py::1
 
-Cluster Scope Graph Management and Representation
-Summary: These code chunks define the 'ScopeGraph' class, which is responsible for managing and representing scope-related information within a codebase. It provides methods to retrieve and manipulate scopes, imports, definitions, references, and their relationships, as well as a function to output a string representation of the graph's structure.
-  Chunk: scope_graph/graph.py::10
-  Chunk: scope_graph/graph.py::11
+Cluster: Python Import Analysis and Resolution Module
+Summary:
+ This code defines a framework for analyzing and resolving Python import statements, incorporating classes and protocols for capturing import details, validating import declarations, and resolving import paths. It includes Python-specific implementations to parse, validate, and resolve imports, while taking into account Python's unique import characteristics like future imports, relative imports, and module path resolution.
+Imports:
+ From: captures/imports.py::1
+ - ImportDeclaration
+ - ImportDeclaration
+ - ImportDeclaration
 
-Cluster Scope Resolution and Interval Management in Abstract Syntax Trees
-Summary: This feature defines classes and methods for managing nodes and edges within an abstract syntax tree (AST) using scope resolution and interval trees. It includes definitions of node and edge kinds for different code elements, a ScopeNode class representing nodes with various properties, and an IntervalGraph class that manages scope intervals using an interval tree to efficiently check for overlapping and contained scopes.
-  Chunk: scope_resolution/graph_types.py::1
-  Chunk: scope_resolution/interval_tree.py::1
+Chunks (4):
+- captures/imports.py::1
+- language/python.py::1
+- language/python.py::3
+- language/python.py::4
 
-Cluster Symbol Reference and Definition Management
-Summary: This cluster of code implements classes and functions for managing symbol references and definitions within a source code, specifically capturing their text ranges and identifiers. It includes the creation of 'Reference' and 'LocalDef' objects, as well as a function to extract such references from source code using language-specific parsers.
-  Chunk: scope_resolution/capture_refs.py::1
-  Chunk: scope_resolution/definition.py::1
-  Chunk: scope_resolution/reference.py::1
+Cluster: Code Chunk Graph Processing and Clustering
+Summary:
+ This code feature focuses on processing and clustering code chunks by creating a graph representation of code elements and their relationships. It involves parsing code into chunks, representing them as nodes in a graph, and establishing edges based on references within the code. The feature utilizes both Tree-sitter for syntax parsing and NetworkX for graph manipulation, and it includes functionality for serializing and deserializing graph data, clustering the graph, and generating summaries of the code structure.
+Imports:
+ From: chunk/models.py::2
+ - CodeChunk
+From: chunk_resolution/chunk_graph.py::2
+ - ChunkGraph
+ - ChunkGraph
+From: aider_graph/aider_graph.py::1
+ - AiderGraph
+ - AiderGraph
+ - AiderGraph
+From: index/code_index.py::2
+ - CodeIndex
+From: cluster/cluster_graph.py::2
+ - ClusterGraph
+ - ClusterGraph
+From: chunk_resolution/graph.py::2
+ - ChunkNode
+ - ChunkNode
+From: cluster/graph.py::1
+ - ClusterNode
+From: src/models.py::3
+ - CodeChunk
+From: src/models.py::2
+ - ChunkMetadata
+ - ChunkMetadata
+ - CodeSummary
+ - CodeSummary
+From: rtfs_rewrite/ts.py::1
+ - cap_ts_queries
+ - TSLangs
+From: src/utils.py::3
+ - rm_tree
 
-Cluster Scope Graph Management for Code Resolution
-Summary: This code implements a system for managing and resolving scopes, definitions, imports, references, and calls within a codebase using a directed graph structure (ScopeGraph). It allows for the organization and hierarchical representation of code elements, facilitating efficient scope resolution and referencing by maintaining relationships between nodes such as definitions, imports, and references.
-  Chunk: scope_resolution/scope.py::1
-  Chunk: scope_resolution/scope_graph.py::2
-  Chunk: scope_resolution/scope_graph.py::3
-  Chunk: scope_resolution/scope_graph.py::4
-  Chunk: scope_resolution/scope_graph.py::5
-  Chunk: scope_resolution/scope_graph.py::6
-  Chunk: scope_resolution/scope_graph.py::7
-  Chunk: scope_resolution/scope_graph.py::8
-  Chunk: scope_resolution/scope_graph.py::9
-  Chunk: scope_resolution/scope_graph.py::10
-  Chunk: scope_resolution/scope_graph.py::11
+Chunks (8):
+- aider_graph/aider_graph.py::1
+- cluster/cluster_graph.py::2
+- rtfs_rewrite/ts.py::1
+- chunkers/python.py::4
+- lmp/summarize.py::2
+- cluster/cluster_v1.py::9
+- src/models.py::2
+- repo/graph.py::2
 
-Cluster Scope and Repository Graph Testing Suite
-Summary: This code snippet is part of a testing suite designed to evaluate the functionality of scope graph and repository graph construction in Python. It utilizes the 'build_scope_graph' function to create a scope graph from a Python code string and potentially checks for missing imports in a repository graph, highlighting areas where the code may fail.
-  Chunk: tests/simple_test.py::1
+Cluster: Graph-Based Code Chunking and Clustering System
+Summary:
+ This set of code implements a system for analyzing and clustering code repositories using graph structures. It involves constructing a graph from code chunks, clustering them using algorithms like Infomap, and summarizing clusters with models like OpenAI's GPT variants. The system handles file operations, scope management, and import resolution to support its graph-based analysis.
+Imports:
+ From: rtfs/fs.py::1
+ - RepoFs
+ - RepoFs
+ - RepoFs
+From: chunk_resolution/chunk_graph.py::2
+ - ChunkGraph
+From: rtfs/utils.py::2
+ - TextRange
+From: rtfs/models.py::3
+ - BaseModel
+From: cluster/graph.py::1
+ - ClusterNode
+From: cluster/infomap.py::1
+ - cluster_infomap
+From: rtfs/graph.py::2
+ - CodeGraph
+ - CodeGraph
+From: rtfs/models.py::7
+ - OpenAIModel
+From: repo_resolution/repo_graph.py::2
+ - RepoGraph
 
-Cluster Local Code Element Captures and Import Part Types
-Summary: This cluster defines several dataclasses to capture various local code elements such as function calls, definitions, and references within a codebase. It also includes an enumeration to categorize different types of import parts, facilitating structured representation and handling of these elements in the code.
-  Chunk: ts/capture_types.py::1
+Chunks (10):
+- chunk_resolution/chunk_graph.py::2
+- rtfs/chunker.py::2
+- cluster/cluster_graph.py::4
+- cluster/infomap.py::1
+- rtfs/fs.py::1
+- rtfs/graph.py::2
+- rtfs/models.py::3
+- rtfs/models.py::7
+- repo_resolution/repo_graph.py::2
+- repo_resolution/repo_graph.py::5
 
-Cluster TextRange Class for Text Span Manipulation
-Summary: The TextRange class defines a data structure for representing a span within a text file, marked by byte offsets and point coordinates. It includes validation for its attributes, methods for adjusting the range through offsets, and comparison functionality to determine if one range contains another or overlaps in terms of line numbers.
-  Chunk: rtfs/utils.py::2
+Cluster: Chunk Import-Export Mapping in Graphs
+Summary:
+ This code is responsible for building import-to-export mappings within chunks of code and creating edges in a graph to represent these relationships. It uses references and scopes to determine how code chunks are related in terms of imports and exports, employing constructs like `ScopeGraph`, `ChunkGraph`, and `RepoGraph` to facilitate this mapping.
+Imports:
+ From: repo_resolution/repo_graph.py::1
+ - repo_node_id
 
-Cluster Export Extraction from Scope Graph
-Summary: This code defines a method within the RepoGraph class that extracts exportable definitions (classes and functions) from a given scope graph, ignoring non-class/function definitions at the root scope, and returns them as a list of tuples containing their names and scope identifiers.
-  Chunk: repo_resolution/repo_graph.py::7
+Chunks (2):
+- chunk_resolution/chunk_graph.py::5
+- repo_resolution/repo_graph.py::1
 
-Cluster LocalCall Class Definition and Node Representation
-Summary: This code defines a data class named LocalCall, which represents a function call with attributes for its text range, name, and parameters. It provides an initialization method and a to_node method that converts the object into a dictionary format suitable for node representation.
-  Chunk: scope_resolution/call.py::1
+Cluster: Chunk Management and Contextual Representation
+Summary:
+ This code cluster focuses on handling and representing code chunks, including their identification, context extraction, and metadata management. It includes classes and functions for defining chunk graphs, user models, chunk context nodes, and vector storage, as well as utility models for timestamps, success responses, and type annotations.
+Imports:
+ From: chunk/models.py::2
+ - CodeChunk
+From: rtfs_rewrite/ts.py::1
+ - cap_ts_queries
+ - TSLangs
+From: rtfs/utils.py::2
+ - TextRange
+From: src/models.py::1
+ - RTFSBase
+ - RTFSBase
+ - ChunkContext
+ - ScopeType
+ - ChunkContext
+ - ScopeType
+ - FunctionContext
+ - ChunkType
+ - HTTPSuccess
+ - MetadataType
+
+Chunks (7):
+- chunk_resolution/chunk_graph.py::6
+- auth/models.py::4
+- chunkers/python.py::2
+- chunk/models.py::2
+- health/views.py::1
+- stores/base.py::1
+- src/models.py::1
+
+Cluster: Chunk Graph Representation and JSON Traversal
+Summary:
+ This feature defines functionality for converting clusters within a ChunkGraph to a string format, utilizing a depth-first search (DFS) to traverse JSON representations of tree structures. It includes utility imports and classes to facilitate JSON handling and logging.
+Imports:
+ From: rtfs/utils.py::1
+ - dfs_json
+
+Chunks (2):
+- chunk_resolution/chunk_graph.py::9
+- rtfs/utils.py::1
+
+Cluster: ChunkGraph Generation and CLI Interaction
+Summary:
+ These code chunks facilitate the creation and manipulation of a ChunkGraph from a given repository path. The first chunk defines a function to categorize and process files in a repository, while the second chunk provides a command-line interface for generating, clustering, and outputting the ChunkGraph in various formats, with options for user interaction and output customization.
+Imports:
+ From: rtfs/chunker.py::1
+ - chunk
+
+Chunks (2):
+- rtfs/chunker.py::1
+- rtfs/cli.py::3
+
+Cluster: Cluster Path Analysis and Management
+Summary:
+ This feature provides functionality to analyze and manage paths within a cluster graph structure. It includes the ability to find the longest paths between clusters, manage cluster path segments, and ensure unique path identification through hashing and equality checks.
+Imports:
+ From: cluster/path.py::3
+ - ClusterPath
+
+Chunks (2):
+- cluster/cluster_graph.py::10
+- cluster/path.py::3
+
+Cluster: Import Resolution and Namespace Management
+Summary:
+ This code cluster focuses on resolving import statements and managing namespaces within a repository. It includes classes and functions that handle the conversion of import statements into structured import objects, determine the type of modules (system, third-party, or local), manage namespace hierarchies, and construct graphs representing code scopes and imports.
+Imports:
+ From: repo_resolution/namespace.py::1
+ - NameSpace
+ - NameSpace
+ - NameSpace
+ - NameSpace
+From: rtfs/fs.py::1
+ - RepoFs
+ - RepoFs
+From: scope_resolution/scope_graph.py::2
+ - ScopeGraph
+ - ScopeGraph
+From: rtfs/utils.py::2
+ - TextRange
+ - TextRange
+From: scope_resolution/interval_tree.py::1
+ - IntervalGraph
+From: scope_resolution/graph_types.py::1
+ - ScopeNode
+ - ScopeNode
+ - NodeKind
+From: rtfs/utils.py::4
+ - SysModules
+ - SysModules
+From: scope_resolution/imports.py::2
+ - LocalImportStmt
+From: rtfs/utils.py::5
+ - ThirdPartyModules
+ - ThirdPartyModules
+
+Chunks (9):
+- repo_resolution/exports.py::1
+- repo_resolution/imports.py::2
+- repo_resolution/imports.py::3
+- repo_resolution/namespace.py::1
+- repo_resolution/repo_graph.py::6
+- scope_resolution/imports.py::2
+- scope_resolution/scope_graph.py::2
+- rtfs/utils.py::4
+- rtfs/utils.py::5
+
+Cluster: Document Chunking and Ingestion Strategy
+Summary:
+ This code defines a system for splitting and processing both code and non-code documents into manageable chunks for further processing or analysis. It includes the 'EpicSplitter' class, which handles the splitting logic based on various parameters, and an 'ingest' function that reads files from a repository, applies the 'EpicSplitter', and returns the processed document nodes.
+Imports:
+ From: codeblocks/codeblocks.py::9
+ - CodeBlock
+From: moatless/epic_split.py::2
+ - EpicSplitter
+
+Chunks (2):
+- moatless/epic_split.py::2
+- moatless/ingest.py::2
+
+Cluster: User and Repository Management System
+Summary:
+ This cluster of code is responsible for managing user accounts and their associated repositories in a software application. It includes user authentication features, repository retrieval, deletion, listing, and content management functions, as well as utility functions for handling file system operations.
+Imports:
+ From: src/models.py::1
+ - TimeStampMixin
+From: auth/models.py::2
+ - User
+ - User
+ - User
+ - User
+From: src/utils.py::3
+ - rm_tree
+ - rm_tree
+ - rm_tree
+
+Chunks (5):
+- auth/models.py::2
+- repo/service.py::1
+- repo/service.py::2
+- repo/service.py::3
+- src/utils.py::3
+
+Cluster: User Authentication and Authorization System
+Summary:
+ This cluster of code implements a user authentication and authorization system within a web application framework. It manages user registration, login, and permission verification using JWT tokens and database sessions, ensuring secure access to various endpoints based on user roles and credentials.
+Imports:
+ From: moatless/workspace.py::2
+ - Workspace
+From: auth/service.py::3
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - store_oai_key
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+ - get_current_user
+From: src/models.py::1
+ - HTTPSuccess
+ - HTTPSuccess
+ - HTTPSuccess
+ - HTTPSuccess
+From: auth/models.py::2
+ - User
+From: queue/core.py::4
+ - get_queue
+ - get_queue
+ - get_queue
+ - get_queue
+ - get_queue
+From: database/core.py::3
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+ - get_db
+From: auth/service.py::1
+ - get_by_email
+ - create
+ - get
+ - get
+From: moatless/repository.py::5
+ - FileRepository
+From: repo/models.py::4
+ - RepoGetRequest
+From: index/service.py::1
+ - get_or_create_index
+
+Chunks (19):
+- auth/permissions.py::1
+- auth/service.py::1
+- auth/service.py::3
+- auth/views.py::1
+- auth/views.py::2
+- auth/views.py::3
+- chat/views.py::2
+- chat/views.py::3
+- database/core.py::3
+- queue/core.py::4
+- queue/permissions.py::1
+- queue/views.py::1
+- queue/views.py::2
+- repo/views.py::3
+- repo/views.py::4
+- repo/views.py::5
+- repo/views.py::6
+- repo/views.py::7
+- search/views.py::2
+
+Cluster: Codebase Transition and Task Management System
+Summary:
+ This feature facilitates the transition between code clusters in a codebase, handles exceptions, and manages task execution. It includes generating chat transitions using an LLM model, defining custom exceptions for client and LLM errors, managing task statuses and execution, and creating and configuring repositories with indexing and graph creation functionalities.
+Imports:
+ From: queue/models.py::1
+ - Task
+ - TaskType
+ - TaskType
+From: auth/service.py::3
+ - get_current_user
+From: queue/core.py::4
+ - get_queue
+From: database/core.py::3
+ - get_db
+From: cluster/cluster_graph.py::2
+ - ClusterGraph
+From: src/exceptions.py::1
+ - LLMException
+ - ClientActionException
+ - ClientActionException
+ - ClientActionException
+From: repo/tasks.py::1
+ - InitIndexGraphTask
+ - IndexGraphResponse
+From: index/service.py::1
+ - get_or_create_index
+From: queue/service.py::1
+ - enqueue_task_and_wait
+
+Chunks (5):
+- lmp/walkthrough.py::5
+- src/exceptions.py::1
+- queue/models.py::1
+- repo/tasks.py::1
+- repo/views.py::2
+
+Cluster: Walkthrough Chat Generation and Validation
+Summary:
+ This feature is responsible for generating and validating walkthrough chat messages based on model transitions and matched clusters. It includes code for creating and processing chat messages, ensuring data integrity through validators, and structuring responses for walkthroughs, which are used for guiding users through a series of model-generated interactions.
+Imports:
+ From: repo/models.py::4
+ - RepoGetRequest
+ - RepoGetRequest
+From: chat/models.py::3
+ - WalkthroughData
+From: src/models.py::1
+ - RTFSBase
+From: chat/models.py::4
+ - WalkthroughChat
+
+Chunks (5):
+- lmp/walkthrough.py::7
+- chat/models.py::2
+- chat/models.py::3
+- chat/models.py::4
+- repo/models.py::4
+
+Cluster: Code Clustering and Evaluation Module
+Summary:
+ This section of the codebase is responsible for clustering code chunks into related topics and evaluating their coherence and functionality. It includes functions for converting clusters, generating clusters using different methodologies, evaluating clusters based on file distribution and coherence, and managing log probabilities to assess cluster quality.
+Imports:
+ From: chunk/models.py::2
+ - CodeChunk
+From: lmp_base/logprobs.py::2
+ - LogProbLMP
+ - LogProbLMP
+ - LogProbLMP
+From: lmps/eval_coherence.py::2
+ - eval_coherence_single
+ - eval_coherence_single
+From: lmp_base/logprobs.py::1
+ - LogProbs
+From: cluster/models.py::1
+ - ClusteredTopic
+ - ClusteredTopic
+ - ClusteredTopic
+ - ClusteredTopic
+ - ClusteredTopic
+
+Chunks (9):
+- chunk/adapter.py::1
+- lmp/cluster_v4.py::5
+- cluster/models.py::1
+- evals/eval_cluster.py::2
+- evals/eval_compare.py::1
+- lmps/eval_coherence.py::1
+- lmps/eval_coherence.py::2
+- lmp_base/logprobs.py::1
+- lmp_base/logprobs.py::2
+
+Cluster: Code Chunking and Summarization Feature
+Summary:
+ The code provides a framework for chunking code repositories and optionally summarizing these chunks. It includes a base class `ChunkStrategy` for defining chunking strategies, and a function `summarize` that utilizes a language model to generate summaries for each code chunk, enhancing the analysis and understanding of large repositories.
+Imports:
+ From: index/service.py::1
+ - get_or_create_index
+From: chunk/summarizer.py::1
+ - summarize
+ - summarize
+ - summarize
+
+Chunks (2):
+- chunk/chunk.py::2
+- chunk/summarizer.py::1
+
+Cluster: Code Clustering and Summarization Framework
+Summary:
+ This code cluster involves a framework for generating, summarizing, and evaluating clusters of code chunks. It includes functions for chunking code, generating different types of clusters (full, summarized, random), summarizing code chunks using a language model, removing irrelevant chunks from clusters, and evaluating clusters based on coherence. The framework utilizes multithreading for efficient processing and includes utilities for token counting and logging.
+Imports:
+ From: llm/invoke_mt.py::1
+ - invoke_multithread
+ - invoke_multithread
+From: cluster/cluster_v1.py::8
+ - generate_summarized_clusters
+From: lmp/remove_chunks.py::1
+ - remove_chunks
+From: cluster/cluster_v1.py::7
+ - generate_full_code_clusters
+From: cluster/cluster_v1.py::10
+ - generate_random_clusters
+From: cluster/cluster_v1.py::9
+ - generate_graph_clusters
+From: lmp/sum_chunks.py::1
+ - summarize_chunk
+ - summarize_chunk
+From: src/utils.py::1
+ - num_tokens_from_string
+ - num_tokens_from_string
+ - num_tokens_from_string
+
+Chunks (10):
+- chunk/chunk.py::5
+- lmp/sum_chunks.py::1
+- cluster/cluster_v1.py::2
+- cluster/cluster_v1.py::7
+- cluster/cluster_v1.py::8
+- cluster/cluster_v1.py::10
+- lmp/remove_chunks.py::1
+- evals/eval_cluster.py::5
+- llm/invoke_mt.py::1
+- src/utils.py::1
+
+Cluster: Configuration and Initialization for Python Code Chunking and Environment Setup
+Summary:
+ This cluster of code is responsible for configuring the environment settings and initializing the chunking mechanism for Python code. It defines the configuration parameters such as database credentials, API keys, and file paths necessary for the application, while also setting up the Python chunker in a dictionary keyed by supported languages.
+Imports:
+ From: src/config.py::1
+ - SUPPORTED_LANGS
+
+Chunks (2):
+- chunkers/__init__.py::1
+- src/config.py::1
+
+Cluster: File Classification and Directory Tree Generator
+Summary:
+ This code cluster focuses on classifying files within a directory structure, leveraging a tree generation utility and a classification model. The process involves generating a directory tree, classifying files based on predefined categories using a machine learning model, and iteratively refining the classification by excluding already classified files.
+Imports:
+ From: lmp/classify_tree.py::1
+ - classify_tree
+From: tree/tree.py::2
+ - generate_tree
+
+Chunks (3):
+- chunk/classify_files.py::1
+- lmp/classify_tree.py::1
+- tree/tree.py::2
+
+Cluster: Cluster Management and Strategy Implementation
+Summary:
+ This feature involves the definition of a base class for cluster inputs and the implementation of a strategy pattern for clustering code chunks. The `ClusterInput` abstract base class outlines the structure for obtaining chunk information, while the `ClusterStrategy` class manages a collection of code chunks and applies specified operations to generate clusters and enrich them with additional data.
+Imports:
+ From: chunk/models.py::1
+ - ClusterInput
+
+Chunks (2):
+- chunk/models.py::1
+- cluster/cluster.py::2
+
+Cluster: Multi-Step Clustering with LLM Support
+Summary:
+ This feature implements a multi-step clustering mechanism using Language Model (LLM) support, focusing on grouping input data into clusters by identifying centroids and specific chunk types like data structures and logic. It includes methods for generating structured and unstructured clusters, tracking unclassified chunks, calculating session costs, and supporting different versions of clustering processes with enhanced data and logic type identification.
+Imports:
+ From: lmp/cluster_v4.py::1
+ - ChunkType
+ - ChunkType
+From: llm/utils.py::4
+ - get_session_cost
+ - get_session_cost
+
+Chunks (5):
+- cluster/cluster_v1.py::4
+- cluster/cluster_v1.py::5
+- cluster/cluster_v1.py::6
+- lmp/cluster_v4.py::1
+- llm/utils.py::4
+
+Cluster: Repository Configuration and User Retrieval Feature
+Summary:
+ This feature involves managing repository configurations and retrieving user-specific repository information. It defines a 'Repo' class in the 'models.py' to store repository details and relationships, and a script in 'get_users.py' to fetch repositories associated with a specific user from the database.
+Imports:
+ From: auth/service.py::1
+ - get_by_email
+From: repo/models.py::1
+ - Repo
+ - Repo
+
+Chunks (2):
+- repo/models.py::1
+- scripts/get_users.py::1
+
+Cluster: Git Repository Management and Database Interaction
+Summary:
+ This code cluster provides functionalities for managing Git repositories and interacting with a database. It includes a 'GitRepo' class for handling Git operations like cloning and deleting repositories, and a script for dropping tables and clearing related repository data from the database using SQLAlchemy and Click.
+Imports:
+ From: repo/repository.py::3
+ - GitRepo
+
+Chunks (2):
+- repo/repository.py::3
+- scripts/drop_tables.py::1
+
+Cluster: Scope Graph Construction and Manipulation
+Summary:
+ This cluster of code is responsible for building and manipulating a scope graph, which represents code structure for a given source file. It includes functionality for capturing local definitions, references, scopes, imports, and calls, and inserting them into the scope graph with various relationships, enabling efficient scope and reference resolution.
+Imports:
+ From: rtfs/utils.py::2
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+From: scope_resolution/scope_graph.py::2
+ - ScopeGraph
+ - ScopeGraph
+From: scope_resolution/interval_tree.py::1
+ - IntervalGraph
+ - IntervalGraph
+From: scope_resolution/scope.py::1
+ - Scoping
+ - Scoping
+ - LocalScope
+ - LocalScope
+ - LocalScope
+From: scope_resolution/definition.py::1
+ - LocalDef
+ - LocalDef
+ - LocalDef
+ - LocalDef
+ - LocalDef
+ - LocalDef
+From: ts/capture_types.py::1
+ - LocalDefCapture
+ - LocalDefCapture
+ - LocalRefCapture
+ - LocalImportPartCapture
+ - LocalCallCapture
+From: scope_resolution/graph_types.py::1
+ - ScopeNode
+ - ScopeNode
+ - NodeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - EdgeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - NodeKind
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - EdgeKind
+ - EdgeKind
+ - EdgeKind
+ - ScopeNode
+ - ScopeNode
+ - NodeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - EdgeKind
+ - EdgeKind
+ - EdgeKind
+ - ScopeNode
+ - NodeKind
+ - NodeKind
+ - NodeKind
+ - EdgeKind
+ - ScopeNode
+ - EdgeKind
+ - EdgeKind
+ - EdgeKind
+From: scope_resolution/call.py::1
+ - LocalCall
+ - LocalCall
+From: scope_resolution/reference.py::1
+ - Reference
+ - Reference
+From: new_rtfs/build_scopes.py::2
+ - build_scope_graph
+
+Chunks (21):
+- new_rtfs/build_scopes.py::2
+- scope_graph/graph.py::2
+- scope_graph/graph.py::3
+- scope_graph/graph.py::4
+- scope_graph/graph.py::5
+- scope_graph/graph.py::6
+- scope_graph/graph.py::7
+- scope_graph/graph.py::8
+- scope_graph/graph.py::9
+- scope_graph/graph.py::10
+- scope_graph/graph.py::11
+- scope_resolution/scope_graph.py::2
+- scope_resolution/scope_graph.py::3
+- scope_resolution/scope_graph.py::4
+- scope_resolution/scope_graph.py::5
+- scope_resolution/scope_graph.py::6
+- scope_resolution/scope_graph.py::7
+- scope_resolution/scope_graph.py::8
+- scope_resolution/scope_graph.py::9
+- scope_resolution/scope_graph.py::10
+- scope_resolution/scope_graph.py::11
+
+Cluster: Scope Resolution and Symbol Management
+Summary:
+ This feature encompasses various components for managing code scope resolution and symbol tracking within a codebase. It includes classes and functions for handling local calls, references, definitions, and scope nodes, utilizing data structures like interval trees and graphs for efficient scoping and referencing in a program's text range.
+Imports:
+ From: rtfs/utils.py::2
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+ - TextRange
+From: rtfs/graph.py::1
+ - Node
+From: scope_resolution/graph_types.py::1
+ - NodeKind
+ - EdgeKind
+
+Chunks (7):
+- scope_resolution/call.py::1
+- scope_resolution/capture_refs.py::1
+- scope_resolution/definition.py::1
+- scope_resolution/graph_types.py::1
+- scope_resolution/interval_tree.py::1
+- scope_resolution/reference.py::1
+- scope_resolution/scope.py::1
+
+Cluster: Scope and Repository Graph Testing
+Summary:
+ This code is designed to test the functionality of building a scope graph for Python code and a repository graph for a small repository. It uses a test string representing Python code with variable assignments and function definitions to generate a scope graph and prints the result, potentially identifying missing imports.
+Imports:
+ From: rtfs/build_scopes.py::2
+ - build_scope_graph
+
+Chunks (1):
+- tests/simple_test.py::1
+
+Cluster: Local Symbol Capture and Classification
+Summary:
+ This code defines data structures for capturing and classifying local symbols in a program's scope. It includes classes for capturing local function calls, definitions, references, and import parts, utilizing Python's dataclass for easy instantiation and management of these entities.
+Imports:
+ From: scope_resolution/scope.py::1
+ - Scoping
+
+Chunks (1):
+- ts/capture_types.py::1
+
+Cluster: Text Range Management in Source Code Parsing
+Summary:
+ The code defines a 'TextRange' class used for managing text ranges within source code files, including operations like offset adjustments and containment checks. It ensures that text ranges are correctly defined with start and end points, providing utility methods for handling line and byte range operations.
+Chunks (1):
+- rtfs/utils.py::2
+
+Cluster: Export Mapping in Repository Graph
+Summary:
+ The code snippet defines a method '_get_exports' within the 'RepoGraph' class, which constructs a mapping of a file to its exports by identifying unreferenced definitions of classes and functions within specified scopes of a given 'ScopeGraph'.
+Imports:
+ From: scope_resolution/scope_graph.py::2
+ - ScopeGraph
+
+Chunks (1):
+- repo_resolution/repo_graph.py::7
 
