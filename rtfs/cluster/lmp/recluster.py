@@ -91,8 +91,11 @@ def split_clusters(clusters: List[Cluster], groups: int = 3) -> List[List[Cluste
         
     return cluster_groups
 
+# TODO: should have some way isolating hallucination potential in code 
+# like, maybe wrap it all inside a LMP interface
 def regroup_clusters(model: LLMModel,
                      clusters: List[Cluster], 
+                     cg,
                      use_summaries: bool) -> Tuple[List[Cluster], List[MoveOp]]:
     """
     Compares groups of clusters together and move chunks between them to maximize the coherence
@@ -114,6 +117,9 @@ def regroup_clusters(model: LLMModel,
     # Group moves by source cluster and chunk to detect collisions
     moves_by_src = {}
     for move in all_moves:
+        if not cg.get_node(move.src_cluster) or not cg.get_node(move.dst_cluster):
+            continue
+
         key = (move.src_cluster, move.chunk)
         if key not in moves_by_src:
             moves_by_src[key] = []

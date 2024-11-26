@@ -44,7 +44,7 @@ split_cluster:
 - cache: false
 - filepath: .\rtfs\cluster\lmp\split_cluster.py
 summarize:
-- cache: false
+- cache: true
 - filepath: .\rtfs\summarize\lmp.py
 summarize_chunk:
 - cache: false

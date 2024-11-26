@@ -4,7 +4,6 @@ import mimetypes
 import json
 from typing import Dict, List
 from llama_index.core import SimpleDirectoryReader
-from llama_index.core.storage.docstore import SimpleDocumentStore
 from llama_index.core.schema import BaseNode
 
 from src.models import (
@@ -135,12 +134,16 @@ class PythonChunker(Chunker):
         )
 
     def chunk(self, persist_path: str = "") -> List[CodeChunk]:
+        chunk_nodes = []
         if os.path.exists(persist_path):
             print("Loading persisted chunks from ", persist_path)
             with open(persist_path, "r") as f:
-                chunk_nodes = json.loads(f.read())
-                return [CodeChunk.from_json(chunk) for chunk in chunk_nodes]
-        else:
+                file_contents = f.read()
+                if file_contents:
+                    chunk_nodes = json.loads(file_contents)
+                    return [CodeChunk.from_json(chunk) for chunk in chunk_nodes]
+                
+        if not chunk_nodes:
             chunk_nodes = self.splitter.get_nodes_from_documents(self.docs, show_progress=True)
 
         chunks = []

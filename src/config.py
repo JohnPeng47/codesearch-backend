@@ -61,8 +61,5 @@ ELL_STORAGE = "./logdir"
 AWS_REGION = "us-east-2"
 ANON_LOGIN = True
 
-with open(ROOT_DIR / "llm_config.yaml", "r") as f:
-    MODEL_CONFIG = yaml.safe_load(f)
-
 class SUPPORTED_LANGS(str, Enum):
     PYTHON = "python"

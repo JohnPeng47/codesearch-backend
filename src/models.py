@@ -9,6 +9,8 @@ from enum import Enum
 
 from typing import DefaultDict, Annotated, Optional, Any, List, Dict, Set
 
+from src.utils import normalize_fp_to_posix
+
 PrimaryKey = Annotated[int, Field(gt=0, lt=2147483647)]
 NameStr = Annotated[
     str, Field(pattern=r"^.+\S.*$", strip_whitespace=True, min_length=3)
@@ -138,6 +140,9 @@ class ChunkMetadata:
     contexts: Optional[List[ChunkContext]] = field(default_factory=list)
     type: MetadataType = MetadataType.CODE
 
+    def __post_init__(self):
+        self.file_path = normalize_fp_to_posix(self.file_path)
+
     def to_json(self):
         return {
             "file_path": self.file_path,
@@ -150,6 +155,7 @@ class ChunkMetadata:
             "end_line": self.end_line,
             "imports": {k: list(v) for k, v in self.imports.items()},
             "contexts": [ctxt.__dict__ for ctxt in self.contexts],
+            "type": self.type
         }
 
     @classmethod
@@ -192,17 +198,27 @@ class CodeChunk:
                 id=data["id"],
                 metadata=ChunkMetadata.from_json(data["metadata"]),
                 content=data["content"],
-            input_type=data["input_type"],
-                summary=CodeSummary(**data["summary"]) if data["summary"] else None
+                input_type=data["input_type"],
+                summary=CodeSummary(**data["summary"]) if data["summary"] else CodeSummary().dict()
             )
         except Exception as e:
             print("Failed to deserilaize: ", data)
             raise e
         
+    def to_json(self):
+        return {
+            "id": self.id,
+            "metadata": self.metadata.to_json(),
+            "content": self.content,
+            "input_type": self.input_type,
+            "summary": self.summary.dict() if self.summary else CodeSummary().dict()
+        }
+        
     def to_str(self, 
                return_content: bool = False, 
                return_summaries: bool = False) -> str:
-        s = f"{self.id}"
+        # s = f"{self.id}"
+        s = f"{self.metadata.file_path}"
         s += f"\nSummary: {self.summary.short_description}" if return_summaries else ""
         if return_content and self.content:
             s += f"\n{self.content}"

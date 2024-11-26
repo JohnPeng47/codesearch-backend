@@ -19,7 +19,7 @@ from src.models import CodeSummary, ChunkMetadata, CodeChunk
 
 from .graph import ClusterSummary, ClusterMetadata
 from .path import ClusterPath, ChunkPathSegment
-from .lmp import regroup_clusters, split_cluster, summarize
+from .lmp import regroup_clusters, split_cluster, summarize, summarizev2
 
 class ClusterGStats(BaseModel):
     num_clusters: int
@@ -123,7 +123,7 @@ class ClusterGraph(CodeGraph):
         # TODO: this part feels like it needs tests
         # TODO: implement these using graphops
         # perform recollection operations
-        self.split_clusters()
+        # self.split_clusters()
         self.regroup_chunks(use_summaries=use_summaries)
 
         print("Finished regrouping clusters")
@@ -141,12 +141,15 @@ class ClusterGraph(CodeGraph):
     def summarize_clusters(self):
         clusters = self.get_clusters(return_content=True)
         for cluster in clusters:
+            print("Summarizing cluster: ", cluster.id)
+
             cluster_node = self.get_node(cluster.id)
             if not cluster_node:
                 continue
 
             # Summarize cluster
-            summary_data = summarize(self.model, cluster)
+            # summary_data = summarize(self.model, cluster)
+            summary_data = summarizev2(self.model, cluster)
             cluster_node.summary = summary_data
             self.update_node(cluster_node)
 
@@ -189,7 +192,7 @@ class ClusterGraph(CodeGraph):
     def regroup_chunks(self, use_summaries=False):
         # regroup clusters
         clusters = self.get_clusters(return_content=True)
-        _, moves = regroup_clusters(self.model, clusters, use_summaries=use_summaries)
+        _, moves = regroup_clusters(self.model, clusters, self, use_summaries=use_summaries)
         valid_moves = 0
 
         for move in moves:
