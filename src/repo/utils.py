@@ -1,5 +1,7 @@
 import requests
 import re
+from pathlib import Path
+from src.config import REPOS_ROOT, INDEX_ROOT, GRAPH_ROOT
 
 def get_repo_size(owner, repo, token):
     url = f"https://api.github.com/repos/{owner}/{repo}"
@@ -46,3 +48,12 @@ def http_to_ssh(url):
     if match:
         return f"git@github.com:{match.group(1)}/{match.group(2)}.git"
     return url  # Return original if not a GitHub HTTP(S) URL
+
+def repo_path(owner: str, repo_name: str) -> Path:
+    return Path(REPOS_ROOT) / (owner + "_" + repo_name)
+
+def index_path(owner: str, repo_name: str) -> Path:
+    return Path(INDEX_ROOT) / (owner + "_" + repo_name)
+
+def graph_path(owner: str, repo_name: str) -> Path:
+    return Path(GRAPH_ROOT) / (owner + "_" + repo_name)

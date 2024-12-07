@@ -7,7 +7,6 @@ import json
 from src.database.core import get_db
 from src.auth.service import get_current_user
 from src.auth.models import User
-from src.chunk.chunk import chunk_repo, ChunkStrat
 from src.config import REPOS_ROOT, WALKTHROUGH_ROOT
 from src.repo.models import RepoGetRequest
 

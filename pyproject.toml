@@ -8,7 +8,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "3.10.11"
+python = "^3.10.11"
 alembic = "^1.13.2"
 fastapi = ">=0.111.1,<0.112.0"
 sqlalchemy = "^2.0.34"
@@ -20,7 +20,7 @@ psycopg2-binary = "^2.9.9"
 python-jose = "^3.3.0"
 black = "^24.8.0"
 sentry-sdk = {extras = ["fastapi"], version = "^2.14.0"}
-anthropic = "^0.34.2"
+anthropic = ">=0.39.0,<1"
 infomap = "2.8.0"
 intervaltree = "3.1.0"
 llama-index = "0.10.59"
@@ -55,9 +55,12 @@ sqlmodel = "^0.0.21"
 pillow = "^10.4.0"
 matplotlib = "^3.9.2"
 scipy = "^1.14.1"
-ell-ai = {path = "C:/Users/jpeng/Documents/projects/useful/ell-forked", develop = true}
 plotly = "^5.24.1"
 dspy = "^2.5.27"
+ell-ai = "^0.0.15"
+langchain-core = "^0.3.22"
+langchain-openai = "^0.2.11"
+langchain-anthropic = "^0.3.0"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.5"

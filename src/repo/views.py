@@ -10,8 +10,6 @@ from src.queue.service import enqueue_task, enqueue_task_and_wait
 from src.exceptions import ClientActionException
 from src.models import HTTPSuccess
 from src.config import (
-    REPOS_ROOT, 
-    INDEX_ROOT, 
     GRAPH_ROOT, 
     SUMMARIES_ROOT,
     ENV, 
@@ -29,11 +27,10 @@ from .models import (
     RepoSummaryRequest,
     SummarizedClusterResponse,
 )
-from .tasks import InitIndexGraphTask, IndexGraphResponse
+from .tasks import InitIndexGraphTaskLocal
 from .graph import get_or_create_chunk_graph
 from .utils import get_repo_size, http_to_ssh, get_repo_main_language
 
-from rtfs.summarize.summarize import Summarizer
 from rtfs.cluster.graph import Cluster
 
 import json
@@ -51,17 +48,84 @@ SUPPORTED_LANGS = [
     "python"
 ]
 
-# TODO: rewrite repo using class based approach and set the path
-# as methods
-# @repo_router.post("/repo/create", response_model=RepoResponse)
+# async version where we return right away, doesn't work!!!
+# @repo_router.post("/repo/create")
+# async def create_repo(
+#     repo_in: RepoCreate,
+#     db_session: Session = Depends(get_db),
+#     curr_user: User = Depends(get_current_user),
+#     task_queue: TaskQueue = Depends(get_queue),
+# ):
+#     # raise ClientActionException(
+#     #     message=f"Repo too big"
+#     # )
+
+#     try:
+#         existing_repo = get_repo(
+#             db_session=db_session,
+#             curr_user=curr_user,
+#             owner=repo_in.owner,
+#             repo_name=repo_in.repo_name,
+#         )
+#         if existing_repo:
+#             if curr_user not in existing_repo.users:
+#                 # add mapping between user and existing repo
+#                 existing_repo.users.append(curr_user)
+#                 db_session.add(existing_repo)
+#                 db_session.commit()
+
+#             return RepoResponse(
+#                 owner=existing_repo.owner, repo_name=existing_repo.repo_name
+#             )
+        
+#         # GH API call to figure out size and language
+#         # language = get_repo_main_language(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN)
+#         # if language.lower() not in SUPPORTED_LANGS:
+#         #     raise ClientActionException(
+#         #         message=f"Language {language} not supported. Supported languages: {SUPPORTED_LANGS}"
+#         #     )
+
+#         language = "python"
+#         repo_size = get_repo_size(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN) 
+#         print(type(repo_size), type(REPO_MAX_SIZE_MB))
+#         if repo_size > REPO_MAX_SIZE_MB:
+#             raise RepoSizeExceededError(
+#                 f"Repository size exceeded limit. Please try a smaller repository. Size: {repo_size:.2f} MB"
+#             )
+                
+#         # TODO: add error logging
+#         task = InitIndexGraphTask(
+#             task_args={
+#                 "url": repo_in.url,
+#                 "owner": repo_in.owner,
+#                 "repo_name": repo_in.repo_name,
+#                 "language": language,
+#                 "repo_size": repo_size,
+#                 "user_id": curr_user.id,
+#             }
+#         )
+#         enqueue_task(task_queue=task_queue, task=task, user_id=curr_user.id)
+#         return TaskResponse(task_id=task.task_id, status=task.status)
+
+#     except RepoSizeExceededError as e:
+#         raise ClientActionException(
+#             message="Repository size exceeded limit. Please try a smaller repository.",
+#         )
+
+#     except PrivateRepoError as e:
+#         raise ClientActionException(message="Private repo not yet supported")
+    
+
+# Using this version right now because easier to just return
+# the indexed results in a single request instead of relying on client polling
+
 @repo_router.post("/repo/create")
-async def create_repo(
+def create_repo_sync(
     repo_in: RepoCreate,
     db_session: Session = Depends(get_db),
     curr_user: User = Depends(get_current_user),
     task_queue: TaskQueue = Depends(get_queue),
 ):
-    print('Repo: ', repo_in.owner, repo_in.repo_name)
     try:
         existing_repo = get_repo(
             db_session=db_session,
@@ -79,18 +143,15 @@ async def create_repo(
             return RepoResponse(
                 owner=existing_repo.owner, repo_name=existing_repo.repo_name
             )
-
-        repo_dst = None
-        index_persist_dir = INDEX_ROOT / repo_in.repo_ident
-        repo_dst = REPOS_ROOT / repo_in.repo_ident
-        save_graph_path = GRAPH_ROOT / repo_in.repo_ident
         
-        language = get_repo_main_language(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN)
-        if language.lower() not in SUPPORTED_LANGS:
-            raise ClientActionException(
-                message=f"Language {language} not supported. Supported languages: {SUPPORTED_LANGS}"
-            )
+        # GH API call to figure out size and language
+        # language = get_repo_main_language(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN)
+        # if language.lower() not in SUPPORTED_LANGS:
+        #     raise ClientActionException(
+        #         message=f"Language {language} not supported. Supported languages: {SUPPORTED_LANGS}"
+        #     )
 
+        language = "python"
         repo_size = get_repo_size(repo_in.owner, repo_in.repo_name, GITHUB_API_TOKEN) 
         if repo_size > REPO_MAX_SIZE_MB:
             raise RepoSizeExceededError(
@@ -98,45 +159,19 @@ async def create_repo(
             )
                 
         # TODO: add error logging
-        task = InitIndexGraphTask(
+        task = InitIndexGraphTaskLocal(
             task_args={
+                "db_session": db_session,
                 "url": repo_in.url,
-                "repo_dst": repo_dst,
-                "index_persist_dir": index_persist_dir,
-                "save_graph_path": save_graph_path,
+                "owner": repo_in.owner,
+                "repo_name": repo_in.repo_name,
+                "language": language,
+                "repo_size": repo_size,
+                "user_id": curr_user.id,
             }
         )
-
-        # TODO: add error handling
-        result = enqueue_task_and_wait(
-            task_queue=task_queue, user_id=curr_user.id, task=task
-        )
-        time = result.time
-        repo_result: IndexGraphResponse = result.result
-
-        cg = repo_result.cg
-        cg.cluster()
-
-        # TODO: should maybe turn this into task as well
-        # would need asyncSession to perform db_updates though
-        repo = Repo(
-            **repo_in.dict(),
-            language=repo_result.lang,
-            repo_size=repo_result.size,
-            file_path=str(repo_dst),
-            index_path=str(index_persist_dir),
-            graph_path=str(save_graph_path),
-            users=[curr_user],
-            cluster_files=cg.get_chunk_files(),
-            time=time,
-        )
-
-        db_session.add(repo)
-        db_session.commit()
-
-        # print("TASKID: ", task.task_id, "STATUS: ", task.status)
-        # need as_dict to convert cloned_folders to list
-        return RepoResponse(owner=repo.owner, repo_name=repo.repo_name)
+        enqueue_task_and_wait(task_queue=task_queue, task=task, user_id=curr_user.id)
+        return HTTPSuccess(detail="Successfully indexed repository.")
 
     except RepoSizeExceededError as e:
         raise ClientActionException(
@@ -145,16 +180,6 @@ async def create_repo(
 
     except PrivateRepoError as e:
         raise ClientActionException(message="Private repo not yet supported")
-
-    # TODO: think
-    except Exception as e:
-        print("Error: ", e)
-        db_session.rollback()
-
-        GitRepo.delete_repo(repo_dst)
-        logger.error(f"Failed to create repo configuration: {e}")
-
-        raise e
 
 
 @repo_router.get("/repo/list", response_model=RepoListResponse)

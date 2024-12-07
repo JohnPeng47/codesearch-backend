@@ -76,17 +76,21 @@ app.add_middleware(ExceptionMiddleware)
 app.add_middleware(DBMiddleware)
 app.add_middleware(AddTaskQueueMiddleware)
 
-app.include_router(auth_router, prefix="/api")
-app.include_router(repo_router, prefix="/api")
-app.include_router(task_queue_router, prefix="/api")
-app.include_router(health_router, prefix="/api")
-app.include_router(chat_router, prefix="/api")
+# app.include_router(auth_router, prefix="/api")
+# app.include_router(repo_router, prefix="/api")
+# app.include_router(task_queue_router, prefix="/api")
+# app.include_router(health_router, prefix="/api")
+# app.include_router(chat_router, prefix="/api")
+
+app.include_router(auth_router)
+app.include_router(repo_router)
+app.include_router(task_queue_router)
+app.include_router(health_router)
+app.include_router(chat_router)
 
 # app.include_router(search_router)
 # logfire.configure(console=False)
 # logfire.instrument_fastapi(app, excluded_urls=["/task/get"])
-
-ell.init(ELL_STORAGE)
 
 def calculate_workers(num_threads_per_core=2):
     """

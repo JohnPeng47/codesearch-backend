@@ -139,6 +139,8 @@ class ClusterGraph(CodeGraph):
 
             # Summarize cluster
             summary_data = summarize(self.model, cluster)
+            print(f"Generated summary {summary_data.title}: \n{summary_data.summary}")
+            
             cluster_node.summary = summary_data
             self.update_node(cluster_node)
 

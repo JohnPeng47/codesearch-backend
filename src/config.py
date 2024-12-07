@@ -17,20 +17,18 @@ CODESEARCH_DIR = (
 )
 PORT = int(config("PORT", default=3000))
 
-# JWT settings
 COWBOY_JWT_SECRET = config("DISPATCH_JWT_SECRET", default="")
+# JWT settings
 COWBOY_JWT_ALG = config("DISPATCH_JWT_ALG", default="HS256")
 COWBOY_JWT_EXP = config("DISPATCH_JWT_EXP", cast=int, default=308790000)  # Seconds
 
 OPENAI_API_KEY = config("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = config("ANTHROPIC_API_KEY")
 
+DB_NAME = config("POSTGRES_DB")
+DB_USER = config("POSTGRES_USER")
 DB_PASS = config("DB_PASS")
-SQLALCHEMY_DATABASE_URI = (
-    f"postgresql://postgres:{DB_PASS}@127.0.0.1:5432/codesearch"
-    if ENV == "release"
-    else f"postgresql://postgres:{DB_PASS}@{config('DB_URL')}:5432/codesearch"
-)
+SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASS}@{config('POSTGRES_REMOTE_IP')}:{config('POSTGRES_PORT')}/{config('POSTGRES_DB')}"
 
 SQLALCHEMY_ENGINE_POOL_SIZE = 50
 
