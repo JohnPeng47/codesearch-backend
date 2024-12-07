@@ -12,19 +12,6 @@ from src.models import CodeChunk
 
 ChunkNodeID = NewType("ChunkNodeID", str)
 
-@dataclass
-class SummarizedChunk:
-    title: str = ""
-    summary: str = ""
-    key_variables: List[str] = field(default_factory=list)
-
-    def to_dict(self):
-        return {
-            "title": self.title,
-            "summary": self.summary,
-            "key_variables": self.key_variables,
-        }
-
 @dataclass(kw_only=True)
 class ChunkNode(CodeChunk, Node):
     kind: NodeKind = NodeKind.Chunk
@@ -60,6 +47,21 @@ class ChunkNode(CodeChunk, Node):
             input_type=self.input_type,
             summary=self.summary
         )
+    
+    # TODO: how to make it clear that this overrides dict() ?
+    def to_json(self):
+        return {
+            "id": self.id,
+            "metadata": self.metadata.to_json(),
+            "content": self.content,
+            "input_type": self.input_type,
+            "summary": self.summary.dict() if self.summary else {
+                "long_description": "",
+                "short_description": "",
+                "questions": []
+            },
+            "kind": self.kind
+        }
 
 class ChunkEdgeKind(str, Enum):
     ImportFrom = "ImportFrom"

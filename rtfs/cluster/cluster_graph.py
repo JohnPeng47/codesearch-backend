@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from pathlib import Path
 from typing import List, Dict
 from llama_index.core.schema import BaseNode
@@ -12,13 +13,25 @@ from rtfs.cluster.graph import (
     ClusterNode,
     ClusterRefEdge,
     ClusterEdge,
-    Cluster,
-    ClusterGStats
+    Cluster
 )
-from src.models import ChunkMetadata, CodeChunk
+from src.models import CodeSummary, ChunkMetadata, CodeChunk
 
+from .graph import ClusterSummary, ClusterMetadata
 from .path import ClusterPath, ChunkPathSegment
-from .lmp import regroup_clusters, split_cluster, summarize
+from .lmp import regroup_clusters, split_cluster, summarize, summarizev2
+
+class ClusterGStats(BaseModel):
+    num_clusters: int
+    num_chunks: int
+    avg_cluster_sz: float
+
+    def __str__(self):
+        return f"""
+Clusters: {self.num_clusters}, 
+Chunks: {self.num_chunks}, 
+Avg Cluster Size: {self.avg_cluster_sz:.2f}
+        """
 
 class ClusterGraph(CodeGraph):
     def __init__(
@@ -29,6 +42,11 @@ class ClusterGraph(CodeGraph):
         clustered: List[str] = [],
     ):
         super().__init__(graph=graph, node_types=[ChunkNode, ClusterNode])
+        for node, node_data in self._graph.nodes(data=True):
+            if not node_data.get("kind"):
+                raise ValueError("Node kind not found in node data")
+            if node_data["kind"] not in self.node_types:
+                raise ValueError(f"Node kind {node_data['kind']} not supported")
 
         self.model = LLMModel(provider="openai")
         self.repo_path = repo_path
@@ -42,8 +60,13 @@ class ClusterGraph(CodeGraph):
     def from_json(cls, repo_path: Path, json_data: Dict) -> "ClusterGraph":
         cg = nx.node_link_graph(json_data["link_data"])
         for _, node_data in cg.nodes(data=True):
-            if "metadata" in node_data:
-                node_data["metadata"] = ChunkMetadata(**node_data["metadata"])
+            if node_data["kind"] == NodeKind.Chunk:
+                node_data["metadata"] = ChunkMetadata.from_json(node_data["metadata"])
+                node_data["summary"] = CodeSummary(**node_data["summary"])
+
+            elif node_data["kind"] == NodeKind.Cluster:
+                node_data["metadata"] = ClusterMetadata.from_json(node_data["metadata"])
+                node_data["summary"] = ClusterSummary(**node_data["summary"])
 
         return cls(
             repo_path=repo_path,
@@ -59,19 +82,6 @@ class ClusterGraph(CodeGraph):
             "nodes": [],
             "links": [],
         }
-
-        # for n, node_data in G.nodes(data=True):
-        #     node_dict = node_data.copy()
-        #     node_dict.pop("references", None)
-        #     node_dict.pop("definitions", None)
-
-        #     if "metadata" in node_dict and isinstance(
-        #         node_dict["metadata"], ChunkMetadata
-        #     ):
-        #         node_dict["metadata"] = node_dict["metadata"].to_json()
-
-        #     node_dict["id"] = n
-        #     data["nodes"].append(node_dict)
 
         for node_id in self._graph.nodes:
             node = self.get_node(node_id)
@@ -132,6 +142,8 @@ class ClusterGraph(CodeGraph):
     def _summarize_clusters(self):
         clusters = self.get_clusters(return_content=True)
         for cluster in clusters:
+            print("Summarizing cluster: ", cluster.id)
+
             cluster_node = self.get_node(cluster.id)
             if not cluster_node:
                 continue
@@ -182,7 +194,7 @@ class ClusterGraph(CodeGraph):
     def _regroup_chunks(self, use_summaries=False):
         # regroup clusters
         clusters = self.get_clusters(return_content=True)
-        _, moves = regroup_clusters(self.model, clusters, use_summaries=use_summaries)
+        _, moves = regroup_clusters(self.model, clusters, self, use_summaries=use_summaries)
         valid_moves = 0
 
         for move in moves:
@@ -206,7 +218,7 @@ class ClusterGraph(CodeGraph):
 
             if self.children(src_cluster.id, edge_types=[EdgeKind.ChunkToCluster]) == 0:
                 self.remove_node(src_cluster.id)
-                print("Removing cluster: ", src_cluster.id)
+                print("Removing empty cluster: ", src_cluster.id)
 
             valid_moves += 1
 
@@ -274,31 +286,7 @@ class ClusterGraph(CodeGraph):
         """
         Converts graph ClusterNode to Cluster by node ID
         """
-        cluster_node: ClusterNode = self.get_node(cluster_id)
-        if not cluster_node or cluster_node.kind != NodeKind.Cluster:
-            raise ValueError(f"Node {cluster_node} is the wrong input type")
-
-        chunks = []
-        children = []
-        for child in self.children(cluster_id, edge_types=[EdgeKind.ChunkToCluster, 
-                                                           EdgeKind.ClusterToCluster]):
-            if child == cluster_id:
-                raise ValueError(f"Cluster {cluster_id} has a self-reference")
-
-            child_node: ChunkNode = self.get_node(child)
-            if child_node.kind == NodeKind.Chunk:
-                chunk_info = self.node_to_chunk(child, return_content=return_content)
-                chunks.append(chunk_info)
-            elif child_node.kind == NodeKind.Cluster:
-                children.append(self.node_to_cluster(child, return_content=return_content))
-
-        return Cluster(
-            id=cluster_node.id,
-            title=cluster_node.title,
-            summary=cluster_node.summary,
-            chunks=chunks,
-            children=children,
-        )
+        return Cluster.from_cluster_node(cluster_id, self, return_content=return_content)
 
     def node_to_chunk(self, 
                       chunk_id: str, 
@@ -327,10 +315,7 @@ class ClusterGraph(CodeGraph):
         Returns a list of clusters and their child chunk nodes. Returns either
         JSON or as Cluster
         """
-        if return_type == "json":
-            return [self.node_to_cluster(node, return_content=return_content).to_dict() for node in cluster_nodes]
-        else:
-            return [self.node_to_cluster(node, return_content=return_content) for node in cluster_nodes]
+        return [self.node_to_cluster(node, return_content=return_content) for node in cluster_nodes]
 
 
     def get_clusters(self, return_content: bool = False) -> List[Cluster]:

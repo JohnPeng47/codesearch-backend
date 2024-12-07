@@ -46,6 +46,7 @@ INDEX_ROOT = Path(CODESEARCH_DIR) / "index"
 GRAPH_ROOT = Path(CODESEARCH_DIR) / "graphs"
 SUMMARIES_ROOT = Path(CODESEARCH_DIR) / "summaries"
 WALKTHROUGH_ROOT = Path(CODESEARCH_DIR) / "walkthroughs"
+CHUNKS_ROOT = Path(CODESEARCH_DIR) / "chunks"
 
 GITHUB_API_TOKEN = config("GITHUB_API_TOKEN")
 REPO_MAX_SIZE_MB = 80
@@ -57,9 +58,6 @@ ELL_STORAGE = "./logdir"
 
 AWS_REGION = "us-east-2"
 ANON_LOGIN = True
-
-with open(ROOT_DIR / "llm_config.yaml", "r") as f:
-    MODEL_CONFIG = yaml.safe_load(f)
 
 class SUPPORTED_LANGS(str, Enum):
     PYTHON = "python"

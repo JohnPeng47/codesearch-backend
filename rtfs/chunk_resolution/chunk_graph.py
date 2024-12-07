@@ -5,6 +5,7 @@ import os
 from collections import deque
 
 from rtfs.utils import dfs_json
+from rtfs.scope_resolution.reference import Reference
 from rtfs.scope_resolution.capture_refs import capture_refs
 from rtfs.scope_resolution.graph_types import ScopeID
 from rtfs.repo_resolution.repo_graph import RepoGraph, RepoNodeID, repo_node_id
@@ -16,7 +17,6 @@ from rtfs.cluster.cluster_graph import ClusterGraph
 
 # Note: ideally we probably want to either move rtfs into src.graph
 # or chunk out of src
-from src.chunk.models import CodeChunk
 from src.chunk.lmp.summarize import CodeSummary
 from .graph import (
     ChunkNode,
@@ -24,6 +24,7 @@ from .graph import (
     CallEdge,
     ChunkEdgeKind,
 )
+from src.models import CodeChunk
 
 import logging
 from collections import defaultdict
@@ -95,7 +96,13 @@ class ChunkGraph(ClusterGraph):
         # main loop to build graph
         for chunk_node in cg.get_all_nodes():
             # chunk -> range -> scope
-            cg.build_import_exports_chunks(chunk_node)
+            exports = cg.build_import_exports_chunks(chunk_node)
+            for ref, dst_chunk in exports:
+                ref_edge = ImportEdge(src=chunk_node.id, dst=dst_chunk.id, ref=ref.name)
+                cg.add_edge(ref_edge)
+                chunk_node.metadata.imports[dst_chunk.id].add(ref.name)
+            
+            cg.update_node(chunk_node)
 
         for f, scopes in cg._file2scope.items():
             all_scopes = cg._repo_graph.scopes_map[f].scopes()
@@ -114,19 +121,20 @@ class ChunkGraph(ClusterGraph):
     # find all root nodes (no incoming edges)
     # iterate dfs and add all nodes to seen list
     # start from another node
-    def build_import_exports_chunks(self, chunk_node: ChunkNode):
+    def build_import_exports_chunks(self, src_chunk: ChunkNode) -> List[Tuple[Reference, ChunkNode]]:
         """
         Build the import to export mapping for a chunk
         need to do: import (chunk -> range -> scope) -> export (scope -> range -> chunk)
         """
-        src_path = Path(chunk_node.metadata.file_path)
+        import_ref_export = []  # [(ref, dst_chunk)]
+        src_path = Path(src_chunk.metadata.file_path)
         scope_graph = self._repo_graph.scopes_map[src_path]
-        chunk_refs = capture_refs(chunk_node.content.encode())
+        chunk_refs = capture_refs(src_chunk.content.encode())
 
         for ref in chunk_refs:
-            # align ref with chunks offset
+        # align ref with chunks offset
             ref.range = ref.range.add_offset(
-                chunk_node.metadata.start_line, chunk_node.metadata.start_line
+                src_chunk.metadata.start_line, src_chunk.metadata.start_line
             )
             # range -> scope
             ref_scope = scope_graph.scope_by_range(ref.range)
@@ -144,19 +152,9 @@ class ChunkGraph(ClusterGraph):
             export_range = export_sg.range_by_scope(export.scope)
             dst_chunk = self.find_chunk(Path(export.file_path), export_range)
             if dst_chunk:
-                if scope_graph.is_call_ref(ref.range):
-                    call_edge = CallEdge(
-                        src=chunk_node.id, dst=dst_chunk.id, ref=ref.name
-                    )
-                    # print("adding call edge: ", call_edge.dict())
-                    self.add_edge(call_edge)
-
-                # differentiate between ImportToExport chunks and CallToExport chunks
-                # so in the future we can use this for file level edges
-                ref_edge = ImportEdge(src=chunk_node.id, dst=dst_chunk.id, ref=ref.name)
-
-                # print(f"Adding chunkedge: {chunk_node.id} -> {dst_chunk.id}")
-                self.add_edge(ref_edge)
+                import_ref_export.append((ref, dst_chunk))
+                                
+        return import_ref_export
 
     # TODO: should really use IntervalGraph here but chunks are small enough
     def find_chunk(self, file_path: Path, range: TextRange):

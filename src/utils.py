@@ -6,9 +6,8 @@ import time
 import functools
 import os
 from contextlib import contextmanager
-
+from pathlib import Path
 from logging import getLogger
-
 import tiktoken
 import os
 import time
@@ -24,6 +23,9 @@ if platform.system() == "Windows":
 logger = getLogger(__name__)
 
 DELIMETER = f"\n\n{'-' * 80}\n" # only 1 tokens good deal!
+
+def normalize_fp_to_posix(fp: str) -> str:
+    return str(Path(fp).as_posix())
 
 def num_tokens_from_string(string: str, encoding_name: str = "cl100k_base") -> int:
     """Returns the number of tokens in a text string."""

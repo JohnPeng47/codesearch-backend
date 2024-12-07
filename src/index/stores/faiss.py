@@ -25,10 +25,9 @@ from llama_index.core.vector_stores.utils import node_to_metadata_dict
 from llama_index.core.ingestion import IngestionPipeline, DocstoreStrategy
 from llama_index.core.storage.docstore import SimpleDocumentStore
 
+from src.models import MetadataType
 from src.settings import DEFAULT_INDEX_SETTINGS
-
 from src.config import INDEX_ROOT
-from src.models import CodeChunk
 
 from .base import VectorStore, VStoreQueryResult, EMBEDDING_MODEL
 
@@ -313,21 +312,28 @@ class SimpleFaissVectorStore(BasePydanticVectorStore):
     def to_dict(self) -> dict:
         return self._data.to_dict()
     
-# TODO: define query on this class because in case
+    def is_empty(self):
+        return self._faiss_index.ntotal == 0
+    
 class FaissVectorStore(VectorStore):
-    def __init__(self, repo_path: Path, index_name: str):
+    def __init__(self, 
+                 repo_path: Path, 
+                 index_name: str,
+                 overwrite: bool = False):
         self._index_name = index_name
         self._persist_dir = INDEX_ROOT / repo_path.name / index_name
         self._docstore_path = self._persist_dir / f"docstore.json"
         self._docstore = SimpleDocumentStore()
 
-        if os.path.exists(self._persist_dir):
-            print(f"Loading from persisted: {self._persist_dir}")
+        if os.path.exists(self._persist_dir) and not overwrite:
+            print(f"Loading from existing vecStore: {self._persist_dir}")
             self._vector_store = SimpleFaissVectorStore.from_persist_dir(self._persist_dir)
+            self._docstore = SimpleDocumentStore.from_persist_path(self._docstore_path)
         else:
-            print("Creating new vector store")
+            print("Creating new vecStore")
             faiss_index = faiss.IndexIDMap(faiss.IndexFlatL2(DEFAULT_INDEX_SETTINGS.dimensions))
             self._vector_store = SimpleFaissVectorStore(faiss_index)
+            self._docstore = SimpleDocumentStore()
 
     def add_all(self, chunks: List[BaseNode]):        
         self._pipeline = IngestionPipeline(
@@ -345,30 +351,42 @@ class FaissVectorStore(VectorStore):
         self._docstore.persist(persist_path=self._docstore_path)
         self._vector_store.persist(self._persist_dir)
 
-    # NOTE: Need to include docstore as well
     def query(self, query_str: str):
-        # save an instance of docstore
-        if not self._docstore.docs:
-            self._docstore = SimpleDocumentStore.from_persist_path(self._docstore_path)
-
         query_embedding = EMBEDDING_MODEL.get_query_embedding(query_str)
+        if self._vector_store.is_empty():
+            print("Vec store is empty!!!")
+        
         # LEARN:
         # figure out what this is and how does hybrid search work in (parameter alpha in VectorStoreQuery)
         # filters = MetadataFilters(filters=[], condition=FilterCondition.AND)
+        results = []
         query_bundle = VectorStoreQuery(
             query_str=query_str,
             query_embedding=query_embedding,
             similarity_top_k=5,  # TODO: Fix paging?
         )
         query_res = self._vector_store.query(query_bundle)
+        for dist, id in zip(query_res.similarities, query_res.ids):
+            files = []
+            metadata = self._docstore.get_node(id).metadata
+            if metadata["type"] == MetadataType.CLUSTER:
+                files.extend([
+                    self._docstore.get_node(chunk_id).metadata["file_path"] for chunk_id in metadata["chunk_ids"]
+                ])
+            elif metadata["type"] == MetadataType.CODE:
+                files.append(metadata["file_path"])
 
-        return [
-            VStoreQueryResult(
+            results.append(VStoreQueryResult(
                 id=id,
                 distance=dist,
-                metadata=self._docstore.get_node(id).metadata,
-                type=self._docstore.get_node(id).metadata["type"]
-            ) for dist, id in zip(query_res.similarities, query_res.ids)
-        ]
+                metadata=metadata,
+                type=metadata["type"],
+                files=files,
+                content=self._docstore.get_node(id).get_content()
+            ))
 
-    
+        return results
+
+
+    def name(self):
+        return self._index_name

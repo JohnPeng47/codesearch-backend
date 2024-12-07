@@ -15,11 +15,17 @@ class VStoreQueryResult:
     id: str
     metadata: Dict
     type: MetadataType
+    files: List[str]
+    content: str
 
+    def __post_init__(self):
+        self.files = [str(Path(f).as_posix()) for f in self.files]
+
+    
 # TODO: add logging methods here
 class VectorStore(ABC):
     @abstractmethod
-    def __init__(self, repo_path: Path, index_name: str):
+    def __init__(self, repo_path: Path, index_name: str, overwrite: bool = False):
         raise NotImplementedError()
     
     @abstractmethod
@@ -27,5 +33,9 @@ class VectorStore(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def query(self, query: str) -> List[VStoreQueryResult]:
+    def query(self, query: str, k: int = 5) -> List[VStoreQueryResult]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def name(self) -> str:
         raise NotImplementedError()
