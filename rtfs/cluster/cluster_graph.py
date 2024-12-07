@@ -39,7 +39,7 @@ class ClusterGraph(CodeGraph):
         raise NotImplementedError("Not implemented yet")
 
     @classmethod
-    def from_json(cls, repo_path: Path, json_data: Dict):
+    def from_json(cls, repo_path: Path, json_data: Dict) -> "ClusterGraph":
         cg = nx.node_link_graph(json_data["link_data"])
         for _, node_data in cg.nodes(data=True):
             if "metadata" in node_data:
@@ -83,11 +83,10 @@ class ClusterGraph(CodeGraph):
             edge["target"] = v
             data["links"].append(edge)
 
-        
-
         graph_dict = {}
         graph_dict["clustered"] = self._clustered
         graph_dict["link_data"] = data
+
         return graph_dict
         
     # TODO: we have two control flags, use_summaries and reutrn_content
@@ -115,8 +114,8 @@ class ClusterGraph(CodeGraph):
         # TODO: this part feels like it needs tests
         # TODO: implement these using graphops
         # perform recollection operations
-        self.split_clusters()
-        self.regroup_chunks(use_summaries=use_summaries)
+        self._split_clusters()
+        self._regroup_chunks(use_summaries=use_summaries)
 
         print("Finished regrouping clusters")
  
@@ -125,12 +124,12 @@ class ClusterGraph(CodeGraph):
         # self._build_cluster_edges()
 
         # TODO: should take in cluster edges using summaries
-        self.summarize_clusters()
+        self._summarize_clusters()
         print("Finished summarizing clusters")
 
         self._clustered = True
 
-    def summarize_clusters(self):
+    def _summarize_clusters(self):
         clusters = self.get_clusters(return_content=True)
         for cluster in clusters:
             cluster_node = self.get_node(cluster.id)
@@ -140,11 +139,11 @@ class ClusterGraph(CodeGraph):
             # Summarize cluster
             summary_data = summarize(self.model, cluster)
             print(f"Generated summary {summary_data.title}: \n{summary_data.summary}")
-            
+
             cluster_node.summary = summary_data
             self.update_node(cluster_node)
 
-    def split_clusters(self, threshold=8):
+    def _split_clusters(self, threshold=8):
         clusters = self.get_clusters(return_content=True)
         largest_cluster = max(clusters, key=lambda c: len(c.chunks))
         if len(largest_cluster.chunks) < threshold:
@@ -180,7 +179,7 @@ class ClusterGraph(CodeGraph):
             self.remove_node(largest_cluster.id)
 
 
-    def regroup_chunks(self, use_summaries=False):
+    def _regroup_chunks(self, use_summaries=False):
         # regroup clusters
         clusters = self.get_clusters(return_content=True)
         _, moves = regroup_clusters(self.model, clusters, use_summaries=use_summaries)

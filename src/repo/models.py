@@ -29,12 +29,6 @@ class Repo(Base):
     cluster_files = Column(ARRAY(String))
     time = Column(Integer) # clone + indexing duration
 
-    # Paths
-    file_path = Column(String)
-    graph_path = Column(String)
-    summary_path = Column(String)
-    index_path = Column(String)
-
     # TODO: probably want to make this a separate RepoStats table
     views = Column(Integer)
     users = relationship(

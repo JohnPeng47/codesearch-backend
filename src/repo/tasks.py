@@ -137,9 +137,10 @@ class InitIndexGraphTaskLocal(Task):
             # save generated summaries
             print("Saving generated summaries")
             with open(save_graph_path, "w") as f:
-                f.write(json.dumps(cg.to_json(save_graph_path)))
+                print(f"Saving graph to {save_graph_path}")
+                f.write(json.dumps(cg.to_json()))
 
-            # NEWTODO: turn this on when we are ready for chat
+            # NEWTODO: modify indexer to use index_path()
             # indexer = Indexer(repo_dst, chunks, cg, run_code=False, run_cluster=True)
             # indexer.run()
 

@@ -1,17 +1,16 @@
 from cowboy_lib.repo import GitRepo
 
+from rtfs.cluster.graph import Cluster
+from rtfs.cluster.cluster_graph import ClusterGraph
 from src.database.core import get_db
 from src.auth.service import get_current_user
 from src.auth.models import User
 from src.queue.core import get_queue, TaskQueue
-from src.queue.models import TaskResponse
 from src.index.service import get_or_create_index
 from src.queue.service import enqueue_task, enqueue_task_and_wait
 from src.exceptions import ClientActionException
 from src.models import HTTPSuccess
 from src.config import (
-    GRAPH_ROOT, 
-    SUMMARIES_ROOT,
     ENV, 
     GITHUB_API_TOKEN,
     REPO_MAX_SIZE_MB
@@ -29,15 +28,18 @@ from .models import (
 )
 from .tasks import InitIndexGraphTaskLocal
 from .graph import get_or_create_chunk_graph
-from .utils import get_repo_size, http_to_ssh, get_repo_main_language
-
-from rtfs.cluster.graph import Cluster
+from .utils import (
+    repo_path, 
+    graph_path,
+    index_path,
+    get_repo_size, 
+    http_to_ssh, 
+    get_repo_main_language
+)
 
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pathlib import Path
-
 from logging import getLogger
 
 logger = getLogger(__name__)
@@ -215,7 +217,8 @@ async def get_repo_files(
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    full_files = GitRepo(Path(repo.file_path)).to_json()
+    rp = repo_path(request.owner, request.repo_name)
+    full_files = GitRepo(rp).to_json()
     filter_files = {
         path: content
         for path, content in full_files.items()
@@ -240,45 +243,18 @@ async def summarize_repo(
         print("Repo not found")
         raise HTTPException(status_code=404, detail="Repository not found")
     
-    summary_path = SUMMARIES_ROOT / (request.repo_ident + ".json")
-    graph_path = GRAPH_ROOT / request.repo_ident
-
-    if summary_path and Path(summary_path).exists():
-        print("Loading summary from cache ...")
-        with open(summary_path, "r") as f:
-            summarized_clusters = json.loads(f.read())
+    gp = graph_path(request.owner, request.repo_name)
+    rp = repo_path(request.owner, request.repo_name)
+    if gp.exists():
+        print("Loading summary from", gp)
+        with open(gp, "r") as f:
+            cg = ClusterGraph.from_json(rp, json.loads(f.read()))
+            print("SUMMARUOZED", cg.get_clusters())
             return SummarizedClusterResponse(
-                summarized_clusters=[Cluster.from_json(s) for s in summarized_clusters]
+                summarized_clusters=cg.get_clusters()
             )
-
-    print("Summarizing ...")
-    # summarization logic
-    code_index = get_or_create_index(repo.file_path, repo.index_path)
-    cg = get_or_create_chunk_graph(
-        code_index, repo.file_path, repo.graph_path, request.graph_type
-    )
-    cg.cluster()
-
-    # should definitely flip the order of this
-    summarizer = Summarizer(cg)
-    summarizer.summarize()
-
-    logger.info(
-        f"Summarizing stats: {request.graph_type} for {repo.file_path}: \n{cg.get_stats()}"
-    )
-    summary = summarizer.get_output()
-
-    # write to both summary and graph
-    with open(summary_path, "w") as f:
-        print("Writing summary to: ", summary_path)
-        f.write(json.dumps([s.to_dict() for s in summary]))
-
-    with open(graph_path, "w") as f:
-        print("Writing graph to: ", graph_path)
-        f.write(json.dumps(cg.to_json()))
-    
-    return SummarizedClusterResponse(summarized_clusters=summary)
-
+    else:
+        return HTTPException(status_code=404, detail="Repository not indexed yet")
 
 @repo_router.post("/repo/delete")
 async def delete_repo(
