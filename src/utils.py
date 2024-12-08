@@ -1,10 +1,8 @@
-import functools
 import random
 import string
 import uuid
 import time
 import functools
-import os
 from contextlib import contextmanager
 from pathlib import Path
 from logging import getLogger
@@ -13,6 +11,7 @@ import os
 import time
 import shutil
 import platform
+import re
 
 if platform.system() == "Windows":
     import win32file
@@ -153,3 +152,23 @@ def async_timed(func):
         return result
 
     return wrapper
+
+def extract_yaml_code(llm_output: str) -> str:
+    try:
+        return re.search(r"```yaml\n(.*)```", llm_output, re.DOTALL).group(1)
+    except AttributeError:
+        return llm_output
+
+
+def extract_python_code(llm_output: str) -> str:
+    try:
+        return re.search(r"```python\n(.*)```", llm_output, re.DOTALL).group(1)
+    except AttributeError:
+        return llm_output
+
+
+def extract_json_code(llm_output: str) -> str:
+    try:
+        return re.search(r"```json\n(.*)```", llm_output, re.DOTALL).group(1)
+    except AttributeError:
+        return llm_output

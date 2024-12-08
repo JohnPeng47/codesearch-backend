@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, ARRAY
 from sqlalchemy.orm import relationship
-from pydantic import BaseModel, field_validator, model_validator, Field
+from pydantic import BaseModel, field_validator, model_validator, Field, ConfigDict
 import re
 from typing import List, Optional
 
@@ -109,8 +109,8 @@ class RepoSummaryRequest(RepoGetRequest):
 
 
 class SummarizedClusterResponse(BaseModel):
+    model_config = ConfigDict(use_enum_values=True, warnings=False)
     summarized_clusters: List[Cluster]
-
 
 class RepoListResponse(RTFSBase):
     user_repos: List[RepoResponse]

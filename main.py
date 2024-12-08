@@ -21,6 +21,8 @@ from src.chat.views import chat_router
 from src.config import PORT, REPOS_ROOT, ELL_STORAGE
 
 
+os.environ["PYDANTIC_WARNINGS"] = "none"  # Set this before importing pydantic
+
 log = getLogger(__name__)
 
 STATIC_DIR = "out"

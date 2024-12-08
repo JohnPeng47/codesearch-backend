@@ -5,6 +5,7 @@ from llama_index.core.schema import BaseNode
 import networkx as nx
 import random
 from llm import LLMModel
+from collections import defaultdict
 
 from rtfs.chunk_resolution.graph import ChunkNode
 from rtfs.graph import CodeGraph, EdgeKind, NodeKind
@@ -19,7 +20,14 @@ from src.models import CodeSummary, ChunkMetadata, CodeChunk
 
 from .graph import ClusterSummary, ClusterMetadata
 from .path import ClusterPath, ChunkPathSegment
-from .lmp import regroup_clusters, split_cluster, summarize, summarizev2
+from .lmp import (
+    regroup_clusters, 
+    split_cluster, 
+    summarize, 
+    create_2tier_hierarchy,
+    create_2tier_hierarchy_with_existing
+)
+from .lmp.graph_ops import ApplyMoves
 
 class ClusterGStats(BaseModel):
     num_clusters: int
@@ -114,7 +122,7 @@ class ClusterGraph(CodeGraph):
 
         for chunk_node, cluster in cluster_dict.items():
             if not self.has_node(cluster):
-                self.add_node(ClusterNode(id=cluster))
+                self.add_node(ClusterNode(id=cluster, title=""))
 
             cluster_edge = ClusterEdge(
                 src=chunk_node, dst=cluster, kind=EdgeKind.ChunkToCluster
@@ -137,6 +145,7 @@ class ClusterGraph(CodeGraph):
         self._summarize_clusters()
         print("Finished summarizing clusters")
 
+        self._create_hierarchal_clusters()
         self._clustered = True
 
     def _summarize_clusters(self):
@@ -155,6 +164,31 @@ class ClusterGraph(CodeGraph):
             cluster_node.summary = summary_data
             self.update_node(cluster_node)
 
+    def _create_hierarchal_clusters(self):
+        clusters = self.get_clusters(return_content=True)
+        moves = create_2tier_hierarchy(self.model, clusters)
+        ApplyMoves(moves).apply(self)
+
+        existing_parents = defaultdict(list)  # maps parent name -> list of child ids
+        unclustered = [cluster for cluster in clusters if self.children(cluster.id) == 0]
+        while unclustered:
+            moves = create_2tier_hierarchy_with_existing(
+                self.model,
+                unclustered, 
+                existing_parents
+            )
+            
+            # Apply the moves which will create parent nodes and add edges
+            ApplyMoves(moves).apply(self)
+            
+            # Track which clusters were processed
+            for move in moves:
+                if move.op_type == "AdoptCluster":
+                    unclustered.remove(move.child_cluster)
+                    existing_parents[move.parent_cluster].append(move.child_cluster)
+
+            unclustered = [cluster for cluster in clusters if self.children(cluster.id) == 0]
+
     def _split_clusters(self, threshold=8):
         clusters = self.get_clusters(return_content=True)
         largest_cluster = max(clusters, key=lambda c: len(c.chunks))
@@ -170,7 +204,7 @@ class ClusterGraph(CodeGraph):
             
             # BUG: this actually goes against the Node id=str gurantee
             # but we have already hardcoded this into the regroup_clusters prompt
-            new_cluster = ClusterNode(id=random.randint(40, 100000))
+            new_cluster = ClusterNode(id=random.randint(40, 100000), title="")
             self.add_node(new_cluster)
             
             # Move chunks to new cluster
@@ -192,37 +226,13 @@ class ClusterGraph(CodeGraph):
 
 
     def _regroup_chunks(self, use_summaries=False):
-        # regroup clusters
+        """
+        Use LLM to generate reassignments of chunks to better fitting clusters
+        """
         clusters = self.get_clusters(return_content=True)
         _, moves = regroup_clusters(self.model, clusters, self, use_summaries=use_summaries)
-        valid_moves = 0
 
-        for move in moves:
-            src_cluster = self.get_node(move.src_cluster)
-            dst_cluster = self.get_node(move.dst_cluster)
-            chunk_node = self.get_node(move.chunk)
-
-            # node hallucination
-            if not src_cluster or not dst_cluster or not chunk_node:
-                continue
-            
-            # edge hallucination
-            if self._graph.has_edge(chunk_node.id, src_cluster.id):
-                self.remove_edge(chunk_node.id, src_cluster.id)
-            
-            self.add_edge(ClusterEdge(
-                src=chunk_node.id,
-                dst=dst_cluster.id,
-                kind=EdgeKind.ChunkToCluster
-            ))
-
-            if self.children(src_cluster.id, edge_types=[EdgeKind.ChunkToCluster]) == 0:
-                self.remove_node(src_cluster.id)
-                print("Removing empty cluster: ", src_cluster.id)
-
-            valid_moves += 1
-
-        print("Valid moves: ", valid_moves)
+        ApplyMoves(moves).apply(self)
 
     def _build_cluster_edges(self):
         """
@@ -318,11 +328,19 @@ class ClusterGraph(CodeGraph):
         return [self.node_to_cluster(node, return_content=return_content) for node in cluster_nodes]
 
 
-    def get_clusters(self, return_content: bool = False) -> List[Cluster]:
+    def get_clusters(self,
+                     parents_only: bool = False, 
+                     return_content: bool = False) -> List[Cluster]:
         cluster_nodes = [
             node.id
             for node in self.filter_nodes({"kind": NodeKind.Cluster})
         ]
+        if parents_only:
+            cluster_nodes = [
+                node
+                for node in cluster_nodes
+                if self.children(node, edge_types=[EdgeKind.ClusterToCluster])
+            ]
 
         return self.clusters(cluster_nodes, return_type="obj", return_content=return_content)
     

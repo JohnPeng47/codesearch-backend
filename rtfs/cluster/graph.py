@@ -128,8 +128,7 @@ class Cluster:
                 children.append(cluster_graph.node_to_cluster(child, return_content=return_content))
 
         # create imports
-        cluster_node.metadata.imports = imports
-        print("Imports: ", imports)
+        cluster_node.metadata.imports = {import_key: list(import_set) for import_key, import_set in imports.items()}
 
         return Cluster(
             id=cluster_node.id,
@@ -164,10 +163,10 @@ class Cluster:
     
 @dataclass(kw_only=True)
 class ClusterNode(Node):
+    title: str
     kind: NodeKind = NodeKind.Cluster
-    title: str = ""
     summary: ClusterSummary = None
-    metadata: ClusterMetadata = ClusterMetadata()
+    metadata: ClusterMetadata = field(default_factory=ClusterMetadata) 
 
     # Need this here because ClusterSummary is used as a response_format
     # for LLMs and cant accept default values

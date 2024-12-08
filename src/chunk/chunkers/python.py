@@ -159,6 +159,13 @@ class PythonChunker(Chunker):
 
             short_name = f"/".join(chunk_fp.split(os.path.sep)[-2:])
             node_id = f"{short_name}::{chunk_i}"
+
+            # Not quite sure why this happens
+            if not chunk_node.metadata.get("start_line") \
+                or not chunk_node.metadata.get("end_line") \
+                or not chunk_node.metadata.get("span_ids"):
+                continue
+
             chunks.append(
                 CodeChunk(
                     id=node_id,
@@ -169,8 +176,9 @@ class PythonChunker(Chunker):
                 )
             )
 
-        print(f"Persisting chunks to {persist_path}")
-        with open(persist_path, "w") as f:
-            f.write(json.dumps([chunk.to_json() for chunk in chunks], indent=2))    
+        if persist_path:
+            print(f"Persisting chunks to {persist_path}")
+            with open(persist_path, "w") as f:
+                f.write(json.dumps([chunk.to_json() for chunk in chunks], indent=2))    
 
         return chunks

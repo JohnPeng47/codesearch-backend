@@ -189,7 +189,7 @@ class CodeChunk:
     
     # additional augmentations
     # Note: unsure what field because of CodeSummary in ClusterChunk
-    summary: Optional[CodeSummary] = CodeSummary()
+    summary: Optional[CodeSummary] = field(default_factory=CodeSummary)
 
     @classmethod
     def from_json(cls, data: Dict):

@@ -246,12 +246,14 @@ async def summarize_repo(
     gp = graph_path(request.owner, request.repo_name)
     rp = repo_path(request.owner, request.repo_name)
     if gp.exists():
-        print("Loading summary from", gp)
         with open(gp, "r") as f:
             cg = ClusterGraph.from_json(rp, json.loads(f.read()))
-            print("SUMMARUOZED", cg.get_clusters())
+            parents = cg.get_clusters(parents_only=True)
+            for p in parents:
+                print("Parent:" , p.summary.title)
+
             return SummarizedClusterResponse(
-                summarized_clusters=cg.get_clusters()
+                summarized_clusters=cg.get_clusters(parents_only=True)
             )
     else:
         return HTTPException(status_code=404, detail="Repository not indexed yet")

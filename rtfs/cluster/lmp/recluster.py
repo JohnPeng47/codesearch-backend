@@ -7,18 +7,17 @@ from llm import LLMModel
 from rtfs.cluster.graph import Cluster
 from src.utils import DELIMETER
 
+from .graph_ops import MoveOp
+
 # TODO: use this with the proper apply code
 # from .graph_ops import MoveOp
-
-class MoveOp(BaseModel):
-    src_cluster: int
-    dst_cluster: int
-    chunk: str
 
 class MoveOpList(BaseModel):
     moves: List[MoveOp]
 
-def compare_pairwise_llm(model: LLMModel, clusters: List[Cluster], use_summaries: bool) -> str:
+def compare_pairwise_llm(model: LLMModel, 
+                         clusters: List[Cluster], 
+                         use_summaries: bool) -> str:
     cluster_flags = {"return_content": not use_summaries, "return_summaries": use_summaries}
 
     COMPARE_PAIRWISE = """
@@ -93,13 +92,19 @@ def split_clusters(clusters: List[Cluster], groups: int = 3) -> List[List[Cluste
 
 # TODO: should have some way isolating hallucination potential in code 
 # like, maybe wrap it all inside a LMP interface
+# TODO-EVAL: evaluate this by running this again on output clusters to see if additional moves are suggested
+# TODO: rewrie this using MoveOps/GraphOps framework
+# - provide a series of LLM ops to the prompt
+# - each op has executed side effect on the graph
+# - how to we combine the moveOp prompt with a generic command that requires several moveOps?
+# In general, should investigate this a way to achieve combinatorial flexibility between prompt space and code space
 def regroup_clusters(model: LLMModel,
                      clusters: List[Cluster], 
                      cg,
                      use_summaries: bool) -> Tuple[List[Cluster], List[MoveOp]]:
     """
-    Compares groups of clusters together and move chunks between them to maximize the coherence
-    of a single cluster
+    Compares groups of clusters together and generates a list of move ops that move a single
+    chunk from one cluster to another to better maximize the coherence of the clusters
     """
     cluster_sets = split_clusters(clusters)
     cgroups = itertools.combinations(cluster_sets, 2)
@@ -114,41 +119,4 @@ def regroup_clusters(model: LLMModel,
         movelist = convert(model, raw_moves)
         all_moves.extend(movelist.moves)
 
-    # Group moves by source cluster and chunk to detect collisions
-    moves_by_src = {}
-    for move in all_moves:
-        if not cg.get_node(move.src_cluster) or not cg.get_node(move.dst_cluster):
-            continue
-
-        key = (move.src_cluster, move.chunk)
-        if key not in moves_by_src:
-            moves_by_src[key] = []
-        moves_by_src[key].append(move)
-
-    # Separate colliding and non-colliding moves
-    colliding_moves = {
-        key: moves for key, moves in moves_by_src.items() 
-        if len(moves) > 1
-    }
-    non_colliding_moves = [
-        moves[0] for key, moves in moves_by_src.items()
-        if len(moves) == 1
-    ]
-
-    print("Colliding moves: ", len(colliding_moves))
-    print("Non-colliding moves: ", len(non_colliding_moves))
-
-    for move in non_colliding_moves:
-        src_cluster = cluster_map[move.src_cluster]
-        dst_cluster = cluster_map[move.dst_cluster]
-        
-        # Find and move the chunk
-        chunk_to_move = next(
-            (c for c in src_cluster.chunks if c.id == move.chunk),
-            None
-        )
-        if chunk_to_move:
-            src_cluster.chunks.remove(chunk_to_move)
-            dst_cluster.chunks.append(chunk_to_move)
-
-    return new_clusters, non_colliding_moves
+    return new_clusters, all_moves
