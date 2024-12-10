@@ -8,33 +8,51 @@ I approached this problem by:
 3. Present a UI that allows you to browse the source code using the summaries as guidance
 The goal here was not to replace looking at source code with summaries, but to present the user with summaries that represents a 10,000 ft. view of the code, quickly orienting them in the unfamiliar territory so they can better navigate it on their own
 
-# How clustering works
+# How it works
+At its core, Codesearch tries to discover groups of source code that works together to implement a system function; so essentially a "clustering" problem in ML parlance.
+At a high level, it accomplishes this by first running a generic graph-based clustering algorithm over a dependency graph (references -> definitions) of code chunks. It then uses LLMs to clean-up the results of the previous clustering step by reassigning chunks to clusters. Finally, a summary is generated for each cluster.
+
+A detailed description is provided below. 
 1. Chunk using code aware chunking strategy (lifted from https://github.com/aorwall/moatless-tools)
-    - "code aware" means for example chunking on function boundaries to keep variable scopes intact during retrieval
-   (Example of non-code aware chunking) -> awareness of a,b as the function parameters is lost when the boundary is arbitrarily selected by a non-code aware chunking scheme:
+- "Code aware" means for example chunking on function boundaries to keep variable scopes intact during retrieval
 
-   def func(a: T, b: S):
-    ------- CHUNK BOUNDARY ------
-        dostuff(a, b):
-      
+def func(a: T, b: S):
+------- CHUNK BOUNDARY ------
+    dostuff(a, b):
+
+(Example of non-code aware chunking) -> awareness of a,b as the function parameters is lost when the boundary is arbitrarily selected by a non-code aware chunking scheme
+
+[Implementation] 
+- src/chunk/chunkers/python.py -> Python chunker, wraps moatless
+- moatless/index/epic_split.py -> actual chunking logic
+- moatless/codeblocks/parser/python.py -> python parser
+
 2. Generate dependency graph for references -> definitions (inspired by https://github.com/BloopAI/bloop.git)
-   My depedency resolution algorithm works by assigning referenced/defined relationships to variables at the chunk level. So for each chunk, its outgoing edges are references to externally defined (in another chunk) symbols and the incoming edges are for when another chunk has referenced it definitions.
-   The first problem we encounter is symbol resolution. How do we disambiguate variables that share the same name within a source file?
-   The solution that I lifted from Bloop's rust code and optimized into python uses a scope graph structure to track all of the scopes in the source file. And to be specific, it is a DAG that starts with an origin at the root scope, and recursively traverses the scopes to uniquely identify variables across the entire source repository. 
-   f1.py
+- My depedency resolution algorithm works by assigning referenced/defined relationships to variables at the chunk level. So for each chunk, its outgoing edges are references to externally defined (in another chunk) symbols and the incoming edges when another chunk references its definitions.
+A problem we encounter is disambiguating between references to variables that share common names within a source file.
 
-   // scope 1, the global module scope
-   // Scoped identifiers -> a::1, b::1
-   a,b = 0,1
-   // doing stuff with a,b
-   def f(x, y):
-      // scope 2, list comprehension
-      // Scoped identifiers -> a::2, b::2
-      a, b = 2,3
-      global_var = 1
+f1.py
+
+# scope 1, global scope
+from f2 import a,b
+
+def f(x, y): # scope 2, func scope
+  ...
+  x = a()
+  y = b + 1 #
+  global_var = 1
+
+The solution that I lifted from Bloop's rust code and optimized into python uses a scope graph (DAG) that tracks nested scopes by constructing a edge from child to parent. So starting from the global scope (root node), I iterate through each scope in the file and connecting each child to a path that eventually leads to the parent. When this is done, every reference can be unambiguously resolved by first checking its current scope, then walking up its parents until a scope containing the reference is found.
+
+
+
 
     
-      -  ie. Network::request !== request
+[Implementation]
+- rtfs/build_scopes.py -> goes over the code and extracts nodes using TS queries
+- rtfs/scope_resolution/scope_graph.py -> constructing the scopegraph
+- 
+
 4. Cluster chunks together using a generic graph clustering/community detection algorithm (https://github.com/mapequation/infomap.git)
    - community detection here roughly translates to finding groups of nodes that maximizes the metric "of having more connections within group than outside of group" (roughly because apparently infomap uses a different "objective function")
    - pretty clustering algorithm agnostic, using a diff algorithm produces a similar result
@@ -45,6 +63,11 @@ The goal here was not to replace looking at source code with summaries, but to p
       2. Find that clusters generated by GPT tend to be biased towards selecting for chunks that close together in the directory layout
 6. Generate summaries for chunks
 7. (ROADMAP) Code search
+
+# Questions
+1. Why chunk and not just cluster at the file level?
+Chunking gives much more granular results, and in the future roadmap, I plan to explore using the clusters as a basis for a RAG system, so it makes sense to use chunks as the "base unit" of retrieved code.
+
 
 # Honorable Mentions
 The original idea was inspired for Microsoft's https://github.com/microsoft/graphrag; figured that code dependency edges probably should convey way more information than generic entity relation graphs
