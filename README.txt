@@ -6,7 +6,6 @@ I approached this problem by:
 1. Identifying clusters of code that represented distinct functional components in the code (ie. API Request Error Handling)
 2. Generate summaries of these
 3. Present a UI that allows you to browse the source code using the summaries as guidance
-<br>
 The goal here was not to replace looking at source code with summaries, but to present the user with summaries that represents a 10,000 ft. view of the code, quickly orienting them in the unfamiliar territory so they can better navigate it on their own
 
 # How clustering works
