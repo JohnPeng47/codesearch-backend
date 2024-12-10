@@ -1,10 +1,7 @@
-# Idc just show me the app
-https://cowboy.rocks/codesearch
-<br>
-Currently only have pre-summarized repos ready, been changing alot of things lately and backend is kinda broken :(
-
 # What am I looking at?
-So the original idea behind this was: can AI help solve code understanding?
+https://cowboy.rocks/codesearch
+
+The original idea behind this was: can AI help solve code understanding?
 I approached this problem by:
 1. Identifying clusters of code that represented distinct functional components in the code (ie. API Request Error Handling)
 2. Generate summaries of these
@@ -16,6 +13,7 @@ The goal here was not to replace looking at source code with summaries, but to p
 1. Chunk using code aware chunking strategy (lifted from https://github.com/aorwall/moatless-tools)
     - "code aware" means for example chunking on function boundaries to keep variable scopes intact during retrieval
    (Example of non-code aware chunking) -> awareness of a,b as the function parameters is lost when the boundary is arbitrarily selected by a non-code aware chunking scheme:
+
    def func(a: T, b: S):
     ------- CHUNK BOUNDARY ------
         dostuff(a, b):
