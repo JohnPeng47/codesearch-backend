@@ -66,7 +66,7 @@ With references/definitions tied to scope, I can now construct edges from refere
 - rtfs/repo_resolution/graph.py -> file -> file graph that maps import/export
 - rtfs/chunk_resolution/graph.py -> chunk -> chunk graph constructed using the import/export relationships above
 
-4. Cluster chunks together using a generic graph clustering/community detection algorithm (https://github.com/mapequation/infomap.git)
+3. Cluster chunks together using a generic graph clustering/community detection algorithm (https://github.com/mapequation/infomap.git)
 - Run a graph clustering algorithm to detect clusters in the previous chunk -> chunk graph
 - The graph clustering objective here is roughly like "find a group of nodes that maximizes the ratio of in-group connections/out-group edges"
 - (Works surprisingly well!)
@@ -74,16 +74,31 @@ With references/definitions tied to scope, I can now construct edges from refere
 [Implementation]
 - rtfs/cluster/infomap.py -> wrapper around infoMap package
 
-5. Recluster using GPT
-- So.. there is a reason why
+4. Reassign chunks with LLM
+- Reason why this step exists is because (as you can imagine) steps 1-3 can end up with badly clustered chunks. 
+- Reason why steps 1-3 exists is because clustering with LLM naively doesnt work very well (long list of reasons, mostly having to do with context length)
+
+[Implementation]
+- rtfs/cluster/cluster_graph.py -> main cluster cleanup routine
+- rtfs/cluster/lmp/graph_ops.py -> a "pseudo-DSL" for LLM-based graph modifications
 
 6. Generate summaries for chunks
-7. (ROADMAP) Code search
+- Generate summaries for each cluster
 
-# Questions
-1. Why chunk and not just cluster at the file level?
-Chunking gives much more granular results, and in the future roadmap, I plan to explore using the clusters as a basis for a RAG system, so it makes sense to use chunks as the "base unit" of retrieved code.
+[Implementation]
+- rtfs/cluster/cluster_graph.py -> main cluster cleanup routine
 
+7. (ROADMAP) Code search [some thoughts for implementation]
+- When thinking about NL queries against a repo-wide codesearching system, I find the following categorizations helpful:
+1. queries relating to a single file
+2. queries relating to multiple files
+3. queries with references to specific symbols in the code (made by a user who is already familiar with the codebase)
+4. queries without references to specific symbols, using more generally descriptive language (made by users who are unfamiliar with the codebase)
+
+In comparing queries over a index built with summarized clusters vs. an index of chunks of raw code, I think there is a benefit in (2,3) from above. The reason for this is because cosine similarity is a vector by vector comparison, which means that comparison of code chunks are isolated from their wider context in interacting with the rest of the codebase. Also, for new users of the codebase who might not be familiar with the symbol names, queries that ask more general questions should be anticipated. Summaries in natural language might be a better match against these queries than raw code.
+
+# Evaluations
+It should be noted while some evaluation attemps have been made to quantify the quality of the clusters, most of the setup here is "one-shotted" and methodologies generally not based on empirical observation. It's on the roadmap :)
 
 # Honorable Mentions
 The original idea was inspired for Microsoft's https://github.com/microsoft/graphrag; figured that code dependency edges probably should convey way more information than generic entity relation graphs
