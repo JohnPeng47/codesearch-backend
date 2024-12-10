@@ -23,7 +23,8 @@ from .path import ClusterPath, ChunkPathSegment
 from .lmp import (
     regroup_clusters, 
     split_cluster, 
-    summarize, 
+    summarizev2, 
+    summarizev3,
     create_2tier_hierarchy,
     create_2tier_hierarchy_with_existing
 )
@@ -158,7 +159,7 @@ class ClusterGraph(CodeGraph):
                 continue
 
             # Summarize cluster
-            summary_data = summarize(self.model, cluster)
+            summary_data = summarizev3(self.model, cluster)
             print(f"Generated summary {summary_data.title}: \n{summary_data.summary}")
 
             cluster_node.summary = summary_data

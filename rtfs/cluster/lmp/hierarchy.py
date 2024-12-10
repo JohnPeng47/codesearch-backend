@@ -56,14 +56,22 @@ class ParentClusterList:
     parent_clusters: List[ParentCluster]
 
 
-# NEWTODO: currently only allowing
+# NEWTODO: Consider adding a prompt interface that generates different 
+# versions of the prompt based on the content config:
+# ie. return_summaries, return_content, return_imports
+# The interface should be exposed to the model.invoke method, so that
+# BrainTrust prompts with the parameters can be constructed
 @retry(
     wait=wait_random_exponential(min=1, max=15),
     reraise=True,
     stop=stop_after_attempt(3),
     retry=retry_if_not_exception_type((RuntimeError)),
 )
-def create_2tier_hierarchy(model: LLMModel, clusters: List[Cluster]) -> List[GraphOp]:
+def create_2tier_hierarchy(model: LLMModel, 
+                           clusters: List[Cluster],
+                           return_summaries = True,
+                           return_content = False,
+                           return_imports = True) -> List[GraphOp]:
     CREATE_HIERARCHY = """
 TASK
 Here are some code clusters:
@@ -106,7 +114,7 @@ Return the list of operations in JSON format.
 """
     res = model.invoke(
         CREATE_HIERARCHY.format(cluster_str=f"\n\n{DELIMETER}".join(
-            [cluster.to_str(return_summaries=True, return_imports=False) for cluster in clusters])
+            [cluster.to_str(return_summaries=True, return_imports=True) for cluster in clusters])
         ), 
         model_name="gpt-4o"
     )

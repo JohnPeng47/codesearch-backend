@@ -27,7 +27,6 @@ log = getLogger(__name__)
 
 STATIC_DIR = "out"
 
-
 async def not_found(request, exc):
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
