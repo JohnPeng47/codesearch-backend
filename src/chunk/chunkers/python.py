@@ -15,6 +15,7 @@ from src.models import (
     ChunkType
 )
 from src.settings import DEFAULT_INDEX_SETTINGS
+from src.utils import DELIMETER
 from moatless.index.epic_split import EpicSplitter
 from moatless.codeblocks import CodeBlock, CodeBlockType
 from rtfs_rewrite.ts import cap_ts_queries, TSLangs
@@ -182,3 +183,30 @@ class PythonChunker(Chunker):
                 f.write(json.dumps([chunk.to_json() for chunk in chunks], indent=2))    
 
         return chunks
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="Chunk Python files in a repository")
+    parser.add_argument("repo_path", help="Path to the repository to process")
+    
+    args = parser.parse_args()
+    
+    try:
+        chunker = PythonChunker(args.repo_path)
+        chunks = chunker.chunk()
+        
+        # Print all chunks separated by delimiter
+        chunk_output = ""
+        for chunk in chunks:
+            chunk_output += f"Chunk ID: {chunk.id}\n"
+            chunk_output += chunk.content + "\n"
+            chunk_output += DELIMETER + "\n"
+            
+        with open("chunks.txt", "w") as f:
+            f.write(chunk_output)
+        
+    except Exception as e:
+        print(f"Error processing repository: {e}", file=sys.stderr)
+        sys.exit(1)

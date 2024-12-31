@@ -224,6 +224,13 @@ class CodeChunk:
             s += f"\n{self.content}"
         return s
     
+    def to_train_data(self) -> str:
+        chunk_output = f"Chunk ID: {self.id}\n"
+        chunk_output += f"Filepath: {self.metadata.file_path}\n"
+        chunk_output += self.content + "\n"
+
+        return chunk_output
+    
     def to_text_node(self) -> TextNode:
         return TextNode(
             text=self.content,
